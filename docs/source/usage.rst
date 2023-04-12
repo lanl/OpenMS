@@ -10,25 +10,19 @@ To use OpenMS, first install it using pip:
 
 .. code-block:: console
 
-   (.venv) $ pip install lumache
+   (.venv) $ pip install openms
 
-Creating recipes
+Creating the simulation box
 ----------------
 
-To retrieve a list of random ingredients,
-you can use the ``lumache.get_random_ingredients()`` function:
+TBA
 
-.. autofunction:: lumache.get_random_ingredients
+.. autofunction:: openms.xx
 
-The ``kind`` parameter should be either ``"meat"``, ``"fish"``,
-or ``"veggies"``. Otherwise, :py:func:`lumache.get_random_ingredients`
-will raise an exception.
 
-.. autoexception:: lumache.InvalidKindError
+.. autoexception:: openms.xx
 
 For example:
 
->>> import lumache
->>> lumache.get_random_ingredients()
-['shells', 'gorgonzola', 'parsley']
-
+>>> import openms
+(TBA)

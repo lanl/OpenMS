@@ -18,7 +18,7 @@ import os, sys
 import ctypes
 import numpy
 
-from pyscf import __config__
+from openms import __config__
 
 c_double_p = ctypes.POINTER(ctypes.c_double)
 c_int_p = ctypes.POINTER(ctypes.c_int)

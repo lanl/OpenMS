@@ -44,8 +44,8 @@
 
 '''
 
-from models import SSH
-from models import HHM
-from models import DMA # disorded molecular aggregates
+from models import hh_model
+from models import hubbard
+from models import aggregates # disorded molecular aggregates
 
 

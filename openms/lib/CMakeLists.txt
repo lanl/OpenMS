@@ -13,7 +13,7 @@
 # limitations under the License.
 #
 # cmake file for buildig c, c++, fortran libs (TODO)
-cmake_minimum_required (VERSION 3.5)
+cmake_minimum_required(VERSION 3.12)
 project (openms)
 
 if (NOT CMAKE_BUILD_TYPE)
@@ -22,10 +22,8 @@ endif()
 #set(CMAKE_BUILD_TYPE DEBUG)
 set(CMAKE_VERBOSE_MAKEFILE OFF)
 if (CMAKE_COMPILER_IS_GNUCC) # Does it skip the link flag on old OsX?
-  # TODO: If updating to minimum requirement cmake>=3.7, use
   # CMAKE_SHARED_LINKER_FLAGS_INIT to combine LDFLAGS options.
   # https://cmake.org/cmake/help/v3.7/variable/CMAKE_SHARED_LINKER_FLAGS_INIT.html
-  # see also issue #661
   if(UNIX AND NOT APPLE AND NOT DEFINED ENV{LDFLAGS})
     set(CMAKE_SHARED_LINKER_FLAGS "-Wl,--no-as-needed")
   endif()
@@ -78,6 +76,7 @@ if (NOT BLAS_LIBRARIES)
 else()
   message(STATUS "BLAS libraries: ${BLAS_LIBRARIES}")
 endif()
+
 # if unable to find mkl library, just create BLAS_LIBRARIES here, e.g.
 # set(BLAS_LIBRARIES "-L/path/to/mkl/lib -lmkl_intel_lp64 -lmkl_sequential -lmkl_core -lpthread -lmkl_avx -lm")
 # or
@@ -140,8 +139,14 @@ set(C_LINK_TEMPLATE "<CMAKE_C_COMPILER> <CMAKE_SHARED_LIBRARY_C_FLAGS> <LANGUAGE
 set(CXX_LINK_TEMPLATE "<CMAKE_CXX_COMPILER> <CMAKE_SHARED_LIBRARY_CXX_FLAGS> <LANGUAGE_COMPILE_FLAGS> <LINK_FLAGS> <CMAKE_SHARED_LIBRARY_CREATE_CXX_FLAGS> -o <TARGET> <OBJECTS> <LINK_LIBRARIES>")
 
 include(ExternalProject)
+# Avoid warning about DOWNLOAD_EXTRACT_TIMESTAMP in CMake 3.24:
+if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.24.0")
+	cmake_policy(SET CMP0135 NEW)
+endif()
+
 option(BUILD_MEEP "Using MEEP for solvng maxwell equations" ON)
-option(BUILD_TAMM "Using TAMM lib for tensor contraction" ON)
+option(BUILD_TAMM "Using TAMM lib for tensor contraction" OFF)
+option(BUILD_TA "Using TiledArray lib for tensor contraction" ON)
 option(BUILD_INFDTD "Using internal FDTDc for solvng maxwell equations" ON)
 option(MEEP_GIT "Using github version of meep" OFF)
 
@@ -229,8 +234,77 @@ if(BUILD_MEEP)
 endif()
 
 # cmake for building bml (TODO)
+if(BUILD_BML)
+  ExternalProject_Add(libbml
+    PREFIX ${PROJECT_BINARY_DIR}/deps
+    INSTALL_DIR ${PROJECT_SOURCE_DIR}/deps
+    GIT_REPOSITORY https://github.com/lanl/bml.git
+    GIT_TAG master
+  )
+endif()
+
+# build Tiledarray 
+# TODO
+# find path to python
+# specify toolchainpath
+
+set(TAPYTHON ON)
+set(TAMPI ON)
+set(TACUDA OFF)
+set(TASCALAPACK ON)
+
+# find the python path
+find_package(Python3 COMPONENTS Interpreter Development) # REQUIRED VERSION 3.8)
+
+message(STATUS "Python executable: ${Python3_EXECUTABLE}")
+message(STATUS "Python include dirs: ${Python3_INCLUDE_DIRS}")
+message(STATUS "Python libraries: ${Python3_LIBRARIES}")
+
+# TODO: find the MKLROOT
+set(MKLROOT "/home/zhy/intel/oneapi/mkl/2023.0.0")
+
+if(BUILD_TA)
+  message("TA lib will be build")
+  message("EIGEN3 PATH is:      " ${EIGEN3_PATH})
+  message("toolchain used is:   " ${toolchainpath})
+  message("Use scalapack in TA: " ${TASCALAPACK})
+  message("Enable CUDA in TA:   " ${TACUDA})
+  message("Enable MPI in TA:    " ${TAMPI})
+  message("MKLROOT is:          " ${MKLROOT})
+  # TODO, need to copy the tool chain files into the cloned source files
+
+  ExternalProject_Add(libta
+    PREFIX ${PROJECT_BINARY_DIR}/deps
+    INSTALL_DIR ${PROJECT_SOURCE_DIR}/deps
+    GIT_REPOSITORY https://github.com/ValeevGroup/tiledarray.git
+    GIT_TAG master
+    # set cmake arguments for TA
+    CMAKE_ARGS 
+        -B build 
+        -DCMAKE_INSTALL_PREFIX=${PROJECT_SOURCE_DIR}/deps
+        -DEIGEN3_INCLUDE_DIR=${EIGEN3_PATH}
+        -DCMAKE_TOOLCHAIN_FILE=${toolchainpath}/gcc-mpi-mkl-tbb.cmake
+        -DBUILD_DEPS_FROM_SOURC=ON 
+	-DMKLROOT=${MKLROOT}
+	-DENABLE_CUDA=${TACUDA}
+	-DENABLE_MPI=${TAMPI}
+	-DTA_PYTHON=${TAPYTHON}
+	-DENABLE_SCALAPACK=${TASCALAPACK}
+	-DPYTHON_EXECUTABLE=${Python3_EXECUTABLE}
+
+    BUILD_COMMAND  
+       bash -c "cp ${toolchainpath}/*.cmake ../libta/cmake/toolchains/" &&  cmake --build build && cmake --build build --target python-tiledarray
+    TEST_COMMAND cmake --build build --target check
+    INSTALL_COMMAND cmake --build build --target install
+    #CMAKE_CACHE_ARGS
+    #CMAKE_ARGS
+    #    -D
+  )
+
+endif()
 
 
+# build TAMM 
 if(BUILD_TAMM) # git@github.com:NWChemEx-Project/TAMM.git
   ExternalProject_Add(libtamm
     PREFIX ${PROJECT_BINARY_DIR}/deps

@@ -53,4 +53,7 @@ TBA
   make install
 ```
 
+## Documentation
+
+https://openms-lmi.readthedocs.io/en/latest/
 

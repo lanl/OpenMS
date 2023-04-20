@@ -7,7 +7,7 @@ Open Source Multiscale solvers for coupled Maxwell-Schrödinger equations in Ope
 Copyright 2023. Triad National Security, LLC. All rights reserved.
 This program was produced under U.S. Government contract 89233218CNA000001 for Los Alamos National Laboratory (LANL), which is operated by Triad National Security, LLC for the U.S. Department of Energy/National Nuclear Security Administration. All rights in the program are reserved by Triad National Security, LLC, and the U.S. Department of Energy/National Nuclear Security Administration. The Government is granted for itself and others acting on its behalf a nonexclusive, paid-up, irrevocable worldwide license in this material to reproduce, prepare derivative works, distribute copies to the public, perform publicly and display publicly, and to permit others to do so.
 
-Here, Open = open quantum system, open source, open science, ect, you name it.
+Here, Open = open quantum system, open source, open science, etc., you name it.
 
 ## Authors:
 
@@ -15,19 +15,19 @@ Here, Open = open quantum system, open source, open science, ect, you name it.
 
 ## Features:
 
-1) open quantum system dynamics (Liouville von neumann equations)
+1) open quantum system dynamics (Liouville von Neumann equations)
 2) quantum transport and dissipation
 3) FDTD solver for complex EM environment
 4) Multiscale solver for polariton chemistry (TBA)
 5) Green's function embedded method for polariton (TBA)
-6) coupled FDTD-Liouville von neumann equatons
-7) interface to other package for electronic structure, such as DFTB+, pyscf;
+6) coupled FDTD-Liouville von Neumann equations
+7) interface to other packages for electronic structure, such as DFTB+, Pyscf;
 
 Electronic structure solvers include:
 a) HF
 b) TDSCF
 c) Coupled-cluster
-d) model systems (SSH, etc)
+d) model systems (SSH, etc.)
 e) ...
 
 Open quantum system solvers include:
@@ -49,7 +49,7 @@ TBA
 ```
   mkdir build && cd build
   cmake ../
-  make 
+  make
   make install
 ```
 

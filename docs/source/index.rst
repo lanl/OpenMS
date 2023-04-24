@@ -14,6 +14,25 @@ Contents
 --------
 
 .. toctree::
+   :maxdepth: 3
 
    usage
-   api
+   examples
+   openms
+
+
+Installation
+------------
+
+The OpenMS can be installed with:
+
+Dependencies
+------------
+    - python 3.6+
+
+Quick intro
+-----------
+
+TBA
+
+

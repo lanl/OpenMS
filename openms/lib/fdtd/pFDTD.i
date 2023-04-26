@@ -54,6 +54,55 @@ namespace pfdtd {
 
 %}
 
+/* marcos */
+%constant int EMP = (int)EMP;
+
+/*  numpy array to c pointer */
+%include "numpy.i"
+
+%init %{
+import_array();
+%}
+
+/* Apply float * type map to OMEGA argument */
+%apply (float *IN_ARRAY1, int DIM1) {(float *OMEGA, int n)}
+%typemap(in) float *OMEGA (int ndims, int *dims) {
+  PyObject *obj = $input;
+  PyArrayObject *arr = NULL;
+  int i, n;
+
+  /* Convert the input object to a NumPy array */
+  arr = (PyArrayObject *) PyArray_FROM_OTF(obj, NPY_FLOAT, NPY_ARRAY_IN_ARRAY);
+
+  /* Check for errors */
+  if (arr == NULL) {
+    SWIG_exception_fail(SWIG_RuntimeError, "Invalid input type for OMEGA");
+    return NULL;
+  }
+
+  /* Check the number of dimensions */
+  ndims = PyArray_NDIM(arr);
+  if (ndims != 1) {
+    SWIG_exception_fail(SWIG_RuntimeError, "Invalid number of dimensions for OMEGA");
+    Py_DECREF(arr);
+    return NULL;
+  }
+
+  /* Get the dimensions */
+  dims = (int *) PyArray_DIMS(arr);
+  n = dims[0];
+
+  /* Allocate a C array for the data */
+  $1 = (float *) malloc(n * sizeof(float));
+
+  /* Copy the data from the NumPy array to the C array */
+  memcpy($1, PyArray_DATA(arr), n * sizeof(float));
+
+  /* Cleanup */
+  Py_DECREF(arr);
+}
+
+
 /* global variables*/
 %inline %{
 #include "gsl/gsl_rng.h"

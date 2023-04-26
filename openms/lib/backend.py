@@ -461,3 +461,12 @@ def gpu_allocation(*args):
 
     return None
 
+
+# TA Backend
+#if TA_AVAILABLE:
+#    import tiledarray as TA
+#
+#    class TABackend(Backend):
+#        """TA Backend"""
+#
+#        return None

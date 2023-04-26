@@ -77,8 +77,10 @@ list(APPEND CMAKE_MODULE_PATH "${cmake_kit_SOURCE_DIR}/modules")
 if (NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE RELWITHDEBINFO)
 endif()
-#set(CMAKE_BUILD_TYPE DEBUG)
+
+set(CMAKE_BUILD_TYPE RELEASE)
 set(CMAKE_VERBOSE_MAKEFILE OFF)
+
 if (CMAKE_COMPILER_IS_GNUCC) # Does it skip the link flag on old OsX?
   # CMAKE_SHARED_LINKER_FLAGS_INIT to combine LDFLAGS options.
   # https://cmake.org/cmake/help/v3.7/variable/CMAKE_SHARED_LINKER_FLAGS_INIT.html

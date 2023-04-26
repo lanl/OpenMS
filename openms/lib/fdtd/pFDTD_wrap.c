@@ -2699,6 +2699,14 @@ namespace pfdtd {
 
 
 
+#ifndef SWIG_FILE_WITH_INIT
+#define NO_IMPORT_ARRAY
+#endif
+#include "stdio.h"
+#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
+#include <numpy/arrayobject.h>
+
+
 #include "gsl/gsl_rng.h"
 #include "gsl/gsl_randist.h"
 
@@ -7990,18 +7998,48 @@ SWIGINTERN PyObject *_wrap_far_field_param(PyObject *SWIGUNUSEDPARM(self), PyObj
   PyObject *resultobj = 0;
   float *arg1 = (float *) 0 ;
   float arg2 ;
-  void *argp1 = 0 ;
-  int res1 = 0 ;
+  int ndims1 ;
+  int *dims1 ;
   float val2 ;
   int ecode2 = 0 ;
   PyObject *swig_obj[2] ;
   
   if (!SWIG_Python_UnpackTuple(args, "far_field_param", 2, 2, swig_obj)) SWIG_fail;
-  res1 = SWIG_ConvertPtr(swig_obj[0], &argp1,SWIGTYPE_p_float, 0 |  0 );
-  if (!SWIG_IsOK(res1)) {
-    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "far_field_param" "', argument " "1"" of type '" "float *""'"); 
+  {
+    PyObject *obj = swig_obj[0];
+    PyArrayObject *arr = NULL;
+    int i, n;
+    
+    /* Convert the input object to a NumPy array */
+    arr = (PyArrayObject *) PyArray_FROM_OTF(obj, NPY_FLOAT, NPY_ARRAY_IN_ARRAY);
+    
+    /* Check for errors */
+    if (arr == NULL) {
+      SWIG_exception_fail(SWIG_RuntimeError, "Invalid input type for OMEGA");
+      return NULL;
+    }
+    
+    /* Check the number of dimensions */
+    ndims1 = PyArray_NDIM(arr);
+    if (ndims1 != 1) {
+      SWIG_exception_fail(SWIG_RuntimeError, "Invalid number of dimensions for OMEGA");
+      Py_DECREF(arr);
+      return NULL;
+    }
+    
+    /* Get the dimensions */
+    dims1 = (int *) PyArray_DIMS(arr);
+    n = dims1[0];
+    
+    /* Allocate a C array for the data */
+    arg1 = (float *) malloc(n * sizeof(float));
+    
+    /* Copy the data from the NumPy array to the C array */
+    memcpy(arg1, PyArray_DATA(arr), n * sizeof(float));
+    
+    /* Cleanup */
+    Py_DECREF(arr);
   }
-  arg1 = (float *)(argp1);
   ecode2 = SWIG_AsVal_float(swig_obj[1], &val2);
   if (!SWIG_IsOK(ecode2)) {
     SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "far_field_param" "', argument " "2"" of type '" "float""'");
@@ -8057,8 +8095,8 @@ SWIGINTERN PyObject *_wrap_far_field_FFT(PyObject *SWIGUNUSEDPARM(self), PyObjec
   int ecode2 = 0 ;
   float val3 ;
   int ecode3 = 0 ;
-  void *argp4 = 0 ;
-  int res4 = 0 ;
+  int ndims4 ;
+  int *dims4 ;
   int val5 ;
   int ecode5 = 0 ;
   PyObject *swig_obj[5] ;
@@ -8079,11 +8117,41 @@ SWIGINTERN PyObject *_wrap_far_field_FFT(PyObject *SWIGUNUSEDPARM(self), PyObjec
     SWIG_exception_fail(SWIG_ArgError(ecode3), "in method '" "far_field_FFT" "', argument " "3"" of type '" "float""'");
   } 
   arg3 = (float)(val3);
-  res4 = SWIG_ConvertPtr(swig_obj[3], &argp4,SWIGTYPE_p_float, 0 |  0 );
-  if (!SWIG_IsOK(res4)) {
-    SWIG_exception_fail(SWIG_ArgError(res4), "in method '" "far_field_FFT" "', argument " "4"" of type '" "float *""'"); 
+  {
+    PyObject *obj = swig_obj[3];
+    PyArrayObject *arr = NULL;
+    int i, n;
+    
+    /* Convert the input object to a NumPy array */
+    arr = (PyArrayObject *) PyArray_FROM_OTF(obj, NPY_FLOAT, NPY_ARRAY_IN_ARRAY);
+    
+    /* Check for errors */
+    if (arr == NULL) {
+      SWIG_exception_fail(SWIG_RuntimeError, "Invalid input type for OMEGA");
+      return NULL;
+    }
+    
+    /* Check the number of dimensions */
+    ndims4 = PyArray_NDIM(arr);
+    if (ndims4 != 1) {
+      SWIG_exception_fail(SWIG_RuntimeError, "Invalid number of dimensions for OMEGA");
+      Py_DECREF(arr);
+      return NULL;
+    }
+    
+    /* Get the dimensions */
+    dims4 = (int *) PyArray_DIMS(arr);
+    n = dims4[0];
+    
+    /* Allocate a C array for the data */
+    arg4 = (float *) malloc(n * sizeof(float));
+    
+    /* Copy the data from the NumPy array to the C array */
+    memcpy(arg4, PyArray_DATA(arr), n * sizeof(float));
+    
+    /* Cleanup */
+    Py_DECREF(arr);
   }
-  arg4 = (float *)(argp4);
   ecode5 = SWIG_AsVal_int(swig_obj[4], &val5);
   if (!SWIG_IsOK(ecode5)) {
     SWIG_exception_fail(SWIG_ArgError(ecode5), "in method '" "far_field_FFT" "', argument " "5"" of type '" "int""'");
@@ -11906,6 +11974,9 @@ SWIG_init(void) {
 #endif
   
   SWIG_InstallConstants(d,swig_const_table);
+  
+  
+  import_array();
   
   globals = SWIG_globals();
   if (!globals) {

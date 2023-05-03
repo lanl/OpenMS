@@ -12,17 +12,18 @@ To use OpenMS, first install it using pip:
 
    (.venv) $ pip install openms
 
-Creating the simulation box
-----------------
+Creating simulaiton box 
+-----------------------
 
 TBA
 
-.. autofunction:: openms.xx
+#.. autofunction:: openms.__version__
 
+TBA 
 
-.. autoexception:: openms.xx
+#.. autoexception:: openms.__version__
 
 For example:
 
 >>> import openms
-(TBA)
+

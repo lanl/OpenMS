@@ -21,9 +21,13 @@ import os, sys
 import warnings
 import ctypes
 import numpy
+from openms.lib import backend
 import h5py
 from threading import Thread
 from multiprocessing import Queue, Process
+from openms import __config__
+from openms.lib import logger
+import scipy.linalg
 
 # load c, c++, fortran libs
 def load_library(libname):
@@ -31,7 +35,7 @@ def load_library(libname):
         _loaderpath = os.path.dirname(__file__)
         return numpy.ctypeslib.load_library(libname, _loaderpath)
     except OSError:
-        from pyscf import __path__ as ext_modules
+        from openms import __path__ as ext_modules
         for path in ext_modules:
             libpath = os.path.join(path, 'lib')
             if os.path.isdir(libpath):
@@ -42,6 +46,12 @@ def load_library(libname):
 
 
 #load bml lib (todo)
-libbml = lib.load_library('libbml')
+#libbml = load_library('libbml')
 
+SAFE_EIGH_LINDEP = getattr(__config__, 'lib_linalg_helper_safe_eigh_lindep', 1e-15)
+DAVIDSON_LINDEP = getattr(__config__, 'lib_linalg_helper_davidson_lindep', 1e-14)
+DSOLVE_LINDEP = getattr(__config__, 'lib_linalg_helper_dsolve_lindep', 1e-15)
+MAX_MEMORY = getattr(__config__, 'lib_linalg_helper_davidson_max_memory', 2000)  # 2GB
+
+# other math algorithms TBA
 

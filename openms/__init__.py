@@ -15,19 +15,16 @@
 # Author: Yu Zhang <zhy@lanl.gov>
 #
 
-'''
-******************************************************************************
-OpenMS Open-Source code for coupled Maxwell-Schrodinger equations
-       in Open Quantum systems.
-       Open = Open quantum systems, Open-Source, Open-Science, you name it
-******************************************************************************
+"""
+OpenMS - Open-Source code for coupled Maxwell-Schrodinger equations in Open Quantum systems.
 
-Documentation:
-    TBA
+    Open = Open quantum systems, Open-Source, Open-Science, you name it
 
-'''
+:noindex:
+"""
 
 __version__ = '1.0_beta'
+__author__ = "Yu Zhang (zhy@lanl.gov)"
 
 import os
 import sys

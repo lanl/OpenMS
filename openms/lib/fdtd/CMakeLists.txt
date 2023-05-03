@@ -26,11 +26,10 @@ else()
         INSTALL_COMMAND make install
         TEST_COMMAND make check
     )
-    include(FindGSL)
+    set(gsl_lib "${PROJECT_SOURCE_DIR}/deps/lib/libgslcblas.a")
+    set(gsl_cblas "${PROJECT_SOURCE_DIR}/deps/lib/libgslcblas.a")
 endif()
 
-#set(gsl_lib "${PROJECT_SOURCE_DIR}/deps/lib/libgsl.a")
-#set(gsl_cblas "${PROJECT_SOURCE_DIR}/deps/lib/libgslcblas.a")
 
 set(HEADERS-C
 pFDTDvar.h
@@ -57,8 +56,11 @@ add_library(fdtd SHARED ${SOURCES-C})
 set_target_properties(fdtd PROPERTIES
 	LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/deps/lib)
 
-target_link_libraries(fdtd  ${GSL_LIBRARIES} gsl gslcblas) 
-#target_link_libraries(fdtd ${gsl_lib} ${gsl_cblas} ) 
+if(GSL_FOUND)
+  target_link_libraries(fdtd  ${GSL_LIBRARIES} gsl gslcblas) 
+else()
+ target_link_libraries(fdtd ${gsl_lib} ${gsl_cblas} ) 
+endif()
 
 install(TARGETS fdtd
 	ARCHIVE DESTINATION ${PROJECT_SOURCE_DIR}/deps/lib
@@ -90,8 +92,11 @@ add_library(_fdtdc SHARED ${SOURCES-C} ${WRAPPER-C})
 #add_custom_command(TARGET _fdtdc POST_BUILD COMMAND swig -python ${CMAKE_CURRENT_SOURCE_DIR}/pFDTD.i)
 
 # Link against GSL library
-target_link_libraries(_fdtdc ${GSL_LIBRARIES} gsl gslcblas)
-
+if(GSL_FOUND)
+  target_link_libraries(_fdtdc ${GSL_LIBRARIES} gsl gslcblas)
+else()
+  target_link_libraries(_fdtdc ${gsl_lib} ${gsl_cblas} ) 
+endif()
 
 # Install _fdtdc Python extension module
 set_target_properties(_fdtdc PROPERTIES PREFIX "")

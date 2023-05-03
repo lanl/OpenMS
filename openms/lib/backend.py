@@ -17,8 +17,9 @@
 
 
 # modified from a fdtd code (ref: )
-""" Selects the backend for the fdtd-package.
-The `fdtd` library allows to choose a backend. The ``numpy`` backend is the
+""" 
+Selects the backend for the openms-package.
+The `openms` allows to choose a backend. The ``numpy`` backend is the
 default one, but there are also several additional PyTorch backends:
     - ``numpy`` (defaults to float64 arrays)
     - ``torch`` (defaults to float64 tensors)
@@ -31,7 +32,7 @@ default one, but there are also several additional PyTorch backends:
     -cutensor (todo)
 
 For example, this is how to choose the `"torch"` backend: ::
-    fdtd.set_backend("torch")
+    openms.set_backend("torch")
 In general, the ``numpy`` backend is preferred for standard CPU calculations
 with `"float64"` precision. In general, ``float64`` precision is always
 preferred over ``float32`` for FDTD simulations, however, ``float32`` might
@@ -79,7 +80,14 @@ except ImportError:
     TORCH_AVAILABLE = False
     TORCH_CUDA_AVAILABLE = False
 
-#
+# TiledArray Backends (and flags)
+try:
+    import tiledarray as TA
+    TA_AVAILABLE = True
+    #TA_CUDA_AVAILABLE = TA.cuda_available() # (todo)
+except ImportError:
+    TA_AVAILABLE = False
+    TA_CUDA_AVAILABLE = False
 
 # Base Class
 class Backend:
@@ -414,6 +422,9 @@ def set_backend(name: str):
             "Is PyTorch with cuda support installed?"
         )
 
+    if name.startswith("TiledArray") and not TA_AVAILABLE:
+        raise RuntimeError("TiledArray backend is not available. Is TiledArray installed?")
+
     if name.count(".") == 0:
         dtype, device = "float64", "cpu"
     elif name.count(".") == 1:
@@ -450,9 +461,20 @@ def set_backend(name: str):
             raise ValueError(
                 "Unknown device '{device}'. Available devices: 'cpu', 'cuda'"
             )
+    elif name == "TiledArray":
+        if device == "cpu":
+            backend.__class__ = TABackend
+            #backend.float = getattr(TA, dtype)
+        #elif device == "cuda":
+        #    backend.__class__ = TACudaBackend
+        #    backend.float = getattr(TA, dtype)
+        else:
+            raise ValueError(
+                "Unknown device '{device}'. Available devices: 'cpu', 'cuda'"
+            )
     else:
         raise ValueError(
-            "Unknown backend '{name}'. Available backends: 'numpy', 'torch'"
+            "Unknown backend '{name}'. Available backends: 'numpy', 'torch', 'TiledArray'"
         )
 
 
@@ -463,10 +485,82 @@ def gpu_allocation(*args):
 
 
 # TA Backend
-#if TA_AVAILABLE:
-#    import tiledarray as TA
-#
-#    class TABackend(Backend):
-#        """TA Backend"""
-#
-#        return None
+if TA_AVAILABLE:
+    import tiledarray as TA
+
+    Array = TA.TArray
+    class TABackend(Backend):
+        """TA Backend"""
+
+        blksize = 1
+
+        def __init__(self):
+            '''
+            storre world in the class?
+            '''
+            self.world = TA.get_default_world()
+
+        @staticmethod
+        def rand(size, block=None, world=None, device=None):
+            '''
+            generate a random tensor
+            '''
+
+            if world is None:
+                world = TA.get_default_world()
+
+            if block is None:
+                block = min(min(size), max(TABackend.blksize, 1))
+
+            op = lambda r: numpy.random.rand(*r.shape)
+            a = Array(size,  block=block, world=world, op=op)
+            
+            world.fence()
+            return a
+
+        def zeros(size, block=1, world=None, device=None):
+            '''
+            dtype: data type (TBA)
+            zero tensor:
+            size: array, size of of each dimension, [4,5] or [2,3,4] for example
+            '''
+            if world is None:
+                world = TA.get_default_world()
+        
+            a = Array(size, block, world)
+            a.fill(0.0, False)
+            world.fence()
+
+            return a
+        
+        def ones(size, block=1, world=None, device=None):
+            '''
+            unit tensor
+            '''
+            if world is None:
+                world = TA.get_default_world()
+
+            a = Array(size, block, world)
+            a.fill(1.0, False)
+            world.fence()
+            
+            return a
+
+        @staticmethod
+        def einsum(expr, *args):
+            '''
+            first, we need to figure out the shape of the output
+            get the block and world from the arguments:
+
+            ik, kj --> ij
+            '''
+
+            #input_shapes = [arg.shape for arg in args]
+            #output_shape = einsum_output_shape(expr, *args)
+            #print("output_shape=", output_shape)
+
+            cout = Array()
+            TA.einsum(expr, *args, cout)
+            
+            return cout
+

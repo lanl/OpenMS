@@ -1,7 +1,9 @@
-Welcome to OpenMS's documentation!
-===================================
+.. OpenMS documentation master file
 
-**OpenMS** is a Python platform for solvingcoupled Maxwell-Schrödinger equations in Open quantum environments.
+Welcome to OpenmS' documentation!
+=================================
+
+**OpenMS** is a multiscale ecosystem for solving coupled Maxwell-Schrödinger equations in Open quantum environments.
 
 Check out the :doc:`usage` section for further information, including
 how to :ref:`installation` the project.
@@ -14,25 +16,21 @@ Contents
 --------
 
 .. toctree::
-   :maxdepth: 3
+   :numbered:
+
+   overview.rst
+   install.rst
+   lib.rst
+   models.rst
 
    usage
-   examples
-   openms
+   api
 
 
-Installation
-------------
 
-The OpenMS can be installed with:
-
-Dependencies
-------------
-    - python 3.6+
-
-Quick intro
------------
-
-TBA
-
-
+.. Indices and tables
+.. ==================
+.. 
+.. * :ref:`genindex`
+.. * :ref:`modindex`
+.. * :ref:`search`

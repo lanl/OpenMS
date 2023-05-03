@@ -15,6 +15,11 @@
 # Author: Yu Zhang <zhy@lanl.gov>
 #
 
+"""
+low-level libraries, including:
+    internal FDTD code,
+    math libs
+"""
 
 from openms.lib.misc import *
 from openms.lib.fdtd import *

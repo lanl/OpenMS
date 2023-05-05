@@ -83,5 +83,4 @@ from openms import maxwell
 # extra debug code.
 DEBUG = __config__.DEBUG
 
-from openms import spindy
 

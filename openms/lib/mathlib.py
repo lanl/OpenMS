@@ -46,7 +46,7 @@ def load_library(libname):
 
 
 #load bml lib (todo)
-#libbml = load_library('libbml')
+#libbml = lib.load_library('libbml')
 
 SAFE_EIGH_LINDEP = getattr(__config__, 'lib_linalg_helper_safe_eigh_lindep', 1e-15)
 DAVIDSON_LINDEP = getattr(__config__, 'lib_linalg_helper_davidson_lindep', 1e-14)

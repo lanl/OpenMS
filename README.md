@@ -55,5 +55,6 @@ TBA
 
 ## Documentation
 
-https://openms-lmi.readthedocs.io/en/latest/
+Details of installation instruction, usage, APIs, and examples can be 
+found in https://openms-lmi.readthedocs.io/en/latest/ or 
 

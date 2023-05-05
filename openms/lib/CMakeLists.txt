@@ -429,8 +429,10 @@ if(ENABLE_TA)
     BUILD_COMMAND  
       #bash -c "cp ${toolchainpath}/*.cmake ../libta/cmake/toolchains/" &&  cmake --build build && cmake --build build --target python-tiledarray
        cmake --build build && cmake --build build --target python-tiledarray
-    TEST_COMMAND cmake --build build --target check
     INSTALL_COMMAND cmake --build build --target install
+    TEST_COMMAND "" # empty command, will not run tests during build
+    #TEST_COMMAND cmake --build build --target check
+    TEST_AFTER_INSTALL TRUE # Run tests after installation with "make check" 
     #CMAKE_CACHE_ARGS
   )
 

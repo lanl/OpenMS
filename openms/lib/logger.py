@@ -18,8 +18,7 @@
 '''
 Logging system
 
-Degug   I
-
+more details TBA
 
 '''
 

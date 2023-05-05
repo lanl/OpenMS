@@ -2699,6 +2699,13 @@ namespace pfdtd {
 
 
 
+SWIGINTERNINLINE PyObject*
+  SWIG_From_int  (int value)
+{
+  return PyInt_FromLong((long) value);
+}
+
+
 #ifndef SWIG_FILE_WITH_INIT
 #define NO_IMPORT_ARRAY
 #endif
@@ -2948,13 +2955,6 @@ SWIG_AsVal_int (PyObject * obj, int *val)
     }
   }  
   return res;
-}
-
-
-SWIGINTERNINLINE PyObject*
-  SWIG_From_int  (int value)
-{
-  return PyInt_FromLong((long) value);
 }
 
 
@@ -11975,6 +11975,7 @@ SWIG_init(void) {
   
   SWIG_InstallConstants(d,swig_const_table);
   
+  SWIG_Python_SetConstant(d, "EMP",SWIG_From_int((int)((int) EMP)));
   
   import_array();
   

@@ -19,6 +19,7 @@ Contents
    :numbered:
 
    overview.rst
+   tutorial.rst
    install.rst
    lib.rst
    models.rst

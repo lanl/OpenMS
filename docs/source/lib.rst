@@ -1,4 +1,4 @@
-:mod:`lib` --- Helper functions, parameters, and C/c++/fortran extensions
+:mod:`lib` --- Helper functions, parameters, and C/C++/fortran extensions
 *************************************************************************
 
 .. automodule:: openms.lib

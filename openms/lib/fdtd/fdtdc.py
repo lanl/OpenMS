@@ -61,6 +61,7 @@ class _SwigNonDynamicMeta(type):
     __setattr__ = _swig_setattr_nondynamic_class_variable(type.__setattr__)
 
 
+EMP = _fdtdc.EMP
 
 def structure_size(x, y, z):
     return _fdtdc.structure_size(x, y, z)

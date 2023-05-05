@@ -1,17 +1,6 @@
 Usage
 =====
 
-.. _installation:
-
-Installation
-------------
-
-To use OpenMS, first install it using pip:
-
-.. code-block:: console
-
-   (.venv) $ pip install openms
-
 Creating simulaiton box 
 -----------------------
 

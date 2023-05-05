@@ -1,4 +1,4 @@
-.. _installing:
+.. _installation:
 
 Installation
 ************
@@ -17,7 +17,7 @@ Manual installation from the Gthub repo
 
 Manual installation requires `cmake <http://www.cmake.org>`_,
 `numpy <http://www.numpy.org/>`_, `scipy <http://www.scipy.org/>`_,
-`meep <https://github.com/NanoComp/meep>`_ (optional), and 
+`MEEP <https://github.com/NanoComp/meep>`_ (optional), and
 `TiledArray <https://github.com/ValeevGroup/tiledarray>`_ (optional).
 
 You can download the latest OpenMS (or the development branch) from GitHub::
@@ -28,11 +28,15 @@ You can download the latest OpenMS (or the development branch) from GitHub::
 
 Build the libs and other extensions in :file:`openms/lib`::
 
- $ cd openms/lib
- $ mkdir build
- $ cd build
- $ cmake ..
- $ make
+  $ cd openms/lib
+  $ bash build.sh
+
+Alternatively::
+
+  $ cd openms/lib
+  $ cd build
+  $ cmake -DCMAKEflags ../
+  $ make 
 
 This will automatically download required libs and compile them.
 Finally, to make Python find the :code:`openms` package, add the top-level :code:`openms` directory (not
@@ -43,6 +47,26 @@ the :code:`openms/openms` subdirectory) to :code:`PYTHONPATH`. For example::
 To ensure the installation is successful, start a Python shell, and type::
 
  >>> import openms
+
+cmake configurations
+--------------------
+The `CMAKEflags` should be replaced with your proper cmake options, such as `-DCMAKE_PREFIX_PATH`,
+List of available options:
+
+* `ENABLE_MPI` -- Set to `ON` to turn on MPI support [Default OFF]
+
+* `ENABLE_MEEP` -- Set to `ON` to install MEEP FDTD solver for Maxwell's equations [Default OFF]
+  
+* `ENABLE_TA` -- Set to `ON` to install TiledArray for tensor contraction[Default OFF]
+
+* `ENABLE_TACUDA` -- Set to `ON` to turn on Cuda GPU support in TA lib [Default OFF]
+
+* `toolchainpath` -- Set toolchain path to for compiling TA [Default cmake/vg/toolchains/]
+
+* `CMAKE_BUILD_TYPE` -- Set build type [Default `Release`]
+
+* `BUILD_INFDTD` -- Set `ON` to build internal FDTD solver [Default `ON`]
+
 
 more details TBA
 

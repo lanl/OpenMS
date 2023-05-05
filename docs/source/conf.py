@@ -10,9 +10,10 @@ author = 'Yu Zhang'
 sys.path.insert(0, os.path.abspath('../../../OpenMS/'))
 sys.path.insert(0, os.path.abspath('../../openms/'))
 
-import openms
+#import openms
+#version = openms.__version__
 release = '0.1'
-version = openms.__version__
+version = '0.1.0'
 
 # -- General configuration
 

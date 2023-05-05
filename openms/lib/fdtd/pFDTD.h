@@ -19,10 +19,12 @@ Se-Heon Kim
 Department of Electrical Engineering, Caltech
 Bug report to : seheon@caltech.edu 
 ---------------------------------------------------------------------
+*/
 
 //-----------------------------------------------------------------//
 // Standard libraries in C
 //-----------------------------------------------------------------//
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>

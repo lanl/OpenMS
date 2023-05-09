@@ -3,13 +3,6 @@
 Installation
 ************
 
-Installation with pip
-=====================
-
-This is the recommended way to install OpenMS::
-
- $ pip install openms (TBA)
-
 .. _compile_libraries and c/c++/fortran_extensions:
 
 Manual installation from the Gthub repo

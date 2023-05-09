@@ -1,0 +1,25 @@
+* MQED solvers
+
+  - QED-HF, QED-TDHF 
+  - QED-CC, QED-EOMCC
+  - Multiscale QED-HF method
+  - Multiscale QED-CC
+  - Multiscale QED-TDHF
+
+* Quantum dynamics propagators
+
+  - AIMC
+  - RPMD
+
+* Mixed Quantum-Classical dynamics
+
+  - SH
+  - EHR
+
+* Quantum transport solvers
+
+  - NEGF
+  - TD-NEGF
+  - Multiscale FDTD-TD-NEGF
+
+

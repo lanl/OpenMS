@@ -11,9 +11,8 @@ sys.path.insert(0, os.path.abspath('../../../OpenMS/'))
 sys.path.insert(0, os.path.abspath('../../openms/'))
 
 #import openms
-#version = openms.__version__
 release = '0.1'
-version = '0.1.0'
+version = "0.1.beta" #openms.__version__
 
 # -- General configuration
 

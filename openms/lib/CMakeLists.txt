@@ -299,11 +299,13 @@ endif()
 
 option(BUILD_TAMM "Using TAMM lib for tensor contraction" OFF)
 option(MEEP_GIT "Using github version of meep" OFF)
+set(BUILD_TARGETS)
 
 if(BUILD_INFDTD)
   ## cmakefile for building build-in FDTD code
   add_subdirectory(./fdtd/ libfdtd)
   #target_link_libraries(intfdtd PUBLIC fdtd)
+  list(APPEND BUILD_TARGETS libfdtd)
 endif()
 
 if(ENABLE_MEEP)
@@ -380,6 +382,11 @@ if(ENABLE_MEEP)
   )
   add_dependencies(meep mpb)
   add_dependencies(meep libctl)
+
+  list(APPEND BUILD_TARGETS libctl)
+  list(APPEND BUILD_TARGETS harminv)
+  list(APPEND BUILD_TARGETS mpb)
+  list(APPEND BUILD_TARGETS meep)
 endif()
 
 # cmake for building bml (TODO)
@@ -426,9 +433,7 @@ if(ENABLE_TA)
 	-DENABLE_SCALAPACK=${ENABLE_TASCALAPACK}
 	-DPYTHON_EXECUTABLE=${Python3_EXECUTABLE}
 
-    BUILD_COMMAND  
-      #bash -c "cp ${toolchainpath}/*.cmake ../libta/cmake/toolchains/" &&  cmake --build build && cmake --build build --target python-tiledarray
-       cmake --build build && cmake --build build --target python-tiledarray
+    BUILD_COMMAND  cmake --build build --target python-tiledarray
     INSTALL_COMMAND cmake --build build --target install
     TEST_COMMAND "" # empty command, will not run tests during build
     #TEST_COMMAND cmake --build build --target check
@@ -436,6 +441,7 @@ if(ENABLE_TA)
     #CMAKE_CACHE_ARGS
   )
 
+  list(APPEND BUILD_TARGETS libta)
 endif()
 
 
@@ -449,6 +455,12 @@ if(BUILD_TAMM) # git@github.com:NWChemEx-Project/TAMM.git
   )
   
 endif() # ENABLE_LIBXC
+
+add_custom_target(test
+  COMMAND ${CMAKE_COMMAND} --build . --target test --config $<CONFIGURATION>
+#  DEPENDS build_external_projects
+)
+
 
 message("")
 message("=========================================================")

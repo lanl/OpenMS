@@ -564,3 +564,12 @@ if TA_AVAILABLE:
             
             return cout
 
+# jax backend for autodiff
+try:
+    import jax
+    JAX_AVAILABLE = True
+except ImportError:
+    JAX_AVAILABLE = False
+
+
+

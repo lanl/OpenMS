@@ -456,6 +456,11 @@ if(BUILD_TAMM) # git@github.com:NWChemEx-Project/TAMM.git
   
 endif() # ENABLE_LIBXC
 
+## build target
+#add_custom_target(build
+#  DEPENDS ${MY_PROJECT_TARGETS}
+#)
+
 add_custom_target(test
   COMMAND ${CMAKE_COMMAND} --build . --target test --config $<CONFIGURATION>
 #  DEPENDS build_external_projects

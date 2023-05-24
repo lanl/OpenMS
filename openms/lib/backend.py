@@ -411,6 +411,10 @@ def set_backend(name: str):
             - ``torch.cuda.float16``
             - ``torch.cuda.float32``
             - ``torch.cuda.float64``
+            - ``TiledArray``
+            - ``TiledArray.sparse``
+            - ``TiledArray.cuda``
+            - ``TiledArray.cuda.sparse``
     """
     # perform checks
     if name.startswith("torch") and not TORCH_AVAILABLE:
@@ -481,8 +485,11 @@ def set_backend(name: str):
 # move data to gpu if needed (todo)
 def gpu_allocation(*args):
 
-    return None
+    raise NotImplementedError
 
+
+
+#### TA Array helpers
 
 # TA Backend
 if TA_AVAILABLE:
@@ -544,6 +551,54 @@ if TA_AVAILABLE:
             a.fill(1.0, False)
             world.fence()
             
+            return a
+
+        def cos(): 
+
+            raise NotImplementedError
+
+        def sin():
+
+            raise NotImplementedError
+
+        def exp():
+
+            raise NotImplementedError
+
+        """ sum elements in array """
+        def sum(): 
+            
+            raise NotImplementedError
+
+        def to_numpy(tensor):
+            '''
+            '''
+            a = numpy.zeros(tensor.shape)
+            for tile in tensor:
+                start = tile.range.start
+                stop = tile.range.stop
+                slices = tuple(slice(b, c) for b, c in zip(start, stop))
+                #print('tile.range=', tile.range)
+                #print('subarray=', nptensor[slices])
+                a[slices] = tile.data
+            return a
+
+        def from_numpy(tensor):
+            '''
+            initialize a TA tensor from numpy tensor
+            '''
+            if world is None:
+                world = TA.get_default_world()
+            size = nptensor.shape
+
+            a = Array(size,  block, world=world)
+            for i, tile in enumerate(a):
+                start = tile.range.start
+                stop = tile.range.stop
+                slices = tuple(slice(b, c) for b, c in zip(start, stop))
+                #print('tile.range=', tile.range)
+                #print('subarray=', nptensor[slices])
+                tile.data = nptensor[slices]
             return a
 
         @staticmethod

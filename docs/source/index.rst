@@ -23,6 +23,7 @@ Contents
    tutorial.rst
    lib.rst
    models.rst
+   qdynamics.rst
 
    usage
    api

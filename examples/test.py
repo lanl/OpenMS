@@ -1,5 +1,5 @@
 import openms
 
-print(openms.__version__)
+print(openms.__logo__)
 
 

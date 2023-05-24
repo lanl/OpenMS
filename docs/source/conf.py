@@ -10,6 +10,7 @@ author = 'Yu Zhang'
 sys.path.insert(0, os.path.abspath('../../../OpenMS/'))
 sys.path.insert(0, os.path.abspath('../../openms/'))
 
+# import module seems not working in readthedoc build
 #import openms
 release = '0.1'
 version = "0.1.beta" #openms.__version__
@@ -57,4 +58,4 @@ latex_documents = [
 html_theme = 'sphinx_rtd_theme'
 
 # -- Options for EPUB output
-#epub_show_urls = 'footnote'
+epub_show_urls = 'footnote'

@@ -17,10 +17,11 @@
 
 
 # modified from a fdtd code (ref: )
-""" 
+r""" 
 Selects the backend for the openms-package.
 The `openms` allows to choose a backend. The ``numpy`` backend is the
 default one, but there are also several additional PyTorch backends:
+
     - ``numpy`` (defaults to float64 arrays)
     - ``torch`` (defaults to float64 tensors)
     - ``torch.float32``
@@ -28,11 +29,12 @@ default one, but there are also several additional PyTorch backends:
     - ``torch.cuda`` (defaults to float64 tensors)
     - ``torch.cuda.float32``
     - ``torch.cuda.float64``
-
-    -cutensor (todo)
+    - cutensor (todo?)
 
 For example, this is how to choose the `"torch"` backend: ::
-    openms.set_backend("torch")
+
+   openms.set_backend("torch")
+
 In general, the ``numpy`` backend is preferred for standard CPU calculations
 with `"float64"` precision. In general, ``float64`` precision is always
 preferred over ``float32`` for FDTD simulations, however, ``float32`` might

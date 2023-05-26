@@ -173,8 +173,9 @@ class Molecule(mole.Mole):
        self.lnacme = False
 
     def get_ekin(self):
-        pass
-
+        """Compute kinetic energy
+        """
+        self.ekin = numpy.sum(0.5 * self.mass * numpy.sum(self.veloc ** 2, axis=1))
 
 
 

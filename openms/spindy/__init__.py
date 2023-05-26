@@ -16,10 +16,33 @@
 # Author: Yu Zhang <zhy@lanl.gov>
 #
 
-# spin dynamics in the presence of spin-spin, hyperfine coupling,and spin-honon interactions
-# Following techniques will be implemented:
-# 1) cluster expansion
-# 2) quantum embedding for normal modes
-#
+
+r"""
+Spin dynamics in the presence of spin-spin, hyperfine coupling,and spin-honon interactions
+Following techniques will be implemented:
+
+  - Cluster correlation expansion (CCE)
+  - quantum embedding for normal modes
+
+Theoretical background of CCE
+-----------------------------
+
+TBA
 
 
+Theoretical background of embedding
+-----------------------------------
+
+TBA
+
+"""
+
+class Spin(object):
+    r"""base class for spin
+
+    
+    """
+    def __init__(self, s=0.5, **kwargs):
+        self.s = s
+
+        

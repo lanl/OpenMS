@@ -17,3 +17,6 @@ Disordered exciton model
    :undoc-members:
    :show-inheritance:
 
+Shin-Metiu model
+----------------
+

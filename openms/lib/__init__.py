@@ -17,8 +17,9 @@
 
 """
 low-level libraries, including:
-    internal FDTD code,
-    math libs
+  - internal FDTD code,
+  - math libs
+  - Backends
 """
 
 from openms.lib.misc import *

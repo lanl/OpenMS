@@ -160,7 +160,7 @@ class BaseMD(object):
 
     def temperature(self):
         return self.mol.ekin * 2. / float(self.mol.ndof) * au2K
-    
+
     def print_init(self, qm, restart):
         """ Routine to print the initial information of dynamics
 
@@ -195,6 +195,61 @@ class BaseMD(object):
         """)
         print (citation_info, flush=True)
 
+        # Print restart info
+        if (restart != None):
+            restart_info = textwrap.indent(textwrap.dedent(f"""\
+            Dynamics is restarted from the last step of a previous dynamics.
+            Restart Mode: {restart}
+            """), "    ")
+            print (restart_info, flush=True)
+
+        # Print self.mol information: coordinate, velocity
+        if (self.md_type not in  ["CTMQC", "AIMC"]):
+            print(self.mol)
+        else:
+            for itraj, mol in enumerate(self.mols):
+                print(mol)
+
+        # Print dynamics information
+        dynamics_info = textwrap.dedent(f"""\
+        {"-" * 68}
+        {"Dynamics Information":>43s}
+        {"-" * 68}
+          QM Program               = {qm.qm_prog:>16s}
+          QM Method                = {qm.qm_method:>16s}
+        """)
+
+        dynamics_info += textwrap.indent(textwrap.dedent(f"""\
+
+          MQC Method               = {self.md_type:>16s}
+          Time Interval (fs)       = {self.dt / fs2au:16.6f}
+          Initial State (0:GS)     = {self.init_state:>16d}
+          Nuclear Step             = {self.nsteps:>16d}
+        """), "  ")
+
+    def md_output(self, md_dir, cstep):
+        """ Write output files
+        """
+        # write coordinate
+        # write velocity
+        # write nact
+
+        return None
+
+    def write_final_xyz(self, md_dir, cstep):
+        """ Write final positions and velocities
+
+            :param string md_dir: Directory where MD output files are written
+            :param integer cstep: Current MD step
+        """
+        # Write FINAL.xyz file including positions and velocities
+        tmp = f'{self.mol.natm:6d}\n{"":2s}Step:{cstep + 1:6d}{"":12s}Position(A){"":34s}Velocity(au)'
+        for iat in range(self.mol.natm):
+            tmp += "\n" + f'{self.mol._atom[iat][0]:5s}' + \
+                "".join([f'{self.mol.pos[iat, isp] * au2A:15.8f}' for isp in range(self.mol.ndim)]) \
+                + "".join([f"{self.mol.veloc[iat, isp]:15.8f}" for isp in range(self.mol.ndim)])
+
+        typewriter(tmp, md_dir, "FINAL.xyz", "w")
 
 class BOMD(BaseMD):
     r""" Class for born-oppenheimer molecular dynamics (BOMD)
@@ -230,4 +285,49 @@ class BOMD(BaseMD):
         self.print_init(qm, restart)
 
         # move to initialize
+        if (restart == None):
+            # Calculate initial input geometry at t = 0.0 s
+            self.cstep = -1
+            self.mol.reset_bo(qm.calc_coupling)
+            qm.get_data(self.mol, base_dir, bo_list, self.dt, self.cstep, force_only=False)
+            self.update_energy()
+            self.write_md_output(md_dir, self.cstep)
+            self.print_step(self.cstep)
+
+        elif (restart == "write"):
+            # Reset initial time step to t = 0.0 s
+            self.cstep = -1
+            self.write_md_output(md_dir, self.cstep)
+            self.print_step(self.cstep)
+
+        elif (restart == "append"):
+            # Set initial time step to last successful step of previous dynamics
+            self.cstep = self.qstep
+
+        self.cstep += 1
+        # Main MD loop
+        for cstep in range(self.cstep, self.nsteps):
+
+            self.calculate_force()
+            self.next_position()
+
+            self.mol.reset_bo(qm.calc_coupling)
+            qm.get_data(self.mol, base_dir, bo_list, self.dt, cstep, force_only=False)
+
+            self.calculate_force()
+            self.next_velocity()
+
+            if (self.thermo != None):
+                self.thermo.run(self)
+
+            self.update_energy()
+
+            if ((cstep + 1) % self.out_freq == 0):
+                self.write_md_output(md_dir, cstep)
+                self.print_step(cstep)
+            if (cstep == self.nsteps - 1):
+                self.write_final_xyz(md_dir, cstep)
+
+            self.qstep = cstep
+
 

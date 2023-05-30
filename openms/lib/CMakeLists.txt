@@ -152,6 +152,7 @@ set(MPI_CXX_SKIP_MPICXX TRUE CACHE BOOL "MPI_CXX_SKIP_MPICXX")
 
 
 option(ENABLE_MPI "Enable MPI" ON)
+option(ENABLE_QMD "Enable QMD/MQC/CTMQC" ON)
 option(ENABLE_MEEP "Using MEEP for solvng maxwell equations" ON)
 option(ENABLE_TA "Using TiledArray lib for tensor contraction" ON)
 option(ENABLE_TASCALAPACK "Enable ScaLAPACK Bindings in TiledArray" OFF)
@@ -171,6 +172,7 @@ if (ENABLE_TA)
 endif()
 
 add_feature_info(TA ENABLE_TA "TiledArray: block-sparse tensor framework for modern (distributed-memory and heterogeneous) computing")
+add_feature_info(QMD ENABLE_QMD "QMD: Module of Mixed quantum-classical dynamics and quatum nuclear dynamics")
 add_feature_info(TAPYTHON ENABLE_TAPYTHON "Python binding of TiledArray lib")
 add_feature_info(MPI ENABLE_MPI "Message-Passing Interface supports distributed-memory parallel programs")
 add_feature_info(MEEP ENABLE_MEEP "MEEP: a free and open-source software package for electromagnetics simulation")
@@ -306,6 +308,10 @@ if(BUILD_INFDTD)
   add_subdirectory(./fdtd/ libfdtd)
   #target_link_libraries(intfdtd PUBLIC fdtd)
   list(APPEND BUILD_TARGETS libfdtd)
+endif()
+
+if(ENABLE_QMD)
+  message("Lib for QMD and MQC dynamics (TBA)")
 endif()
 
 if(ENABLE_MEEP)

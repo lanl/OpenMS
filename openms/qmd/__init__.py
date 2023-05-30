@@ -101,4 +101,3 @@ rng = np.random.Generator(np.random.PCG64(SEED))
 from .es_driver import QuantumDriver
 from .bomd import BOMD
 
-from .es_driver import QuantumDriver

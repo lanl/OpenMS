@@ -19,7 +19,7 @@
 
 r"""
 Spin dynamics in the presence of spin-spin, hyperfine coupling,and spin-honon interactions
-Following techniques will be implemented:
+Following techniques are implemented:
 
   - Cluster correlation expansion (CCE)
   - quantum embedding for normal modes
@@ -37,12 +37,14 @@ TBA
 
 """
 
-class Spin(object):
-    r"""base class for spin
+# use qutip
+try:
+    import qutip
+    QUTIP_AVAILABLE = True
+except ImportError as e:
+    print(f"Could not import 'qutip': {e}")
+    QUTIP_AVAILABLE = False
 
-    
-    """
-    def __init__(self, s=0.5, **kwargs):
-        self.s = s
+from .spin import Spin
+from .system import SystemSpins
 
-        

@@ -7,8 +7,7 @@ import sys
 project = 'OpenMS'
 copyright = 'Copyright 2023. Triad National Security, LLC. All rights reserved.'
 author = 'Yu Zhang'
-sys.path.insert(0, os.path.abspath('../../../OpenMS/'))
-sys.path.insert(0, os.path.abspath('../../openms/'))
+sys.path.insert(0, os.path.abspath('../../openms'))
 
 # import module seems not working in readthedoc build
 #import openms

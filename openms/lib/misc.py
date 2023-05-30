@@ -173,8 +173,74 @@ class Molecule(mole.Mole):
        self.lnacme = False
 
     def get_ekin(self):
-        pass
+        """Compute kinetic energy
+        """
+        self.ekin = numpy.sum(0.5 * self.mass * numpy.sum(self.veloc ** 2, axis=1))
 
+    def reset_bo(self, calc_coupling):
+        """ Reset BO energies, forces and nonadiabatic couplings
 
+            :param boolean calc_coupling: Check whether the dynamics includes coupling calculation
+        """
+        for states in self.states:
+            states.energy = 0.
+            states.force = numpy.zeros((self.natm, self.ndim))
 
+        if (calc_coupling):
+            if (self.lnacme):
+                self.nacme = numpy.zeros((self.nstates, self.nstates))
+            else:
+                self.nac = numpy.zeros((self.nstates, self.nstates, self.natm, self.ndim))
 
+    def __str__(self):
+        """Print function for the molecular class (print the information about molecule)
+
+        """
+
+        header = textwrap.dedent(f"""\
+        {"-" * 68}
+        {"Initial Coordinate and Velocity (au)":>45s}
+        {"-" * 68}\n""")
+        header += " Atom "
+        xyzlabel = ["X", "Y", "Z"]
+        for i in range(self.ndim):
+            if i == 0:
+                header += f"{xyzlabel[i]:>6s}"
+            else:
+                header += f"{xyzlabel[i]:>14s}"
+        xyzlabel = ["VX", "VY", "VZ"]
+        for i in range(self.ndim):
+            header += f"{xyzlabel[i]:>14s}"
+        header += f"{'Mass':>16s}\n"
+        geom_info = textwrap.dedent(header)
+
+        for nth, atoms in enumerate(self._atom):
+            #geom_info += f"  {atoms:3s}"
+            geom_info += f" {atoms[0]}"
+            for isp in range(self.ndim):
+                geom_info += f"{self.pos[nth, isp]:14.6f}"
+            for isp in range(self.ndim):
+                geom_info += f"{self.veloc[nth, isp]:14.6f}"
+            geom_info += f"{self.mass[nth]:15.5f}\n"
+        #print (geom_info, flush=True)
+
+        molecule_info = textwrap.dedent(f"""\
+        {"-" * 68}
+        {"Molecule Information":>43s}
+        {"-" * 68}
+          Number of Atoms (QM)     = {self.natm:>16d}
+          multiplicity (QM)        = {self.spin:>16d}
+        """)
+        molecule_info += textwrap.indent(textwrap.dedent(f"""\
+          Degrees of Freedom       = {int(self.ndof):>16d}
+          Charge                   = {(self.charge)}
+          Number of Electrons      = {(self.nelec)}
+          Number of States         = {self.nstates}
+        """), "  ")
+        
+        # Model case (todo)
+
+        return geom_info + molecule_info
+
+    def print_init(self):
+        print(self)

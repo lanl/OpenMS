@@ -23,6 +23,68 @@ import openms.lib.backend as bd
 import numpy as np # replace np as bd (TODO)
 import random
 
+def linear_spec(elist, state, evals, dip, gamma):
+    """
+    calculate linear spectrum
+    state: list of states to be included in the spec
+    evals: eigenvalues of 1 exciton states
+    dip1: dipolemomnet of 1 exciton states
+    """
+    spectrum=np.zeros(len(elist))
+    for i,e in enumerate(elist):
+        tmp = 0.0
+        for j in state: 
+            tmp += dip[j]*dip[j]*gamma/((e-evals[j])**2+gamma**2)
+        spectrum[i] = tmp
+    return spectrum
+
+def tdes(elist, state, evals, dip1, nuv, eng2, dip2, gamma):
+    """ 
+    state: list of single-exciton states
+    evals: eigenvalues of 1 exciton states
+    dip1: dipolemomnet of 1 exciton states
+    nuv: number of 2-exciton states
+    eng2: energy difference of 1->2 transition
+    dip2: dipolement of 1->2 transition
+    gamma: broadening
+    """ 
+    ne = len(elist)
+    spec2d = np.zeros((ne,ne))
+    for m in range(ne): # exitation
+        for n in range(ne):  
+            spec = 0.0
+            Ed = elist[n]
+            Ex = elist[m]
+            for v1, j in enumerate(state):
+                tmp = 0.0
+                for uv in range(nuv):
+                    deltae = eng2[v1,uv]
+                    a = dip2[v1,uv]*dip2[v1,uv]*gamma
+                    b = (Ed - deltae)**2 + gamma**2
+                    tmp -= a/b
+    
+                a = dip1[j]*dip1[j]*gamma
+                b = (Ed - evals[j])**2 + gamma**2
+                tmp += 2.0*a/b
+    
+                a = dip1[j]*dip1[j]*gamma
+                b = (Ex - evals[j])**2 + gamma**2
+                tmp = tmp * a/b
+                spec += tmp
+    
+            spec2d[n,m] = spec
+        if m % 20 == 0: print('%8.3f percent of 2des is done' % (m/ne*100.0))
+        sys.stdout.flush()
+    return spec2d
+
+def matvec(A,x):
+
+    y = A @ x
+
+    return y
+
+
+
 class DMA(object):
     def __init__(self, 
             Nsite = 1,
@@ -59,7 +121,7 @@ class DMA(object):
         '''
 
         self.Nsite = Nsite
-        self.Nexc = Nexc
+        self.Nexc = min(Nexc, Nsite)
 
         self.epsilon = epsilon
         self.hopping = hopping
@@ -68,6 +130,11 @@ class DMA(object):
 
         self.A = bd.zeros((Nsite, Nsite))
         self.En = bd.zeros(Nsite)
+        self.excdipole1 = None
+        self.dipsortidx = None
+        self.c0 = 0.80
+        self.c1 = 0.50
+        self.c2 = 0.30
 
     def kernel(self):
         '''
@@ -97,17 +164,43 @@ class DMA(object):
     def dipole(self):
         '''
         compute the dipole of the lowest Nexc states
+        dipole of one-exciton state
+        .. math:: d_{mu}= \sum_{i} C_{\mu j} |j>
         '''
+        self.excdipole1 = np.zeros(self.Nsite)
+        for u in range(self.Nsite):
+            for j in range(self.Nsite):
+                self.excdipole1[u] += self.evecs[j,u]
 
-        return None
+    def sortdipole(self):
+        '''
+        sort dipole and get the index of states with largest dipole
+        '''
+        if self.excdipole1 is None:
+            self.dipole()
 
-    def linearabs(self):
+        dip1norm = [abs(self.excdipole1[i]) for i in range(self.Nsite)]
+        self.dipsortidx = np.asarray(dip1norm).argsort()[::-1]
+
+    # compute the linear absorption spectrum of given listed of states
+    def linearabs(self, elist=None, selected=None, gamma = 0.001):
 
         '''
         compute the linear absorption
+        selected: a subset of selected states for spectrum calculations
         '''
+        if elist is None:
+            raise Exception("elist is None! please specify a list of energies for spectrum!")
+        
+        if self.excdipole1 is None:
+            self.dipole()
 
-        return None
+        if selected is None:
+            spectrum =  linear_spec(elist, range(self.Nexc), self.evals, self.excdipole1, gamma)
+        else:
+            spectrum =  linear_spec(elist, selected, self.evals, self.excdipole1, gamma)
+
+        return spectrum
 
     def tdes(self):
         '''

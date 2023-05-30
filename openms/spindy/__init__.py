@@ -16,10 +16,35 @@
 # Author: Yu Zhang <zhy@lanl.gov>
 #
 
-# spin dynamics in the presence of spin-spin, hyperfine coupling,and spin-honon interactions
-# Following techniques will be implemented:
-# 1) cluster expansion
-# 2) quantum embedding for normal modes
-#
 
+r"""
+Spin dynamics in the presence of spin-spin, hyperfine coupling,and spin-honon interactions
+Following techniques are implemented:
+
+  - Cluster correlation expansion (CCE)
+  - quantum embedding for normal modes
+
+Theoretical background of CCE
+-----------------------------
+
+TBA
+
+
+Theoretical background of embedding
+-----------------------------------
+
+TBA
+
+"""
+
+# use qutip
+try:
+    import qutip
+    QUTIP_AVAILABLE = True
+except ImportError as e:
+    print(f"Could not import 'qutip': {e}")
+    QUTIP_AVAILABLE = False
+
+from .spin import Spin
+from .system import SystemSpins
 

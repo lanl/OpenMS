@@ -25,6 +25,7 @@ OpenMS - Open-Source code for coupled Maxwell-Schrodinger equations in Open Quan
 
 import os
 import sys
+import textwrap
 
 __version__ = '0.1_beta'
 __author__ = "Yu Zhang (zhy@lanl.gov)"
@@ -77,9 +78,10 @@ __logo__=f"""
 """
 
 
-__citations__=f"""
-TBA
-"""
+__citation__=textwrap.dedent(f"""\
+{" " * 4} Yu, Zhang. \"Openms: A Multiscale ecosystem for solving coupled Maxwell-Schrodinger 
+{" " * 4} equations in Open quantum environments", https://github.com/lanl/OpenMS,
+""")
 
 #
 OPENMS_PATH = os.getenv('OPENMS_PATH')
@@ -135,5 +137,6 @@ from openms import maxwell
 # extra debug code.
 DEBUG = __config__.DEBUG
 
+from openms import spindy
 from openms import qmd
 

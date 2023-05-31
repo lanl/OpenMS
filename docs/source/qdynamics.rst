@@ -32,6 +32,10 @@ Basic MD and BOMD modules
 Basic Mixed quantum-class module
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+.. automodule:: openms.qmd.mqc
+   :members:
+   :undoc-members:
+   :show-inheritance:
 
 Trajectory Surface Hopping (TSH)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

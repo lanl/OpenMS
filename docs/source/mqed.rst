@@ -25,6 +25,21 @@ Multiscale Hartree-Fock
    :undoc-members:
    :show-inheritance:
 
+Multiscale Density Functional Theory
+------------------------------------
+
+.. automodule:: openms.mqed.mqed_dft
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Multiscale Time-Dependent Self-Consistent Filed
+-----------------------------------------------
+
+.. automodule:: openms.mqed.mqed_tdscf
+   :members:
+   :undoc-members:
+   :show-inheritance:
 
 Multiscale Coupled-cluster
 --------------------------

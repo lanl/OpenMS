@@ -21,10 +21,16 @@ low-level libraries, including:
   - math libs
   - Backends
 """
+import sys
 
 from openms.lib.misc import *
-from openms.lib.fdtd import *
 from openms.lib import logger
 from openms.lib import backend
 from openms.lib.mathlib import *
+try:
+    from openms.lib.fdtd import fdtdc as FDTD
+    FDTD_AVAILABLE = True
+except ImportError:
+    FDTD_AVAILABLE = False
+
 

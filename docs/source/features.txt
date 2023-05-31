@@ -9,7 +9,6 @@
 * Quantum dynamics propagators
 
   - AIMC
-  - RPMD
 
 * Mixed Quantum-Classical dynamics
 

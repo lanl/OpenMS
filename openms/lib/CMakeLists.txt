@@ -314,9 +314,23 @@ if(ENABLE_QMD)
   message("Lib for QMD and MQC dynamics (TBA)")
 endif()
 
+# find FFTW_PATH (will be replaced with find_package (todo,to  add a toolchain))
+if (DEFINED FFTW_LIBRARIES)
+  message("FFTW libraries are defined (in arch.inc):")
+else()
+  message("Looking for FFTW libraries...")
+  find_library(FFTW_LIBRARIES NAMES fftw3 libfftw3)
+endif()
+get_filename_component(FFTW_LIBRARY_DIR ${FFTW_LIBRARIES} DIRECTORY)
+get_filename_component(FFTW_PARENT_DIR ${FFTW_LIBRARY_DIR} DIRECTORY)
+set(FFTW_INCLUDE_DIR ${FFTW_PARENT_DIR}/include)
+message("FFTW libraries: ${FFTW_LIBRARIES}")
+message("FFTW library path: ${FFTW_LIBRARY_DIR}")
+message("FFTW include path: ${FFTW_INCLUDE_DIR}")
+
 if(ENABLE_MEEP)
     # if building meep, we need to build libctl, harminv, mpb as well,
-    # a) build libctl (TODO)
+    # a) build libctl
   ExternalProject_Add(libctl
     URL https://github.com/NanoComp/libctl/releases/download/v4.2.0/libctl-4.2.0.tar.gz
     PREFIX ${PROJECT_BINARY_DIR}/deps
@@ -345,8 +359,9 @@ if(ENABLE_MEEP)
   )
 
   # c) build  mpb
-  set(LDFLAGS  "-L$ENV{HOME}/local/fftw3.3.10/lib/   -L${PROJECT_SOURCE_DIR}/deps/lib")
-  set(CPPFLAGS "-I$ENV{HOME}/ocal/fftw3.3.10/include -I${PROJECT_SOURCE_DIR}/deps/include")
+  set(LDFLAGS  "-L${FFTW_LIBRARY_DIR} -L${PROJECT_SOURCE_DIR}/deps/lib")
+  set(CPPFLAGS "-I${FFTW_INCLUDE_DIR} -I${PROJECT_SOURCE_DIR}/deps/include")
+
   ExternalProject_Add(mpb
     URL https://github.com/NanoComp/mpb/releases/download/v1.11.1/mpb-1.11.1.tar.gz
     PREFIX ${PROJECT_BINARY_DIR}/deps
@@ -354,7 +369,7 @@ if(ENABLE_MEEP)
     CONFIGURE_COMMAND 
     ${CMAKE_COMMAND} -E env LDFLAGS=${LDFLAGS} 
     ${CMAKE_COMMAND} -E env CPPFLAGS=${CPPFLAGS}
-        ../mpb/configure --enable-shared=yes --without-scheme --with-fftw=/home/zhy/local/fftw3.3.10/ --enable-maintainer-mode --without-guile --without-libctl --prefix=<INSTALL_DIR>  
+      ../mpb/configure --enable-shared=yes --without-scheme --with-fftw=${FFTW_LIBRARY_DIR} --enable-maintainer-mode --without-guile --without-libctl --prefix=<INSTALL_DIR>  
     BUILD_COMMAND make
     INSTALL_COMMAND make install
     TEST_COMMAND make check
@@ -363,8 +378,8 @@ if(ENABLE_MEEP)
   # d) build meep
   set(ADDF LDFLAGS=)
   #set(LDFLAGS "-L$ENV{HOME}/local/fftw3.3.10/lib/ -L${PROJECT_SOURCE_DIR}/deps/lib")
-  set(LDFLAGS  "-L$ENV{HOME}/local/fftw3.3.10/lib/ -L${PROJECT_SOURCE_DIR}/deps/lib")
-  set(CPPFLAGS "-I$ENV{HOME}/ocal/fftw3.3.10/include -I${PROJECT_SOURCE_DIR}/deps/include  -I$HOME/anaconda3/include/python3.8/")
+  set(LDFLAGS  "-L${FFTW_LIBRARY_DIR} -L${PROJECT_SOURCE_DIR}/deps/lib")
+  set(CPPFLAGS "-I${FFTW_INCLUDE_DIR} -I${PROJECT_SOURCE_DIR}/deps/include  -I${Python3_INCLUDE_DIRS}")
 
   ExternalProject_Add(meep
     PREFIX ${PROJECT_BINARY_DIR}/deps

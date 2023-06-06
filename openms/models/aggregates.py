@@ -1,16 +1,15 @@
-# Copyright 2023. Triad National Security, LLC. All rights reserved. 
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
+# @ 2023. Triad National Security, LLC. All rights reserved.
 #
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+#This program was produced under U.S. Government contract 89233218CNA000001 
+# for Los Alamos National Laboratory (LANL), which is operated by Triad 
+#National Security, LLC for the U.S. Department of Energy/National Nuclear 
+#Security Administration. All rights in the program are reserved by Triad 
+#National Security, LLC, and the U.S. Department of Energy/National Nuclear 
+#Security Administration. The Government is granted for itself and others acting 
+#on its behalf a nonexclusive, paid-up, irrevocable worldwide license in this 
+#material to reproduce, prepare derivative works, distribute copies to the 
+#public, perform publicly and display publicly, and to permit others to do so.
 #
 # Author: Yu Zhang <zhy@lanl.gov>
 #
@@ -182,6 +181,79 @@ class DMA(object):
         dip1norm = [abs(self.excdipole1[i]) for i in range(self.Nsite)]
         self.dipsortidx = np.asarray(dip1norm).argsort()[::-1]
 
+        #print(dipsortidx)
+        maxdip = max(dip1norm)
+        self.totdip = np.dot(self.excdipole1, self.excdipole1)
+        print('\n maximum and total dipole', maxdip,  self.totdip, maxdip**2/self.totdip,'\n')
+
+        print('------sorted dipole------')
+        self.dip_cutoff = 0.1*maxdip
+        for i in self.dipsortidx:
+            if abs(self.excdipole1[i]) >= self.dip_cutoff: 
+                print(i, abs(self.excdipole1[i]))
+        print('dipcutoff=', self.dip_cutoff, '\n')
+
+    def spdfselection(self):
+
+        """
+        1)  check nodes (state type)  of each eigenstates
+        2) select dominant exciton transitions
+        
+        J. Chem. Phys. 128, 084706 (2008)
+        s-like atomic states: they consist of mainly one peak with no node within the localization segment
+        p-like atomic states: They have a well defined node within localization segments and occur in pairs \
+                with s-like states. Each pair forms an sp doublet localized on the same chain segment.
+        
+        """
+        N = self.Nsite
+        selected_dip = 0.0
+        local_gs = []
+        if self.dipsortidx is None:
+            self.sortdipole()
+
+        for u in self.dipsortidx:
+            tmp = 0.0
+            for j in range(N):
+                tmp += self.evecs[j,u] * abs(self.evecs[j,u])
+            if abs(tmp) >= self.c0:
+                print('state, sum_j(phi_jv|phi_jv|)', u, tmp)
+                selected_dip += self.excdipole1[u]**2
+                local_gs.append(u)
+
+        print('local ground (s) states', local_gs, '\n')
+        print('selected_dip (s)/totdip', selected_dip/self.totdip,'\n')
+
+        # Frourier transform evecs (TODO)
+        evecs_ft = np.zeros((N,N))
+        for u in range(N):
+            for j in range(N):
+                evecs_ft[j,u] = 0.0
+                #for k in range(N):
+                #    evecs_ft[j,u] += evecs[k,u] * sin(k/N)
+
+        # select local excited states
+        local_ex = []
+        for u in local_gs:
+            for v in range(N):
+                if v == u : continue
+                #if v in local_ex: continue
+                if v in local_ex or v in local_gs: continue
+                if abs(self.excdipole1[v]) < self.dip_cutoff: continue
+
+                tmp = 0.0
+                for j in range(N):
+                    tmp += self.evecs[j,u] * abs(self.evecs[j,v])
+                if abs(tmp) >= self.c1:
+                    #print('state, sum_j(phi_jv|phi_jv|)', u, v, tmp)
+                    selected_dip += self.excdipole1[v]**2
+                    local_ex.append(v)
+
+        print('local excited states', local_ex, '\n')
+        print('selected_dip (s + p)/totdip', selected_dip/self.totdip,'\n')
+
+        local_states = local_gs + local_ex
+
+
     # compute the linear absorption spectrum of given listed of states
     def linearabs(self, elist=None, selected=None, gamma = 0.001):
 
@@ -219,5 +291,17 @@ if __name__ == '__main__':
     model = DMA(100, epsilon=0.0, hopping = 0.1, sigma = 0.01)
     model.kernel()
 
-    print('states:', model.energies())
+    # specify lower and upper bounds for spectrum calculations
+    ebot = min(model.evals) - 0.1
+    etop = max(model.evals) + 0.1
+    elist= np.arange(ebot,etop, 0.001)
+    model.sortdipole()
+    model.spdfselection()
+
+    gamma = 9.0/1000.0 # 9 meV
+    spectrum = model.linearabs(elist, gamma = gamma)
+
+    #print('states:', model.energies())
+    #for i, e in enumerate(elist):
+    #    print("%f   %e" %(elist[i], spectrum[i]))
 

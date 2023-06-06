@@ -1,69 +1,81 @@
-import numpy as np
+import numpy
 
 #jmat(j, #s): Higher-order spin operators. s = "x", "y", "z", "+", or "-"
 #from qutip import qeye, jmat
 #form qutip import sigmax, sigmay, sigmaz, sigmap, sigmam
 
-ELEC_GYRO = -17.608597050  # rad * MHz / G
+#electronic Gyromagnetic ratio \gamma_e
+ELEC_GYRO = -1.76085963023e5  # rad * MHz / T
+#\gamma_e/2PI = 
+ELEC_GFAC = -2.00231930426256 # unit less
 
-def check_gyro(gyro):
-    """
-    Check if gyro is matrix or scalar.
+# print will be moved to logger system (todo)
 
-    Args:
-        gyro (ndarray or float): Gyromagnetic ratio matrix or float.
+def check_gfactor(gfactor):
+    r"""
+    Check if gfactor is matrix or scalar.
+        
+    :param float gfactor: (ndarray or float) g-factor 
 
-    Returns:
+    Returns::
+
         tuple: tuple containing:
-
-            * **ndarray or float**: Gyromagnetic ratio.
-            * **bool**: True if gyro is float, False otherwise.
+            ndarray or float: g-factor tensor.
+            bool: True if gfactor is float, False otherwise.
     """
     try:
-        gyro = float(gyro)
+        gfactor = float(gfactor)
         check = True
     except TypeError:
         check = False
 
     if not check:
-        gyro = np.asarray(gyro)
-        if gyro.ndim == 1:  # Assume array
+        gfactor = numpy.asarray(gfactor)
+        if gfactor.ndim == 1:  # Assume array
             check = True
-        elif not gyro.shape or gyro.shape[0] == 1:
+        elif not gfactor.shape or gfactor.shape[0] == 1:
             check = True
-            gyro = gyro.reshape(1)[0]
+            gfactor = gfactor.reshape(1)[0]
         else:
-            test_gyros = gyro.copy()
-            indexes = np.arange(gyro.shape[-1])
-            test_gyros[..., indexes, indexes] = 0
+            test_gfactors = gfactor.copy()
+            indexes = numpy.arange(gfactor.shape[-1])
+            test_gfactors[..., indexes, indexes] = 0
 
-            diag_check = np.isclose(test_gyros, 0).all()
-            same_check = ((gyro[..., 0, 0] == gyro[..., 1, 1]) & (gyro[..., 1, 1] == gyro[..., 2, 2])).all()
+            diag_check = numpy.isclose(test_gfactors, 0).all()
+            same_check = ((gfactor[..., 0, 0] == gfactor[..., 1, 1]) & (gfactor[..., 1, 1] == gfactor[..., 2, 2])).all()
             check = diag_check & same_check
             if check:
-                gyro = gyro[..., 0, 0][()]
+                gfactor = gfactor[..., 0, 0][()]
 
-    return gyro, check
+    return gfactor, check
 
 def zfs_tensor(D, E=0):
-    """
+    r"""
     Generate (3, 3) ZFS tensor from observable parameters D and E.
 
-    Args:
-        D (float or ndarray with shape (3, 3)): Longitudinal splitting (D) in ZFS **OR** total ZFS tensor.
-        E (float): Transverse splitting (E) in ZFS.
+       :param float or (3,3) tensor D:  Longitudinal splitting (D) in ZFS **OR** the total ZFS tensor.
+       :param float E: Transverse splitting (E) in ZFS.
 
     Returns:
-        ndarray with shape (3, 3): Total ZFS tensor.
+        tensor with shape (3, 3): Total ZFS tensor.
+
+    .. math::
+
+       \mathbf{D}= \begin{pmatrix}
+        -\frac{1}{3}D+E & 0 & 0  \\
+         & -\frac{1}{3}D-E & 0  \\
+        0 & 0 & \frac{2}{3}D
+        \end{pmatrix}
+
     """
 
-    D = np.asarray(D)
+    D = numpy.asarray(D)
 
     if D.size == 1:
-        tensor = np.zeros((3, 3), dtype=np.float64)
-        tensor[2, 2] = 2 / 3 * D
-        tensor[1, 1] = -D / 3 - E
-        tensor[0, 0] = -D / 3 + E
+        tensor = numpy.zeros((3, 3), dtype=numpy.float64)
+        tensor[0, 0] = -D / 3.0 + E
+        tensor[1, 1] = -D / 3.0 - E
+        tensor[2, 2] =  2.0 / 3.0 * D
     else:
         tensor = D
 
@@ -72,16 +84,39 @@ def zfs_tensor(D, E=0):
 
 class Spin(object):
     r"""
+
     Base Class for spin object, which contains the properties of spin, including:
-    
+
     :param float spin: Total spin. Default: 0.5
     :param 1darray coord: Cartesian coordinates of spin. Default: (0, 0, 0)
-    :param float D:  
+    :param float D: (longitudional splitting) parameter of central spin in ZFS tensor. Default 0.0, unit: MHz.
+    :param float E: (transverse splitting) parameter of central spin in ZFS tensor. Default 0.0, unit: MHz.
+    :param float/tensor gfactor: gfactor of central spin. Default: -2.00231930426256. unit: unitless.
+    :param float spin: taotal spin
+    :param float alpha: alpha state :math:`\ket{0}`
+    :param float beta: beta state :math:`\ket{1}`
+    :param float detuning: detuning from the Zeeman splitting. Default 0, unit: MHz.
+
+    Other notes:
+    
+    Central spin is: 
+
+    .. math::
+
+        \hat{H} =& \mathbf{S}\cdot\mathbf{D}\cdot\mathbf{S} + \mathbf{B}\cdot\gamma\cdot\mathbf{S} \\
+                =& \mathbf{S}\cdot\mathbf{D}\cdot\mathbf{S} + \frac{e}{2m} \mathbf{B} g \mathbf{S}.
+
+    Gyromagnetic ratio (:math:`\gamma`) is related to gfactor (g) via :math:`\gamma=g\frac{e}{2m}`, i.e.,
+    gyromagnetic ratio is equal to the g-factor times the fundamental charge-to-mass ratio.
+
+    Unit of :math:`\gamma=\frac{e}{2m}g` is: rad * MHz/T
+    Default unit is MHz
     """
 
     def __init__(self, 
-            coord=np.zeros(3),
-            D = 0.0, E=0.0,
+            coord = numpy.zeros(3),
+            D = 0.0, 
+            E = 0.0,
             **kwargs):
 
         self.coord = coord
@@ -91,7 +126,8 @@ class Spin(object):
         self.alpha = None
         self.beta = None
         self._zfs = None
-        self.gfactor = ELEC_GYRO
+        self.gfactor = ELEC_GFAC 
+        self.detuning = 0.0
 
         self.__dict__.update(kwargs)
 
@@ -102,30 +138,51 @@ class Spin(object):
         self.ndim = int(self.spin * 2 + 1 + 1e-8)
         #print("dimension of the spin is", self.ndim)
 
+        """ Hamiltonian of central spin """
+        self.Hamiltonian = None
+        """ eigen energeis and states """
+        self.eig = None
+        self.evecs = None
+        self.sigma = None
 
     def get_zfs(self, D, E):
         self._zfs = zfs_tensor(D, E)
 
-    def set_gfactor(self, gyro):
+    def set_gfactor(self, gfactor):
         """
-        Set gyromagnetic ratio of the central spin.
+        Set gfactormagnetic ratio of the central spin.
 
-        Args:
-            gyro (float or ndarray with shape (3, 3)): Gyromagnetic ratio of central spin in rad / ms / G.
-
-                **OR**
-
-                Tensor describing central spin interactions with the magnetic field.
+        :param float or (3,3) tensor gfactor: : g-factor of central spin **OR**
+            Tensor describing central spin interactions with the magnetic field.
 
         """
-        check = not np.asarray(gyro).shape == (3, 3)
+        check = not np.asarray(gfactor).shape == (3, 3)
         if check:
-            gyro, check = check_gyro(gyro)
+            gfactor, check = check_gfactor(gfactor)
             if check:
-                gyro = np.eye(3) * gyro
-        self._gyro = gyro
+                gfactor = np.eye(3) * gfactor
+        self._gfactor = gfactor
 
+    def get_sigma(self):
+        r"""
+        """
+        self.sigma = None # todo
 
+    def sigma(self):
+        r"""
+        return sigma
+        """
+        if self.sigma is None:
+            self.get_sigma()
+
+        return self.sigma
+
+    def __repr__(self):
+        r"""
+        a string that looks like the Python code you would use to recreate the MyClass object.
+        """
+        log = ""
+        return log
 
     def __str__(self):
         r"""
@@ -134,6 +191,19 @@ class Spin(object):
         log_info=""
 
         return log_info
+
+class SpinSystem(Spin):
+    r"""
+    class for containing all the central spins in the system
+    """
+    def __init__(self, 
+            size = 1,
+            coords = None,
+            spin = 0.5,
+            **kwargs):
+
+        self.size = 1
+        self.__dict__.update(kwargs)
 
 
 if __name__ == '__main__':

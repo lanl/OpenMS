@@ -1,17 +1,17 @@
-# Copyright 2023. Triad National Security, LLC. All rights reserved. 
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
+# @ 2023. Triad National Security, LLC. All rights reserved.
 #
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+#This program was produced under U.S. Government contract 89233218CNA000001 
+# for Los Alamos National Laboratory (LANL), which is operated by Triad 
+#National Security, LLC for the U.S. Department of Energy/National Nuclear 
+#Security Administration. All rights in the program are reserved by Triad 
+#National Security, LLC, and the U.S. Department of Energy/National Nuclear 
+#Security Administration. The Government is granted for itself and others acting 
+#on its behalf a nonexclusive, paid-up, irrevocable worldwide license in this 
+#material to reproduce, prepare derivative works, distribute copies to the 
+#public, perform publicly and display publicly, and to permit others to do so.
 #
 # Author: Yu Zhang <zhy@lanl.gov>
+#
 
 

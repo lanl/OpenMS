@@ -1,20 +1,18 @@
-#; -*-CMake-*-
 #
-# This file is part of OpenmS package for compiling the low-level libraries
-# 
-# Copyright 2023. Triad National Security, LLC. All rights reserved. 
+# @ 2023. Triad National Security, LLC. All rights reserved.
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
+#This program was produced under U.S. Government contract 89233218CNA000001 
+# for Los Alamos National Laboratory (LANL), which is operated by Triad 
+#National Security, LLC for the U.S. Department of Energy/National Nuclear 
+#Security Administration. All rights in the program are reserved by Triad 
+#National Security, LLC, and the U.S. Department of Energy/National Nuclear 
+#Security Administration. The Government is granted for itself and others acting 
+#on its behalf a nonexclusive, paid-up, irrevocable worldwide license in this 
+#material to reproduce, prepare derivative works, distribute copies to the 
+#public, perform publicly and display publicly, and to permit others to do so.
 #
-#     http://www.apache.org/licenses/LICENSE-2.0
+# Author: Yu Zhang <zhy@lanl.gov>
 #
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 #
 # cmake file for buildig c, c++, fortran libs (TODO)
 #
@@ -314,9 +312,23 @@ if(ENABLE_QMD)
   message("Lib for QMD and MQC dynamics (TBA)")
 endif()
 
+# find FFTW_PATH (will be replaced with find_package (todo,to  add a toolchain))
+if (DEFINED FFTW_LIBRARIES)
+  message("FFTW libraries are defined (in arch.inc):")
+else()
+  message("Looking for FFTW libraries...")
+  find_library(FFTW_LIBRARIES NAMES fftw3 libfftw3)
+endif()
+get_filename_component(FFTW_LIBRARY_DIR ${FFTW_LIBRARIES} DIRECTORY)
+get_filename_component(FFTW_PARENT_DIR ${FFTW_LIBRARY_DIR} DIRECTORY)
+set(FFTW_INCLUDE_DIR ${FFTW_PARENT_DIR}/include)
+message("FFTW libraries: ${FFTW_LIBRARIES}")
+message("FFTW library path: ${FFTW_LIBRARY_DIR}")
+message("FFTW include path: ${FFTW_INCLUDE_DIR}")
+
 if(ENABLE_MEEP)
     # if building meep, we need to build libctl, harminv, mpb as well,
-    # a) build libctl (TODO)
+    # a) build libctl
   ExternalProject_Add(libctl
     URL https://github.com/NanoComp/libctl/releases/download/v4.2.0/libctl-4.2.0.tar.gz
     PREFIX ${PROJECT_BINARY_DIR}/deps
@@ -345,8 +357,9 @@ if(ENABLE_MEEP)
   )
 
   # c) build  mpb
-  set(LDFLAGS  "-L$ENV{HOME}/local/fftw3.3.10/lib/   -L${PROJECT_SOURCE_DIR}/deps/lib")
-  set(CPPFLAGS "-I$ENV{HOME}/ocal/fftw3.3.10/include -I${PROJECT_SOURCE_DIR}/deps/include")
+  set(LDFLAGS  "-L${FFTW_LIBRARY_DIR} -L${PROJECT_SOURCE_DIR}/deps/lib")
+  set(CPPFLAGS "-I${FFTW_INCLUDE_DIR} -I${PROJECT_SOURCE_DIR}/deps/include")
+
   ExternalProject_Add(mpb
     URL https://github.com/NanoComp/mpb/releases/download/v1.11.1/mpb-1.11.1.tar.gz
     PREFIX ${PROJECT_BINARY_DIR}/deps
@@ -354,7 +367,7 @@ if(ENABLE_MEEP)
     CONFIGURE_COMMAND 
     ${CMAKE_COMMAND} -E env LDFLAGS=${LDFLAGS} 
     ${CMAKE_COMMAND} -E env CPPFLAGS=${CPPFLAGS}
-        ../mpb/configure --enable-shared=yes --without-scheme --with-fftw=/home/zhy/local/fftw3.3.10/ --enable-maintainer-mode --without-guile --without-libctl --prefix=<INSTALL_DIR>  
+      ../mpb/configure --enable-shared=yes --without-scheme --with-fftw=${FFTW_LIBRARY_DIR} --enable-maintainer-mode --without-guile --without-libctl --prefix=<INSTALL_DIR>  
     BUILD_COMMAND make
     INSTALL_COMMAND make install
     TEST_COMMAND make check
@@ -363,8 +376,8 @@ if(ENABLE_MEEP)
   # d) build meep
   set(ADDF LDFLAGS=)
   #set(LDFLAGS "-L$ENV{HOME}/local/fftw3.3.10/lib/ -L${PROJECT_SOURCE_DIR}/deps/lib")
-  set(LDFLAGS  "-L$ENV{HOME}/local/fftw3.3.10/lib/ -L${PROJECT_SOURCE_DIR}/deps/lib")
-  set(CPPFLAGS "-I$ENV{HOME}/ocal/fftw3.3.10/include -I${PROJECT_SOURCE_DIR}/deps/include  -I$HOME/anaconda3/include/python3.8/")
+  set(LDFLAGS  "-L${FFTW_LIBRARY_DIR} -L${PROJECT_SOURCE_DIR}/deps/lib")
+  set(CPPFLAGS "-I${FFTW_INCLUDE_DIR} -I${PROJECT_SOURCE_DIR}/deps/include  -I${Python3_INCLUDE_DIRS}")
 
   ExternalProject_Add(meep
     PREFIX ${PROJECT_BINARY_DIR}/deps

@@ -1,4 +1,9 @@
 
+r"""Basic MD module
+The code is modified from PyUnixMD(https://github.com/skmin-lab/unixmd)
+(todo) add PyUnixMD licenses and citations
+"""
+
 import numpy
 import openms
 

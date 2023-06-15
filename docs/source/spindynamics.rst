@@ -70,3 +70,6 @@ Implementation
    :undoc-members:
    :show-inheritance:
 
+Spin system
+^^^^^^^^^^^
+

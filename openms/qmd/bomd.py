@@ -7,7 +7,6 @@ The code is modified from PyUnixMD(https://github.com/skmin-lab/unixmd)
 import numpy
 import openms
 
-from __future__ import division
 from openms.lib.misc import fs2au, au2A, au2K, call_name, typewriter
 import textwrap, datetime
 import os, shutil

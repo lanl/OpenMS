@@ -156,11 +156,11 @@ class Spin(object):
             Tensor describing central spin interactions with the magnetic field.
 
         """
-        check = not np.asarray(gfactor).shape == (3, 3)
+        check = not numpy.asarray(gfactor).shape == (3, 3)
         if check:
             gfactor, check = check_gfactor(gfactor)
             if check:
-                gfactor = np.eye(3) * gfactor
+                gfactor = numpy.eye(3) * gfactor
         self._gfactor = gfactor
 
     def get_sigma(self):
@@ -197,13 +197,22 @@ class SpinSystem(Spin):
     class for containing all the central spins in the system
     """
     def __init__(self, 
-            size = 1,
             coords = None,
-            spin = 0.5,
+            spin = None,
+            coord = None,
             **kwargs):
 
-        self.size = 1
+        self.spin = [0.5]
         self.__dict__.update(kwargs)
+        self.spin = numpy.asarray(self.spin)
+        print("debug-zy:spin=", self.spin)
+        self.size = self.spin.size
+        print("debug-zy:size=", self.size)
+
+        if coord is None:
+            coord = numpy.asarray([[0, 0, 0]] * self.size)
+        if spin is None:
+            spin = 0
 
 
 if __name__ == '__main__':

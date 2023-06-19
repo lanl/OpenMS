@@ -13,13 +13,14 @@ try:
     import torch
 
     TORCH_AVAILABLE = True
+    torch._C._set_grad_enabled(True)
 except ImportError:
     TORCH_AVAILABLE = False
 
 import numpy as np
 
-from ..lib.misc import Molecule, periodictable
-from ..qmd.es_driver import QuantumDriver
+from openms.lib.misc import Molecule, periodictable
+from openms.qmd.es_driver import QuantumDriver
 
 
 class NNDriver(QuantumDriver):
@@ -61,45 +62,50 @@ class NNDriver(QuantumDriver):
         )
         self.multi_targets = multi_targets
 
-    def get_atomic_numbers(self, molecule: Union[Molecule, List[Molecule]]):
-        """Convert the element symbols to atomic numbers (Z). No changes of species or
-           number of molecules are expected, so the Z tensor is saved within this class.
+    def get_Z_R(self, molecule: Union[Molecule, List[Molecule]]):
+        """Convert the element symbols to a tensor of atomic numbers (Z) and molecular
+            positions to a tensor of coordinates (R). No changes of species or number of
+            molecules are expected, so the Z and R tensors are saved within this class.
 
         :param molecule: molecule or molecules.
         :type molecule: Union[Molecule, List[Molecule]]
         """
         if isinstance(molecule, Molecule):
             Z = [[periodictable[a]["z"] for a in molecule.elements]]
+            R = [molecule.coords]
         else:
             Z = [[periodictable[a]["z"] for a in mol.elements] for mol in molecule]
+            R = [_.coords for _ in molecule]
         # lower case tensor to keep the int type
         self.Z = torch.tensor(Z)
+        # converting list of np.nparray to tensor is extremely slow
+        # could use some optimizations here
+        self.R = torch.Tensor(np.array(R))
+        del Z, R
 
     # At this moment the model is assumed to
     #   1. have the same number of states as the simulation
     #   2. use multi targets, i.e., one node to predict all states
     #   3. have the node name I normally use
     # TODO: node name and no of states should be determined at least semi-automatically
-    def make_predictions(self, molecule: Union[Molecule, List[Molecule]]):
+    def make_predictions(self):
         """Make predictions for electronic structure properties based on the geometry of
-            the input molecule or list of molecules. The predicted results are saved
-            within the class, as NNDriver.pred.
+        the input molecule or list of molecules. The predicted results are saved
+        within the class, as NNDriver.pred.
 
-        :param molecule: molecule or molecules.
-        :type molecule: Union[Molecule, List[Molecule]]
         """
-        if isinstance(molecule, Molecule):
-            R = [molecule.coords]
-        else:
-            R = [_.coords for _ in molecule]
-        # converting list of np.nparray to tensor is extremely slow
-        # could use some optimizations here
-        R = torch.Tensor(np.array(R))
-        self.pred = self.predictor(Z=self.Z, R=R)
-        return R
+        self.pred = self.predictor(Z=self.Z, R=self.R)
 
     def nuc_grad(self):
-        return self.pred["E"].grad
+        e = self.pred["E"]
+        force = []
+        for i in range(self.nstates + 1):
+            force.append(
+                torch.autograd.grad(e[:, i].sum(), self.R, retain_graph=True)[0]
+            )
+        return torch.stack(force, dim=1)
+
+    get_forces = nuc_grad
 
     def get_nact(
         self, molecule: Union[Molecule, List[Molecule]], nacr: torch.Tensor
@@ -125,14 +131,14 @@ class NNDriver(QuantumDriver):
             v = [molecule.veloc]
         else:
             v = [_.veloc for _ in molecule]
-        v = torch.Tensor(v)
+        v = torch.Tensor(np.array(v))
         n_molecules, n_atoms, n_dims = v.shape
         # reshape velocities for batched matrix multiplications
         v = v.reshape(n_molecules, 1, 1, n_atoms * n_dims)
         nacr = nacr.reshape(n_molecules, len(self.state_pairs), n_atoms * n_dims, 1)
         # resulting a tensor with a shape of (n_molecules, n_pairs, 1, 1)
         # use squeeze to remove 1's
-        return torch.matmul(v, nacr).squeeze()
+        return torch.matmul(v, nacr).squeeze(dim=(2, 3))
 
     def get_nacr(self) -> torch.Tensor:
         """Return the non-adiabatic coupling vectors (NACR) between all pairs of excited
@@ -144,6 +150,7 @@ class NNDriver(QuantumDriver):
         # only take excited state energies
         e = self.get_energies()[:, 1:]
         # direct hippynn output is NACR * dE
+        # in the shape of (n_molecules, npairs, natoms * ndim)
         nacr_de = self.pred["ScaledNACR"]
         de = []
         for i, j in self.state_pairs:
@@ -151,7 +158,7 @@ class NNDriver(QuantumDriver):
             de.append(e[:, j] - e[:, i])
         de = torch.stack(de, dim=1)
         nacr = nacr_de / de.unsqueeze(2)
-        # reshape into (n_molecules, npairs, natoms, ndim)
+        # rehape into (n_molecules, npairs, natoms, ndim)
         return nacr.reshape(*nacr.shape[:2], -1, 3)
 
     # current model is in eV
@@ -173,12 +180,17 @@ class NNDriver(QuantumDriver):
         """
         return self.pred["D"]
 
-    def get_dipole_grad(self, dipoles: torch.Tensor) -> torch.Tensor:
+    def get_dipole_grad(self) -> torch.Tensor:
         """Return the gradients of transition dipoles
 
-        :param dipoles: transition dipoles. Shape (n_molecules, n_states, 3).
-        :type dipoles: torch.Tensor
-        :return: transition dipoles. Shape (n_molecules, n_states, natoms, 3).
+        :return: the gradients of the transition dipoles.
+            Shape (n_molecules, n_states, natoms, 3).
         :rtype: torch.Tensor
         """
-        return dipoles.grad
+        d = self.pred["D"]
+        d_grad = []
+        for i in range(self.nstates):
+            d_grad.append(
+                torch.autograd.grad(d[:, i].sum(), self.R, retain_graph=True)[0]
+            )
+        return torch.stack(d_grad, dim=1)

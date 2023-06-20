@@ -30,3 +30,9 @@
 .. automodule:: lib.backend
 
 
+:mod:`lib.hippynn_es_driver`
+============================
+
+.. automodule:: lib.hippynn_es_driver
+
+

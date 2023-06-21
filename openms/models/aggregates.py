@@ -1,14 +1,14 @@
 #
 # @ 2023. Triad National Security, LLC. All rights reserved.
 #
-#This program was produced under U.S. Government contract 89233218CNA000001 
-# for Los Alamos National Laboratory (LANL), which is operated by Triad 
-#National Security, LLC for the U.S. Department of Energy/National Nuclear 
-#Security Administration. All rights in the program are reserved by Triad 
-#National Security, LLC, and the U.S. Department of Energy/National Nuclear 
-#Security Administration. The Government is granted for itself and others acting 
-#on its behalf a nonexclusive, paid-up, irrevocable worldwide license in this 
-#material to reproduce, prepare derivative works, distribute copies to the 
+#This program was produced under U.S. Government contract 89233218CNA000001
+# for Los Alamos National Laboratory (LANL), which is operated by Triad
+#National Security, LLC for the U.S. Department of Energy/National Nuclear
+#Security Administration. All rights in the program are reserved by Triad
+#National Security, LLC, and the U.S. Department of Energy/National Nuclear
+#Security Administration. The Government is granted for itself and others acting
+#on its behalf a nonexclusive, paid-up, irrevocable worldwide license in this
+#material to reproduce, prepare derivative works, distribute copies to the
 #public, perform publicly and display publicly, and to permit others to do so.
 #
 # Author: Yu Zhang <zhy@lanl.gov>
@@ -32,13 +32,13 @@ def linear_spec(elist, state, evals, dip, gamma):
     spectrum=np.zeros(len(elist))
     for i,e in enumerate(elist):
         tmp = 0.0
-        for j in state: 
+        for j in state:
             tmp += dip[j]*dip[j]*gamma/((e-evals[j])**2+gamma**2)
         spectrum[i] = tmp
     return spectrum
 
 def tdes(elist, state, evals, dip1, nuv, eng2, dip2, gamma):
-    """ 
+    """
     state: list of single-exciton states
     evals: eigenvalues of 1 exciton states
     dip1: dipolemomnet of 1 exciton states
@@ -46,11 +46,11 @@ def tdes(elist, state, evals, dip1, nuv, eng2, dip2, gamma):
     eng2: energy difference of 1->2 transition
     dip2: dipolement of 1->2 transition
     gamma: broadening
-    """ 
+    """
     ne = len(elist)
     spec2d = np.zeros((ne,ne))
     for m in range(ne): # exitation
-        for n in range(ne):  
+        for n in range(ne):
             spec = 0.0
             Ed = elist[n]
             Ex = elist[m]
@@ -61,16 +61,16 @@ def tdes(elist, state, evals, dip1, nuv, eng2, dip2, gamma):
                     a = dip2[v1,uv]*dip2[v1,uv]*gamma
                     b = (Ed - deltae)**2 + gamma**2
                     tmp -= a/b
-    
+
                 a = dip1[j]*dip1[j]*gamma
                 b = (Ed - evals[j])**2 + gamma**2
                 tmp += 2.0*a/b
-    
+
                 a = dip1[j]*dip1[j]*gamma
                 b = (Ex - evals[j])**2 + gamma**2
                 tmp = tmp * a/b
                 spec += tmp
-    
+
             spec2d[n,m] = spec
         if m % 20 == 0: print('%8.3f percent of 2des is done' % (m/ne*100.0))
         sys.stdout.flush()
@@ -83,20 +83,20 @@ def matvec(A,x):
     return y
 
 
-
+# disordered molecular aggregates class
 class DMA(object):
-    def __init__(self, 
+    def __init__(self,
             Nsite = 1,
             Nexc = 5,
-            epsilon = 0.0, 
-            hopping = 0.1, 
-            sigma = 0.0, 
+            epsilon = 0.0,
+            hopping = 0.1,
+            sigma = 0.0,
             zeta = 0.0,
             **kwargs):
         '''
         Hamiltonian:
 
-        H = \sum_i (\epsilon_i +\delta) c^\dag_i c_i + 
+        H = \sum_i (\epsilon_i +\delta) c^\dag_i c_i +
             \sum_{i,i+1} (t+\delta_2) [c^\dag_{i+1}c_i + h.c.]
 
         Nsite : Int
@@ -147,7 +147,7 @@ class DMA(object):
             if i < self.Nsite - 1:
                 self.A[i][i+1] = self.hopping
                 self.A[i+1][i] = self.hopping
-        
+
         self.evals, self.evecs = np.linalg.eig(self.A)
 
         idx = self.evals.argsort()
@@ -161,10 +161,9 @@ class DMA(object):
         return self.evals[:self.Nexc]
 
     def dipole(self):
-        '''
+        r'''
         compute the dipole of the lowest Nexc states
-        dipole of one-exciton state
-        .. math:: d_{mu}= \sum_{i} C_{\mu j} |j>
+        dipole of one-exciton state :math:`d_{mu}= \sum_{i} C_{\mu j} |j>`
         '''
         self.excdipole1 = np.zeros(self.Nsite)
         for u in range(self.Nsite):
@@ -189,7 +188,7 @@ class DMA(object):
         print('------sorted dipole------')
         self.dip_cutoff = 0.1*maxdip
         for i in self.dipsortidx:
-            if abs(self.excdipole1[i]) >= self.dip_cutoff: 
+            if abs(self.excdipole1[i]) >= self.dip_cutoff:
                 print(i, abs(self.excdipole1[i]))
         print('dipcutoff=', self.dip_cutoff, '\n')
 
@@ -198,12 +197,12 @@ class DMA(object):
         """
         1)  check nodes (state type)  of each eigenstates
         2) select dominant exciton transitions
-        
+
         J. Chem. Phys. 128, 084706 (2008)
         s-like atomic states: they consist of mainly one peak with no node within the localization segment
         p-like atomic states: They have a well defined node within localization segments and occur in pairs \
                 with s-like states. Each pair forms an sp doublet localized on the same chain segment.
-        
+
         """
         N = self.Nsite
         selected_dip = 0.0
@@ -253,6 +252,9 @@ class DMA(object):
 
         local_states = local_gs + local_ex
 
+        #-------------------------------------------------------------------------------
+        print('state    node    dipolemoment')
+        # not done yet
 
     # compute the linear absorption spectrum of given listed of states
     def linearabs(self, elist=None, selected=None, gamma = 0.001):
@@ -263,7 +265,7 @@ class DMA(object):
         '''
         if elist is None:
             raise Exception("elist is None! please specify a list of energies for spectrum!")
-        
+
         if self.excdipole1 is None:
             self.dipole()
 

@@ -310,6 +310,8 @@ endif()
 
 if(ENABLE_QMD)
   message("Lib for QMD and MQC dynamics (TBA)")
+  # rk4 lib?
+  #add_subdirectory(./el_prop)
 endif()
 
 # find FFTW_PATH (will be replaced with find_package (todo,to  add a toolchain))

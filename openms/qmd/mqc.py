@@ -6,7 +6,7 @@ import numpy
 import openms
 
 
-from misc import fs_to_au, au_to_A, call_name, typewriter
+from misc import fs2au, au2A, call_name, typewriter
 import textwrap, datetime
 import numpy as np
 import os, shutil
@@ -53,7 +53,7 @@ class MQC(BaseMD):
         self.mol.get_coefficient(self.init_coef, self.init_state)
 
     def electronic_propagator(self):
-        r"""Propagator for electronic EOM. 
+        r"""Propagator for electronic EOM.
         It should be implemented in derived class!
         rk4 is used by default!
         """

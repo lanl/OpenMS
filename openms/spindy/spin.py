@@ -6,7 +6,7 @@ import numpy
 
 #electronic Gyromagnetic ratio \gamma_e
 ELEC_GYRO = -1.76085963023e5  # rad * MHz / T
-#\gamma_e/2PI = 
+#\gamma_e/2PI =
 ELEC_GFAC = -2.00231930426256 # unit less
 
 # print will be moved to logger system (todo)

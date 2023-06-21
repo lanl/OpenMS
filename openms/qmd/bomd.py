@@ -54,7 +54,7 @@ class BaseMD(object):
             :param boolean save_scr: Logical for saving scratch directory
             :param string restart: Option for controlling dynamics restarting
         """
-        
+
         if (restart != None): restart = restart.lower()
         if not (restart in [None, "write", "append"]):
             error_message = "Invalid restart option!"

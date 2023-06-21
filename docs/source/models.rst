@@ -20,3 +20,8 @@ Disordered exciton model
 Shin-Metiu model
 ----------------
 
+.. automodule:: openms.models.shin_metiu
+   :members:
+   :undoc-members:
+   :show-inheritance:
+

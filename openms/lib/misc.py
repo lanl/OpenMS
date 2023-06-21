@@ -198,7 +198,7 @@ def gaussian1d(x, const, sigma, x0):
         return -1
     else:
         res = const / (sigma * numpy.sqrt(2. * numpy.pi)) * numpy.exp(- (x - x0) ** 2 / (2. * sigma ** 2))
-        return res 
+        return res
 
 def Lorentz1d(x, const, sigma, x0):
     if (sigma < 0.0):
@@ -206,6 +206,22 @@ def Lorentz1d(x, const, sigma, x0):
     else:
         res = const * sigma / ((x-x0)**2 + sigma * sigma)
         return res
+
+def call_name():
+    return sys._getframe(1).f_code.co_name
+
+def typewriter(string, dir_name, filename, mode):
+    """ Function to open/write any string in dir_name/filename
+
+        :param string string: Text string for output file
+        :param string dir_name: Directory of output file
+        :param string filename: Filename of output file
+        :param string mode: Fileopen mode
+    """
+    tmp_name = os.path.join(dir_name, filename)
+    with open(tmp_name, mode) as f:
+        f.write(string + "\n")
+
 
 # derived molecule class
 from pyscf.gto import mole

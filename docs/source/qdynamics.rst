@@ -40,6 +40,11 @@ Basic Mixed quantum-class module
 Trajectory Surface Hopping (TSH)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+.. automodule:: openms.qmd.tsh
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Coupled-Trajectory MQC (CTMQC) and Ab initio Multiple Cloning (AIMC)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

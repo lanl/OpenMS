@@ -73,3 +73,9 @@ Implementation
 Spin system
 ^^^^^^^^^^^
 
+.. automodule:: openms.spindy.spin
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+

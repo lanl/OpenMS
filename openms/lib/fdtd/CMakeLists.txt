@@ -13,8 +13,6 @@ include(FindGSL)
 ##find_package(GSL COMPONENTS libgsl libgslcblas PATHS ${CMAKE_PREFIX_PATH} QUIET)
 if(GSL_FOUND)
     message("GSL found!")
-    message("GSL_LIBRARIES=" ${GSL_LIBRARIES})
-    message("GSL_LIBRARY="  ${GSL_LIBRARY})
 else()
     message(WARNING "GSL library not found. It will be downloaded and built")
     ExternalProject_Add(gsl
@@ -27,10 +25,16 @@ else()
         TEST_COMMAND "" # empty command, will not run tests during build
 	TEST_AFTER_INSTALL TRUE # Run tests after installation with "make check" 
     )
-    set(gsl_lib "${PROJECT_SOURCE_DIR}/deps/lib/libgslcblas.a")
-    set(gsl_cblas "${PROJECT_SOURCE_DIR}/deps/lib/libgslcblas.a")
+    #set(gsl_lib "${PROJECT_SOURCE_DIR}/deps/lib/libgslcblas.so")
+    #set(gsl_cblas "${PROJECT_SOURCE_DIR}/deps/lib/libgslcblas.so")
+    set(GSL_LIBRARIES "${PROJECT_SOURCE_DIR}/deps/lib/libgslcblas.so" "${PROJECT_SOURCE_DIR}/deps/lib/libgsl.so")
+    set(GSL_LIBRARY "${PROJECT_SOURCE_DIR}/deps/lib/libgsl.so")
+    set(GSL_INCLUDE_DIRS "${PROJECT_SOURCE_DIR}/deps/include/gsl")
 endif()
 
+message("GSL_LIBRARIES=" ${GSL_LIBRARIES})
+message("GSL_LIBRARY="  ${GSL_LIBRARY})
+message("GSL_INCLUDE_DIRS="  ${GSL_INCLUDE_DIRS})
 
 set(HEADERS-C
 pFDTDvar.h
@@ -57,11 +61,7 @@ add_library(fdtd SHARED ${SOURCES-C})
 set_target_properties(fdtd PROPERTIES
 	LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/deps/lib)
 
-if(GSL_FOUND)
-  target_link_libraries(fdtd  ${GSL_LIBRARIES} gsl gslcblas) 
-else()
- target_link_libraries(fdtd ${gsl_lib} ${gsl_cblas} ) 
-endif()
+target_link_libraries(fdtd  ${GSL_LIBRARIES})
 
 install(TARGETS fdtd
 	ARCHIVE DESTINATION ${PROJECT_SOURCE_DIR}/deps/lib
@@ -85,6 +85,7 @@ set(WRAPPER-C
 )
 
 include_directories(${Python3_INCLUDE_DIRS})
+include_directories(${GSL_INCLUDE_DIRS})
 
 # Create _fdtdc Python extension module
 add_library(_fdtdc SHARED ${SOURCES-C} ${WRAPPER-C})
@@ -93,11 +94,9 @@ add_library(_fdtdc SHARED ${SOURCES-C} ${WRAPPER-C})
 #add_custom_command(TARGET _fdtdc POST_BUILD COMMAND swig -python ${CMAKE_CURRENT_SOURCE_DIR}/pFDTD.i)
 
 # Link against GSL library
-if(GSL_FOUND)
-  target_link_libraries(_fdtdc ${GSL_LIBRARIES} gsl gslcblas)
-else()
-  target_link_libraries(_fdtdc ${gsl_lib} ${gsl_cblas} ) 
-endif()
+target_link_libraries(_fdtdc PUBLIC ${GSL_LIBRARIES})
+target_include_directories(_fdtdc PUBLIC ${GSL_LIBRARIES})
+
 
 # Install _fdtdc Python extension module
 set_target_properties(_fdtdc PROPERTIES PREFIX "")
@@ -106,18 +105,4 @@ set_target_properties(_fdtdc PROPERTIES OUTPUT_NAME "_fdtdc")
 install(TARGETS _fdtdc
 	ARCHIVE DESTINATION ${PROJECT_SOURCE_DIR}/fdtd/
 	LIBRARY DESTINATION ${PROJECT_SOURCE_DIR}/fdtd)
-
-# -----------not used ------------
-#FIND_PACKAGE(SWIG REQUIRED)
-#INCLUDE(${SWIG_USE_FILE})
-
-#FIND_PACKAGE(PythonLibs)
-#INCLUDE_DIRECTORIES(${PYTHON_INCLUDE_PATH})
-
-#SET(CMAKE_SWIG_FLAGS "")
-
-#SET_SOURCE_FILES_PROPERTIES(pFDTD.i PROPERTIES CPLUSPLUS ON)
-#SET_SOURCE_FILES_PROPERTIES(pFDTD.i PROPERTIES SWIG_FLAGS "-includeall")
-#SWIG_ADD_MODULE(pFDTD python pFDTD.i ${SOURCES-C})
-#SWIG_LINK_LIBRARIES(pFDTD ${PYTHON_LIBRARIES})
 

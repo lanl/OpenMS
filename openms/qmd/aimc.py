@@ -1,5 +1,5 @@
-
 from openms.qmd.mqc import MQC
+
 
 class CTMQC(MQC):
     r"""Basic Class for coupld-trajectory MQC (CTMQC) dynamics
@@ -18,9 +18,8 @@ class CTMQC(MQC):
 
         super().__init__(molecules[0], thermostat, **kwargs)
 
-
     def kernel(self):
-        raise NotImplementedError('Method Not Implemented')
+        raise NotImplementedError("Method Not Implemented")
 
 
 class AIMC(CTMQC):
@@ -36,8 +35,5 @@ class AIMC(CTMQC):
         self.md_type = self.__class__.__name__
         super().__init__(molecules, thermostat, **kwargs)
 
-
     def kernel(self):
-        raise NotImplementedError('Method Not Implemented')
-
-
+        raise NotImplementedError("Method Not Implemented")

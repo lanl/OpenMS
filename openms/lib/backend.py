@@ -1,15 +1,15 @@
 #
 # @ 2023. Triad National Security, LLC. All rights reserved.
 #
-#This program was produced under U.S. Government contract 89233218CNA000001 
-# for Los Alamos National Laboratory (LANL), which is operated by Triad 
-#National Security, LLC for the U.S. Department of Energy/National Nuclear 
-#Security Administration. All rights in the program are reserved by Triad 
-#National Security, LLC, and the U.S. Department of Energy/National Nuclear 
-#Security Administration. The Government is granted for itself and others acting 
-#on its behalf a nonexclusive, paid-up, irrevocable worldwide license in this 
-#material to reproduce, prepare derivative works, distribute copies to the 
-#public, perform publicly and display publicly, and to permit others to do so.
+# This program was produced under U.S. Government contract 89233218CNA000001
+# for Los Alamos National Laboratory (LANL), which is operated by Triad
+# National Security, LLC for the U.S. Department of Energy/National Nuclear
+# Security Administration. All rights in the program are reserved by Triad
+# National Security, LLC, and the U.S. Department of Energy/National Nuclear
+# Security Administration. The Government is granted for itself and others acting
+# on its behalf a nonexclusive, paid-up, irrevocable worldwide license in this
+# material to reproduce, prepare derivative works, distribute copies to the
+# public, perform publicly and display publicly, and to permit others to do so.
 #
 # Author: Yu Zhang <zhy@lanl.gov>
 #
@@ -84,11 +84,13 @@ except ImportError:
 # TiledArray Backends (and flags)
 try:
     import tiledarray as TA
+
     TA_AVAILABLE = True
-    #TA_CUDA_AVAILABLE = TA.cuda_available() # (todo)
+    # TA_CUDA_AVAILABLE = TA.cuda_available() # (todo)
 except ImportError:
     TA_AVAILABLE = False
     TA_CUDA_AVAILABLE = False
+
 
 # Base Class
 class Backend:
@@ -428,7 +430,9 @@ def set_backend(name: str):
         )
 
     if name.startswith("TiledArray") and not TA_AVAILABLE:
-        raise RuntimeError("TiledArray backend is not available. Is TiledArray installed?")
+        raise RuntimeError(
+            "TiledArray backend is not available. Is TiledArray installed?"
+        )
 
     if name.count(".") == 0:
         dtype, device = "float64", "cpu"
@@ -469,8 +473,8 @@ def set_backend(name: str):
     elif name == "TiledArray":
         if device == "cpu":
             backend.__class__ = TABackend
-            #backend.float = getattr(TA, dtype)
-        #elif device == "cuda":
+            # backend.float = getattr(TA, dtype)
+        # elif device == "cuda":
         #    backend.__class__ = TACudaBackend
         #    backend.float = getattr(TA, dtype)
         else:
@@ -485,9 +489,7 @@ def set_backend(name: str):
 
 # move data to gpu if needed (todo)
 def gpu_allocation(*args):
-
     raise NotImplementedError
-
 
 
 #### TA Array helpers
@@ -497,22 +499,23 @@ if TA_AVAILABLE:
     import tiledarray as TA
 
     Array = TA.TArray
+
     class TABackend(Backend):
         """TA Backend"""
 
         blksize = 1
 
         def __init__(self):
-            '''
+            """
             storre world in the class?
-            '''
+            """
             self.world = TA.get_default_world()
 
         @staticmethod
         def rand(size, block=None, world=None, device=None):
-            '''
+            """
             generate a random tensor
-            '''
+            """
 
             if world is None:
                 world = TA.get_default_world()
@@ -521,111 +524,106 @@ if TA_AVAILABLE:
                 block = min(min(size), max(TABackend.blksize, 1))
 
             op = lambda r: numpy.random.rand(*r.shape)
-            a = Array(size,  block=block, world=world, op=op)
-            
+            a = Array(size, block=block, world=world, op=op)
+
             world.fence()
             return a
 
         def zeros(size, block=1, world=None, device=None):
-            '''
+            """
             dtype: data type (TBA)
             zero tensor:
             size: array, size of of each dimension, [4,5] or [2,3,4] for example
-            '''
+            """
             if world is None:
                 world = TA.get_default_world()
-        
+
             a = Array(size, block, world)
             a.fill(0.0, False)
             world.fence()
 
             return a
-        
+
         def ones(size, block=1, world=None, device=None):
-            '''
+            """
             unit tensor
-            '''
+            """
             if world is None:
                 world = TA.get_default_world()
 
             a = Array(size, block, world)
             a.fill(1.0, False)
             world.fence()
-            
+
             return a
 
-        def cos(): 
-
+        def cos():
             raise NotImplementedError
 
         def sin():
-
             raise NotImplementedError
 
         def exp():
-
             raise NotImplementedError
 
         """ sum elements in array """
-        def sum(): 
-            
+
+        def sum():
             raise NotImplementedError
 
         def to_numpy(tensor):
-            '''
-            '''
+            """ """
             a = numpy.zeros(tensor.shape)
             for tile in tensor:
                 start = tile.range.start
                 stop = tile.range.stop
                 slices = tuple(slice(b, c) for b, c in zip(start, stop))
-                #print('tile.range=', tile.range)
-                #print('subarray=', nptensor[slices])
+                # print('tile.range=', tile.range)
+                # print('subarray=', nptensor[slices])
                 a[slices] = tile.data
             return a
 
         def from_numpy(tensor):
-            '''
+            """
             initialize a TA tensor from numpy tensor
-            '''
+            """
             if world is None:
                 world = TA.get_default_world()
             size = nptensor.shape
 
-            a = Array(size,  block, world=world)
+            a = Array(size, block, world=world)
             for i, tile in enumerate(a):
                 start = tile.range.start
                 stop = tile.range.stop
                 slices = tuple(slice(b, c) for b, c in zip(start, stop))
-                #print('tile.range=', tile.range)
-                #print('subarray=', nptensor[slices])
+                # print('tile.range=', tile.range)
+                # print('subarray=', nptensor[slices])
                 tile.data = nptensor[slices]
             return a
 
         @staticmethod
         def einsum(expr, *args):
-            '''
+            """
             first, we need to figure out the shape of the output
             get the block and world from the arguments:
 
             ik, kj --> ij
-            '''
+            """
 
-            #input_shapes = [arg.shape for arg in args]
-            #output_shape = einsum_output_shape(expr, *args)
-            #print("output_shape=", output_shape)
+            # input_shapes = [arg.shape for arg in args]
+            # output_shape = einsum_output_shape(expr, *args)
+            # print("output_shape=", output_shape)
 
             cout = Array()
             TA.einsum(expr, *args, cout)
-            
+
             return cout
+
 
 # jax backend for autodiff
 try:
     import jax
+
     JAX_AVAILABLE = True
 except ImportError:
     JAX_AVAILABLE = False
-
-
-

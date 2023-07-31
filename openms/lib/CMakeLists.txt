@@ -50,6 +50,8 @@ if (NOT DEFINED CACHE{CMAKE_FIND_NO_INSTALL_PREFIX})
   set(CMAKE_FIND_NO_INSTALL_PREFIX ON CACHE BOOL "Whether find_* commands will search CMAKE_INSTALL_PREFIX and CMAKE_STAGING_PREFIX; see https://cmake.org/cmake/help/latest/variable/CMAKE_FIND_NO_INSTALL_PREFIX.html#variable:CMAKE_FIND_NO_INSTALL_PREFIX")
 endif()
 
+message("CMAKE_TOOLCHIAN_FILE=" ${CMAKE_TOOLCHAIN_FILE})
+
 # Bring camek toolkit ==========================================================
 # FetchContent is used to download and include external projects or libraries  
 include(FetchContent)
@@ -230,20 +232,6 @@ else()
   message(STATUS "BLAS libraries: ${BLAS_LIBRARIES}")
 endif()
 
-# if unable to find mkl library, just create BLAS_LIBRARIES here, e.g.
-# set(BLAS_LIBRARIES "-L/path/to/mkl/lib -lmkl_intel_lp64 -lmkl_sequential -lmkl_core -lpthread -lmkl_avx -lm")
-# or
-# set(BLAS_LIBRARIES "                  /path/to/mkl/lib/intel64/libmkl_intel_lp64.so")
-# set(BLAS_LIBRARIES "${BLAS_LIBRARIES};/path/to/mkl/lib/intel64/libmkl_sequential.so")
-# set(BLAS_LIBRARIES "${BLAS_LIBRARIES};/path/to/mkl/lib/intel64/libmkl_core.so")
-# set(BLAS_LIBRARIES "${BLAS_LIBRARIES};/path/to/mkl/lib/intel64/libmkl_avx.so")
-# set(BLAS_LIBRARIES "${BLAS_LIBRARIES};/path/to/mkl/lib/intel64/libmkl_def.so")
-# set(BLAS_LIBRARIES "-Wl,-rpath=${MKLROOT}/lib/intel64/ ${BLAS_LIBRARIES}")
-#
-# These settings can be written in the cmake.arch.inc file. This config file
-# will automatically load all settings specified in cmake.arch.inc
-#
-
 option(ENABLE_OPENMP "Compiling C extensions with openmp" ON)
 set(OPENMP_C_PROPERTIES "")
 if(ENABLE_OPENMP)
@@ -321,6 +309,9 @@ else()
   message("Looking for FFTW libraries...")
   find_library(FFTW_LIBRARIES NAMES fftw3 libfftw3)
 endif()
+
+message(STATUS "FFTW_LIBRARY_DIR: ${FFTW_LIBRARY_DIR}")
+
 get_filename_component(FFTW_LIBRARY_DIR ${FFTW_LIBRARIES} DIRECTORY)
 get_filename_component(FFTW_PARENT_DIR ${FFTW_LIBRARY_DIR} DIRECTORY)
 set(FFTW_INCLUDE_DIR ${FFTW_PARENT_DIR}/include)
@@ -441,12 +432,13 @@ if(ENABLE_TA)
     GIT_REPOSITORY https://github.com/ares201005/tiledarray.git
     GIT_TAG master
     # set cmake arguments for TA
-    CMAKE_ARGS 
-        -B build 
+    CMAKE_ARGS
+        -B build
+	-DBUILD_TESTS=ON
 	-DCMAKE_INSTALL_PREFIX=${PROJECT_INSTALL_DIR}
 	-DEIGEN3_INCLUDE_DIR=${EIGEN3_PATH}
-        -DCMAKE_TOOLCHAIN_FILE=${toolchainpath}/gcc-mpi-mkl-tbb.cmake
-        -DBUILD_DEPS_FROM_SOURC=ON 
+        -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}
+        -DBUILD_DEPS_FROM_SOURC=ON
 	-DMKLROOT=${MKLROOT}
 	-DENABLE_CUDA=${ENABLE_TACUDA}
 	-DENABLE_MPI=${ENABLE_MPI}
@@ -463,6 +455,12 @@ if(ENABLE_TA)
   )
 
   list(APPEND BUILD_TARGETS libta)
+
+  ExternalProject_Get_Property(libta binary_dir)
+  add_test(
+    NAME test_libta
+    COMMAND ${CMAKE_COMMAND} --build ${binary_dir} --target test
+  )
 endif()
 
 

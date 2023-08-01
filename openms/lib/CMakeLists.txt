@@ -290,6 +290,15 @@ option(MEEP_GIT "Using github version of meep" OFF)
 set(BUILD_TARGETS)
 
 if(BUILD_INFDTD)
+
+  if(Python3_Interpreter_FOUND)
+    execute_process(
+        COMMAND ${Python3_EXECUTABLE} -c "import numpy; print(numpy.get_include())"
+        OUTPUT_VARIABLE NUMPY_INCLUDE_DIR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+  endif()
+  message(STATUS "NUMPY include dir: ${NUMPY_INCLUDE_DIR}")
   ## cmakefile for building build-in FDTD code
   add_subdirectory(./fdtd/ libfdtd)
   #target_link_libraries(intfdtd PUBLIC fdtd)

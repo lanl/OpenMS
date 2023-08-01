@@ -85,6 +85,7 @@ set(WRAPPER-C
 )
 
 include_directories(${Python3_INCLUDE_DIRS})
+include_directories(${NUMPY_INCLUDE_DIR})
 include_directories(${GSL_INCLUDE_DIRS})
 
 # Create _fdtdc Python extension module

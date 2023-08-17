@@ -55,3 +55,4 @@ DSOLVE_LINDEP = getattr(__config__, "lib_linalg_helper_dsolve_lindep", 1e-15)
 MAX_MEMORY = getattr(__config__, "lib_linalg_helper_davidson_max_memory", 2000)  # 2GB
 
 # other math algorithms TBA
+

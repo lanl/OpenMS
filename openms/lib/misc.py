@@ -1,15 +1,15 @@
 #
 # @ 2023. Triad National Security, LLC. All rights reserved.
 #
-#This program was produced under U.S. Government contract 89233218CNA000001
+# This program was produced under U.S. Government contract 89233218CNA000001
 # for Los Alamos National Laboratory (LANL), which is operated by Triad
-#National Security, LLC for the U.S. Department of Energy/National Nuclear
-#Security Administration. All rights in the program are reserved by Triad
-#National Security, LLC, and the U.S. Department of Energy/National Nuclear
-#Security Administration. The Government is granted for itself and others acting
-#on its behalf a nonexclusive, paid-up, irrevocable worldwide license in this
-#material to reproduce, prepare derivative works, distribute copies to the
-#public, perform publicly and display publicly, and to permit others to do so.
+# National Security, LLC for the U.S. Department of Energy/National Nuclear
+# Security Administration. All rights in the program are reserved by Triad
+# National Security, LLC, and the U.S. Department of Energy/National Nuclear
+# Security Administration. The Government is granted for itself and others acting
+# on its behalf a nonexclusive, paid-up, irrevocable worldwide license in this
+# material to reproduce, prepare derivative works, distribute copies to the
+# public, perform publicly and display publicly, and to permit others to do so.
 #
 # Author: Yu Zhang <zhy@lanl.gov>
 #
@@ -28,18 +28,20 @@ c_null_ptr = ctypes.POINTER(ctypes.c_void_p)
 def load_library(libname):
     try:
         _loaderpath = os.path.dirname(__file__)
-        print('debug-zy: __file__=', __file__)
-        print('debug-zy: _loaderpath=', _loaderpath)
+        print("debug-zy: __file__=", __file__)
+        print("debug-zy: _loaderpath=", _loaderpath)
         return numpy.ctypeslib.load_library(libname, _loaderpath)
     except OSError:
         from openms import __path__ as ext_modules
+
         for path in ext_modules:
-            libpath = os.path.join(path, 'lib')
+            libpath = os.path.join(path, "lib")
             if os.path.isdir(libpath):
                 for files in os.listdir(libpath):
                     if files.startswith(libname):
                         return numpy.ctypeslib.load_library(libname, libpath)
         raise
+
 
 # Atomic weight
 periodictable = {
@@ -226,6 +228,8 @@ def typewriter(string, dir_name, filename, mode):
 # derived molecule class
 from pyscf.gto import mole
 from pyscf import data
+
+
 class Molecule(mole.Mole):
 
     def __init__(self, **kwargs):

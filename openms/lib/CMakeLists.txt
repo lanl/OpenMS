@@ -33,12 +33,6 @@ else(OPENMS_PRERELEASE_ID)
   set(OPENMS_EXT_VERSION "${OPENMS_VERSION}")
 endif(OPENMS_PRERELEASE_ID)
 
-project(openms
-        VERSION ${OPENMS_VERSION}
-	DESCRIPTION "OpenMS: python package for solving multiscale/multi-physics light-matter interactions problems in both closed and open quantum systems"
-        HOMEPAGE_URL "https://openms-lmi.readthedocs.io/en/latest/")
-enable_language(C)  # C needed even for basic platform introspection
-
 # MAD default number of threads ================================================
 set(MAD_NUM_THREADS 2)
 
@@ -71,6 +65,12 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(cmake_kit)
 list(APPEND CMAKE_MODULE_PATH "${cmake_kit_SOURCE_DIR}/modules")
+
+project(openms
+        VERSION ${OPENMS_VERSION}
+	DESCRIPTION "OpenMS: python package for solving multiscale/multi-physics light-matter interactions problems in both closed and open quantum systems"
+        HOMEPAGE_URL "https://openms-lmi.readthedocs.io/en/latest/")
+enable_language(C)  # C needed even for basic platform introspection
 
 # ==============================================================================
 # old one, may be removed (todo)
@@ -213,6 +213,7 @@ message(STATUS "Python executable: ${Python3_EXECUTABLE}")
 message(STATUS "Python include dirs: ${Python3_INCLUDE_DIRS}")
 message(STATUS "Python libraries: ${Python3_LIBRARIES}")
 
+# get numpy include path
 
 # Architecture specified cmake flags.  See also the templates in
 # openms/lib/cmake_arch_config
@@ -401,6 +402,7 @@ if(ENABLE_MEEP)
     INSTALL_COMMAND make install
     #TEST_COMMAND make check
   )
+
   add_dependencies(meep mpb)
   add_dependencies(meep libctl)
 
@@ -408,6 +410,17 @@ if(ENABLE_MEEP)
   list(APPEND BUILD_TARGETS harminv)
   list(APPEND BUILD_TARGETS mpb)
   list(APPEND BUILD_TARGETS meep)
+
+  add_custom_target(run_meep_tests
+    ${CMAKE_COMMAND} -E env LDFLAGS=${LDFLAGS}
+    ${CMAKE_COMMAND} -E env CPPFLAGS=${CPPFLAGS}
+    make -C ${PROJECT_BINARY_DIR}/deps/src/meep check # we build in source
+    #make -C ${PROJECT_BINARY_DIR}/deps/src/meep-build check
+    DEPENDS meep
+  )
+
+  add_test(NAME meep_tests COMMAND ${CMAKE_MAKE_PROGRAM} run_meep_tests)
+
 endif()
 
 # cmake for building bml (TODO)
@@ -440,6 +453,7 @@ if(ENABLE_TA)
     #GIT_REPOSITORY https://github.com/ValeevGroup/tiledarray.git
     GIT_REPOSITORY https://github.com/ares201005/tiledarray.git
     GIT_TAG master
+    UPDATE_COMMAND ""
     # set cmake arguments for TA
     CMAKE_ARGS
         -B build
@@ -447,7 +461,7 @@ if(ENABLE_TA)
 	-DCMAKE_INSTALL_PREFIX=${PROJECT_INSTALL_DIR}
 	-DEIGEN3_INCLUDE_DIR=${EIGEN3_PATH}
         -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}
-        -DBUILD_DEPS_FROM_SOURC=ON
+        -DBUILD_DEPS_FROM_SOURCE=ON
 	-DMKLROOT=${MKLROOT}
 	-DENABLE_CUDA=${ENABLE_TACUDA}
 	-DENABLE_MPI=${ENABLE_MPI}

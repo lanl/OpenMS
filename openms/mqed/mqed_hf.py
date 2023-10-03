@@ -14,12 +14,18 @@
 # Author: Yu Zhang <zhy@lanl.gov>
 #
 
-from pyscf import lib
-from openms import __config__
-from pyscf.scf import hf
 import sys
 import copy
 import numpy
+from openms import __config__
+from pyscf import lib
+from pyscf.scf import hf
+from pyscf.dft import rks
+
+# from mqed.lib      import logger
+
+TIGHT_GRAD_CONV_TOL = getattr(__config__, "scf_hf_kernel_tight_grad_conv_tol", True)
+
 
 # in the future, replace it with our own object?
 class TDMixin(lib.StreamObject):
@@ -97,7 +103,7 @@ class RHF(hf.RHF):
         self.mu_mo = None
         charges = self.mol.atom_charges()
         coords = self.mol.atom_coords()
-        charge_center = (0, 0, 0)  # np.einsum('i,ix->x', charges, coords)
+        charge_center = (0, 0, 0)  # numpy.einsum('i,ix->x', charges, coords)
         with self.mol.with_common_orig(charge_center):
             self.mu_mat_ao = self.mol.intor_symmetric("int1e_r", comp=3)
             self.qmat = -self.mol.intor("int1e_rr")
@@ -122,7 +128,8 @@ class RHF(hf.RHF):
     def get_veff(self, mol=None, dm=None, dm_last=0, vhf_last=0, hermi=1):
         r"""QED Hartree-Fock potential matrix for the given density matrix
 
-        ::math::
+        .. math::
+
             V_{eff} = J - K/2 + \bra{i}\lambda\cdot\mu\ket{j}
 
         """

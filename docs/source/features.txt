@@ -1,19 +1,14 @@
 * MQED solvers
 
-  - QED-HF, QED-TDHF 
+  - QED-HF, QED-TDHF
   - QED-CC, QED-EOMCC
   - Multiscale QED-HF method
-  - Multiscale QED-CC
   - Multiscale QED-TDHF
+  - Multiscale QED-CC
 
 * Quantum dynamics propagators
 
   - AIMC
-
-* Mixed Quantum-Classical dynamics
-
-  - SH
-  - EHR
 
 * Quantum transport solvers
 

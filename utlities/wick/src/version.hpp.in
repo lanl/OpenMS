@@ -1,0 +1,37 @@
+//
+// Created by YZ
+//
+
+#ifndef QEDSQA_SRC_QEDSQA_VERSION_H_IN_H
+#define QEDSQA_SRC_QEDSQA_VERSION_H_IN_H
+
+/* QedSQA version X.Y.Z-id */
+#define QEDSQA_VERSION "@QEDSQA_VERSION@"
+
+/* QedSQA major version */
+#define QEDSQA_MAJOR_VERSION @QEDSQA_MAJOR_VERSION@
+
+/* QedSQA minor version */
+#define QEDSQA_MINOR_VERSION @QEDSQA_MINOR_VERSION@
+
+/* QedSQA micro version */
+#define QEDSQA_MICRO_VERSION @QEDSQA_MICRO_VERSION@
+
+/* QedSQA prerelease id */
+#define QEDSQA_PRERELEASE_ID "@QEDSQA_PRERELEASE_ID@"
+
+namespace qedsqa {
+
+/** \return a string with the Git SHA1 revision hash tag of QedSQA */
+const char* git_revision() noexcept;
+
+/**
+ * \return a string with the human-readable description of the current source
+ *   tree of QedSQA
+ * \note see `git describe --dirty` for the format description
+ * */
+const char* git_description() noexcept;
+
+}  // namespace qedsqa
+
+#endif  // QEDSQA_SRC_QEDSQA_VERSION_H_IN_H

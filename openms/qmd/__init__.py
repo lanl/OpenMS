@@ -1,15 +1,15 @@
 #
 # @ 2023. Triad National Security, LLC. All rights reserved.
 #
-#This program was produced under U.S. Government contract 89233218CNA000001 
-# for Los Alamos National Laboratory (LANL), which is operated by Triad 
-#National Security, LLC for the U.S. Department of Energy/National Nuclear 
-#Security Administration. All rights in the program are reserved by Triad 
-#National Security, LLC, and the U.S. Department of Energy/National Nuclear 
-#Security Administration. The Government is granted for itself and others acting 
-#on its behalf a nonexclusive, paid-up, irrevocable worldwide license in this 
-#material to reproduce, prepare derivative works, distribute copies to the 
-#public, perform publicly and display publicly, and to permit others to do so.
+# This program was produced under U.S. Government contract 89233218CNA000001
+# for Los Alamos National Laboratory (LANL), which is operated by Triad
+# National Security, LLC for the U.S. Department of Energy/National Nuclear
+# Security Administration. All rights in the program are reserved by Triad
+# National Security, LLC, and the U.S. Department of Energy/National Nuclear
+# Security Administration. The Government is granted for itself and others acting
+# on its behalf a nonexclusive, paid-up, irrevocable worldwide license in this
+# material to reproduce, prepare derivative works, distribute copies to the
+# public, perform publicly and display publicly, and to permit others to do so.
 #
 # Author: Yu Zhang <zhy@lanl.gov>
 #
@@ -48,7 +48,7 @@ With the Born-Oppenhermier approximation, the electronic wave function :math:`\T
 
 .. math::
 
-    \Theta(\textbf{r},\textbf{R}) = \sum_{n=1}^{N_{st}} c_n(t)\ket{\Phi_{n}(\textbf{r},\textbf{R}(t))}. 
+    \Theta(\textbf{r},\textbf{R}) = \sum_{n=1}^{N_{st}} c_n(t)\ket{\Phi_{n}(\textbf{r},\textbf{R}(t))}.
 
 Within MQC scheme, the clear trajectories which are obtained by solving the classical Newton’s equations of motion (EOMs)
 
@@ -56,7 +56,7 @@ Within MQC scheme, the clear trajectories which are obtained by solving the clas
 
    M_{A}\frac{d^2\textbf{R}_{A}}{dt^2} = -\nabla_{\textbf{R}_{A}}E(\textbf{R}),
 
-While the eletronic WF is propagated quantum-mechanically (obtained by substituting electronic 
+While the eletronic WF is propagated quantum-mechanically (obtained by substituting electronic
 WF into the time-dependent Schr\"{o}dinger equation and keeping only the first-order nonadiabatic coupling terms):
 
 .. math::
@@ -73,7 +73,7 @@ is the nonadiabatic derivative coupling term (or nonadiabatic coupling vector, N
 which is responsible for the nonadiabatic transitions between different adiabatic states and can be easily calculated with many ab initio methods for excited states.
 
 
-Brief introduction to CTMQC 
+Brief introduction to CTMQC
 ---------------------------
 
 TBA
@@ -89,15 +89,20 @@ TBA
 """
 
 import openms.lib.backend as bd
-import numpy as np # replace np as bd (TODO)
+import numpy as np  # replace np as bd (TODO)
 from openms import __config__
 
 
 # Grabs the global SEED variable and creates the random number generator
-SEED = getattr(__config__, 'SEED', None)
+SEED = getattr(__config__, "SEED", None)
 rng = np.random.Generator(np.random.PCG64(SEED))
 
-#from .tsh import TrajectorySurfaceHopping as SH
+def set_seed(seed):
+    """Sets the seed for the random number generator used by the md module"""
+    global rng
+    rng = np.random.Generator(bd.random.PCG64(seed))
+
+
+# from .tsh import TrajectorySurfaceHopping as SH
 from .es_driver import QuantumDriver
 from .bomd import BOMD
-

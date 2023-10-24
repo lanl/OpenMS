@@ -1,0 +1,2 @@
+set(BLAS_LIBRARIES "-lblas" CACHE STRING "BLAS libraries")
+set(LAPACK_LIBRARIES "-llapack;${BLAS_LIBRARIES}" CACHE STRING "LAPACK libraries")

@@ -16,7 +16,8 @@ if(GSL_FOUND)
 else()
     message(WARNING "GSL library not found. It will be downloaded and built")
     ExternalProject_Add(gsl
-        URL ftp://ftp.gnu.org/gnu/gsl/gsl-2.4.tar.gz
+        URL https://ftp.gnu.org/gnu/gsl/gsl-2.4.tar.gz
+        #URL ftp://ftp.gnu.org/gnu/gsl/gsl-2.4.tar.gz
 	PREFIX ${PROJECT_BINARY_DIR}/gsl
         INSTALL_DIR ${PROJECT_SOURCE_DIR}/deps/
         CONFIGURE_COMMAND ../gsl/configure --prefix=<INSTALL_DIR>
@@ -85,6 +86,7 @@ set(WRAPPER-C
 )
 
 include_directories(${Python3_INCLUDE_DIRS})
+include_directories(${NUMPY_INCLUDE_DIR})
 include_directories(${GSL_INCLUDE_DIRS})
 
 # Create _fdtdc Python extension module
@@ -105,4 +107,18 @@ set_target_properties(_fdtdc PROPERTIES OUTPUT_NAME "_fdtdc")
 install(TARGETS _fdtdc
 	ARCHIVE DESTINATION ${PROJECT_SOURCE_DIR}/fdtd/
 	LIBRARY DESTINATION ${PROJECT_SOURCE_DIR}/fdtd)
+
+# -----------not used ------------
+#FIND_PACKAGE(SWIG REQUIRED)
+#INCLUDE(${SWIG_USE_FILE})
+
+#FIND_PACKAGE(PythonLibs)
+#INCLUDE_DIRECTORIES(${PYTHON_INCLUDE_PATH})
+
+#SET(CMAKE_SWIG_FLAGS "")
+
+#SET_SOURCE_FILES_PROPERTIES(pFDTD.i PROPERTIES CPLUSPLUS ON)
+#SET_SOURCE_FILES_PROPERTIES(pFDTD.i PROPERTIES SWIG_FLAGS "-includeall")
+#SWIG_ADD_MODULE(pFDTD python pFDTD.i ${SOURCES-C})
+#SWIG_LINK_LIBRARIES(pFDTD ${PYTHON_LIBRARIES})
 

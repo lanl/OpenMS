@@ -33,12 +33,6 @@ else(OPENMS_PRERELEASE_ID)
   set(OPENMS_EXT_VERSION "${OPENMS_VERSION}")
 endif(OPENMS_PRERELEASE_ID)
 
-project(openms
-        VERSION ${OPENMS_VERSION}
-	DESCRIPTION "OpenMS: python package for solving multiscale/multi-physics light-matter interactions problems in both closed and open quantum systems"
-        HOMEPAGE_URL "https://openms-lmi.readthedocs.io/en/latest/")
-enable_language(C)  # C needed even for basic platform introspection
-
 # MAD default number of threads ================================================
 set(MAD_NUM_THREADS 2)
 
@@ -49,6 +43,8 @@ include(versions.cmake)
 if (NOT DEFINED CACHE{CMAKE_FIND_NO_INSTALL_PREFIX})
   set(CMAKE_FIND_NO_INSTALL_PREFIX ON CACHE BOOL "Whether find_* commands will search CMAKE_INSTALL_PREFIX and CMAKE_STAGING_PREFIX; see https://cmake.org/cmake/help/latest/variable/CMAKE_FIND_NO_INSTALL_PREFIX.html#variable:CMAKE_FIND_NO_INSTALL_PREFIX")
 endif()
+
+message("CMAKE_TOOLCHIAN_FILE=" ${CMAKE_TOOLCHAIN_FILE})
 
 # Bring camek toolkit ==========================================================
 # FetchContent is used to download and include external projects or libraries  
@@ -69,6 +65,12 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(cmake_kit)
 list(APPEND CMAKE_MODULE_PATH "${cmake_kit_SOURCE_DIR}/modules")
+
+project(openms
+        VERSION ${OPENMS_VERSION}
+	DESCRIPTION "OpenMS: python package for solving multiscale/multi-physics light-matter interactions problems in both closed and open quantum systems"
+        HOMEPAGE_URL "https://openms-lmi.readthedocs.io/en/latest/")
+enable_language(C)  # C needed even for basic platform introspection
 
 # ==============================================================================
 # old one, may be removed (todo)
@@ -211,6 +213,7 @@ message(STATUS "Python executable: ${Python3_EXECUTABLE}")
 message(STATUS "Python include dirs: ${Python3_INCLUDE_DIRS}")
 message(STATUS "Python libraries: ${Python3_LIBRARIES}")
 
+# get numpy include path
 
 # Architecture specified cmake flags.  See also the templates in
 # openms/lib/cmake_arch_config
@@ -229,20 +232,6 @@ if (NOT BLAS_LIBRARIES)
 else()
   message(STATUS "BLAS libraries: ${BLAS_LIBRARIES}")
 endif()
-
-# if unable to find mkl library, just create BLAS_LIBRARIES here, e.g.
-# set(BLAS_LIBRARIES "-L/path/to/mkl/lib -lmkl_intel_lp64 -lmkl_sequential -lmkl_core -lpthread -lmkl_avx -lm")
-# or
-# set(BLAS_LIBRARIES "                  /path/to/mkl/lib/intel64/libmkl_intel_lp64.so")
-# set(BLAS_LIBRARIES "${BLAS_LIBRARIES};/path/to/mkl/lib/intel64/libmkl_sequential.so")
-# set(BLAS_LIBRARIES "${BLAS_LIBRARIES};/path/to/mkl/lib/intel64/libmkl_core.so")
-# set(BLAS_LIBRARIES "${BLAS_LIBRARIES};/path/to/mkl/lib/intel64/libmkl_avx.so")
-# set(BLAS_LIBRARIES "${BLAS_LIBRARIES};/path/to/mkl/lib/intel64/libmkl_def.so")
-# set(BLAS_LIBRARIES "-Wl,-rpath=${MKLROOT}/lib/intel64/ ${BLAS_LIBRARIES}")
-#
-# These settings can be written in the cmake.arch.inc file. This config file
-# will automatically load all settings specified in cmake.arch.inc
-#
 
 option(ENABLE_OPENMP "Compiling C extensions with openmp" ON)
 set(OPENMP_C_PROPERTIES "")
@@ -302,6 +291,15 @@ option(MEEP_GIT "Using github version of meep" OFF)
 set(BUILD_TARGETS)
 
 if(BUILD_INFDTD)
+
+  if(Python3_Interpreter_FOUND)
+    execute_process(
+        COMMAND ${Python3_EXECUTABLE} -c "import numpy; print(numpy.get_include())"
+        OUTPUT_VARIABLE NUMPY_INCLUDE_DIR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+  endif()
+  message(STATUS "NUMPY include dir: ${NUMPY_INCLUDE_DIR}")
   ## cmakefile for building build-in FDTD code
   add_subdirectory(./fdtd/ libfdtd)
   #target_link_libraries(intfdtd PUBLIC fdtd)
@@ -321,6 +319,9 @@ else()
   message("Looking for FFTW libraries...")
   find_library(FFTW_LIBRARIES NAMES fftw3 libfftw3)
 endif()
+
+message(STATUS "FFTW_LIBRARY_DIR: ${FFTW_LIBRARY_DIR}")
+
 get_filename_component(FFTW_LIBRARY_DIR ${FFTW_LIBRARIES} DIRECTORY)
 get_filename_component(FFTW_PARENT_DIR ${FFTW_LIBRARY_DIR} DIRECTORY)
 set(FFTW_INCLUDE_DIR ${FFTW_PARENT_DIR}/include)
@@ -401,6 +402,7 @@ if(ENABLE_MEEP)
     INSTALL_COMMAND make install
     #TEST_COMMAND make check
   )
+
   add_dependencies(meep mpb)
   add_dependencies(meep libctl)
 
@@ -408,6 +410,17 @@ if(ENABLE_MEEP)
   list(APPEND BUILD_TARGETS harminv)
   list(APPEND BUILD_TARGETS mpb)
   list(APPEND BUILD_TARGETS meep)
+
+  add_custom_target(run_meep_tests
+    ${CMAKE_COMMAND} -E env LDFLAGS=${LDFLAGS}
+    ${CMAKE_COMMAND} -E env CPPFLAGS=${CPPFLAGS}
+    make -C ${PROJECT_BINARY_DIR}/deps/src/meep check # we build in source
+    #make -C ${PROJECT_BINARY_DIR}/deps/src/meep-build check
+    DEPENDS meep
+  )
+
+  add_test(NAME meep_tests COMMAND ${CMAKE_MAKE_PROGRAM} run_meep_tests)
+
 endif()
 
 # cmake for building bml (TODO)
@@ -440,13 +453,15 @@ if(ENABLE_TA)
     #GIT_REPOSITORY https://github.com/ValeevGroup/tiledarray.git
     GIT_REPOSITORY https://github.com/ares201005/tiledarray.git
     GIT_TAG master
+    UPDATE_COMMAND ""
     # set cmake arguments for TA
-    CMAKE_ARGS 
-        -B build 
+    CMAKE_ARGS
+        -B build
+	-DBUILD_TESTS=ON
 	-DCMAKE_INSTALL_PREFIX=${PROJECT_INSTALL_DIR}
 	-DEIGEN3_INCLUDE_DIR=${EIGEN3_PATH}
-        -DCMAKE_TOOLCHAIN_FILE=${toolchainpath}/gcc-mpi-mkl-tbb.cmake
-        -DBUILD_DEPS_FROM_SOURC=ON 
+        -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}
+        -DBUILD_DEPS_FROM_SOURCE=ON
 	-DMKLROOT=${MKLROOT}
 	-DENABLE_CUDA=${ENABLE_TACUDA}
 	-DENABLE_MPI=${ENABLE_MPI}
@@ -463,6 +478,12 @@ if(ENABLE_TA)
   )
 
   list(APPEND BUILD_TARGETS libta)
+
+  ExternalProject_Get_Property(libta binary_dir)
+  add_test(
+    NAME test_libta
+    COMMAND ${CMAKE_COMMAND} --build ${binary_dir} --target test
+  )
 endif()
 
 

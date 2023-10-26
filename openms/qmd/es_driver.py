@@ -33,7 +33,7 @@ class QuantumDriver(object):
         """
         raise NotImplementedError("Method Not Implemented")
 
-    get_forces = nuc_grad
+    calculate_forces = nuc_grad
 
     def get_nact(self, that):
         r"""Function for computing the NACT using wavefunction overlap method,

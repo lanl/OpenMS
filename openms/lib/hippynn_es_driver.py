@@ -1,15 +1,15 @@
 #
 # @ 2023. Triad National Security, LLC. All rights reserved.
 #
-#This program was produced under U.S. Government contract 89233218CNA000001
+# This program was produced under U.S. Government contract 89233218CNA000001
 # for Los Alamos National Laboratory (LANL), which is operated by Triad
-#National Security, LLC for the U.S. Department of Energy/National Nuclear
-#Security Administration. All rights in the program are reserved by Triad
-#National Security, LLC, and the U.S. Department of Energy/National Nuclear
-#Security Administration. The Government is granted for itself and others acting
-#on its behalf a nonexclusive, paid-up, irrevocable worldwide license in this
-#material to reproduce, prepare derivative works, distribute copies to the
-#public, perform publicly and display publicly, and to permit others to do so.
+# National Security, LLC for the U.S. Department of Energy/National Nuclear
+# Security Administration. All rights in the program are reserved by Triad
+# National Security, LLC, and the U.S. Department of Energy/National Nuclear
+# Security Administration. The Government is granted for itself and others acting
+# on its behalf a nonexclusive, paid-up, irrevocable worldwide license in this
+# material to reproduce, prepare derivative works, distribute copies to the
+# public, perform publicly and display publicly, and to permit others to do so.
 #
 # Author: Xinyang Li <lix@lanl.gov>
 #
@@ -45,10 +45,19 @@ if HIPPYNN_AVAILABLE and TORCH_AVAILABLE:
     #
     class NNDriver(QuantumDriver):
         def __init__(
-            self, nstates: int, model_path: str, model_device="cpu", multi_targets=True
-            ):
+            self,
+            molecule: Union[Molecule, List[Molecule]],
+            nstates: int,
+            model_path: str,
+            coords_unit="Angstrom",
+            energy_conversion=0.036749405469679,
+            model_device="cpu",
+            multi_targets=True,
+        ):
             r"""Initialize the driver with a HIPNN model.
 
+            :param molecule: object of a molecule or list of molecules
+            :type molecule: Union[Molecule, List[Molecule]]
             :param nstates: number of states needed in the simulation.
             :type nstates: int
             :param model_path: the directory where the saved model is located.
@@ -67,6 +76,7 @@ if HIPPYNN_AVAILABLE and TORCH_AVAILABLE:
                     " electronic structure driver."
                 )
             super().__init__()
+            self.mol = molecule
             self.nstates = nstates
             self.state_pairs = torch.triu_indices(nstates, nstates, 1).T
             current_dir = os.getcwd()
@@ -81,27 +91,42 @@ if HIPPYNN_AVAILABLE and TORCH_AVAILABLE:
                 self.model, model_device=model_device, requires_grad=True
             )
             self.multi_targets = multi_targets
-
-        def get_Z_R(self, molecule: Union[Molecule, List[Molecule]]):
-            r"""Convert the element symbols to a tensor of atomic numbers (Z) and molecular
-                positions to a tensor of coordinates (R). No changes of species or number of
-                molecules are expected, so the Z and R tensors are saved within this class.
-
-            :param molecule: molecule or molecules.
-            :type molecule: Union[Molecule, List[Molecule]]
-            """
-            if isinstance(molecule, Molecule):
-                Z = [[periodictable[a]["z"] for a in molecule.elements]]
-                R = [molecule.coords]
+            self.coords_unit = coords_unit
+            # eV to au
+            self.energy_conversion = energy_conversion
+            if coords_unit == "Angstrom":
+                # Angstrom to au
+                self.coords_conversion = 1.8897259886
             else:
-                Z = [[periodictable[a]["z"] for a in mol.elements] for mol in molecule]
-                R = [_.coords for _ in molecule]
+                self.coords_conversion = 1
+
+        def get_Z(self):
+            r"""Convert the element symbols to a tensor of atomic numbers (Z). This only
+            need to be run once. when the class is initialized."""
+            if isinstance(self.mol, Molecule):
+                Z = [[periodictable[a]["z"] for a in self.mol.elements]]
+            else:
+                Z = [[periodictable[a]["z"] for a in mol.elements] for mol in self.mol]
             # lower case tensor to keep the int type
             self.Z = torch.tensor(Z)
+            del Z
+
+        def get_R(self):
+            r"""Convert the molecular positions to a tensor of coordinates (R). This
+            conversion needs to be done every time when the coordinates are updated,
+            for example, in MD simulations.
+            """
+            if isinstance(self.mol, Molecule):
+                # R = [self.mol.atom_coords(unit=self.coords_unit)]
+                R = [self.mol.coords]
+            else:
+                R = [_.coords for _ in self.mol]
+                # R = [_.atom_coords(unit=self.coords_unit) for _ in self.mol]
             # converting list of np.nparray to tensor is extremely slow
             # could use some optimizations here
-            self.R = torch.Tensor(np.array(R))
-            del Z, R
+            # convert unit from a.u. to Angstrom
+            self.R = torch.Tensor(np.array(R)) / self.coords_conversion
+            del R
 
         # At this moment the model is assumed to
         #   1. have the same number of states as the simulation
@@ -114,7 +139,9 @@ if HIPPYNN_AVAILABLE and TORCH_AVAILABLE:
             within the class, as NNDriver.pred.
 
             """
+            self.get_R()
             self.pred = self.predictor(Z=self.Z, R=self.R)
+            self.pred["E"] *= self.energy_conversion
 
         def nuc_grad(self):
             e = self.pred["E"]
@@ -123,12 +150,22 @@ if HIPPYNN_AVAILABLE and TORCH_AVAILABLE:
                 force.append(
                     torch.autograd.grad(e[:, i].sum(), self.R, retain_graph=True)[0]
                 )
-            return torch.stack(force, dim=1)
+            return -torch.stack(force, dim=1) / self.coords_conversion
 
-        get_forces = nuc_grad
+        def _assign_forces(self, molecule: Molecule, force: torch.Tensor):
+            for i in range(self.nstates):
+                molecule.states[i].forces = force[i]
 
-        def get_nact(
-            self, molecule: Union[Molecule, List[Molecule]], nacr: torch.Tensor):
+        def calculate_force(self):
+            self.make_predictions()
+            forces = self.nuc_grad().numpy()
+            if isinstance(self.mol, Molecule):
+                self._assign_forces(self.mol, forces[0])
+            else:
+                for i, mol in enumerate(self.mol):
+                    self._assign_forces(mol, forces[i])
+
+        def get_nact(self, nacr: torch.Tensor):
             r"""Return the non-adiabatic coupling terms (NACT) between all pairs of excited
                states. Calculated from NACR and nuclear velocities.
 
@@ -139,17 +176,15 @@ if HIPPYNN_AVAILABLE and TORCH_AVAILABLE:
                   NACT(t_i) = NACR(t_i) \cdot v(t_i)
                \begin{align*}
 
-            :param molecule: molecule or molecules.
-            :type molecule: Union[Molecule, List[Molecule]]
             :param nacr: NACR. Shape (n_molecules, n_state_pairs, natoms, 3).
             :type nacr: torch.Tensor
             :return: NACT. Shape (n_molecules, n_state_pairs).
             :rtype: torch.Tensor
             """
-            if isinstance(molecule, Molecule):
-                v = [molecule.veloc]
+            if isinstance(self.mol, Molecule):
+                v = [self.mol.veloc]
             else:
-                v = [_.veloc for _ in molecule]
+                v = [_.veloc for _ in self.mol]
             v = torch.Tensor(np.array(v))
             n_molecules, n_atoms, n_dims = v.shape
             # reshape velocities for batched matrix multiplications
@@ -190,6 +225,18 @@ if HIPPYNN_AVAILABLE and TORCH_AVAILABLE:
             :rtype: torch.Tensor
             """
             return self.pred["E"]
+
+        def _assign_energies(self, molecule: Molecule, energy: torch.Tensor):
+            for i in range(self.nstates):
+                molecule.states[i].energy = energy[i].detach().numpy()
+
+        def update_potential(self):
+            e = self.pred["E"]
+            if isinstance(self.mol, Molecule):
+                self._assign_energies(self.mol, e[0])
+            else:
+                for i, mol in enumerate(self.mol):
+                    self._assign_energies(mol, e[i])
 
         def get_dipoles(self):
             r"""Return the transition dipoles of all states.

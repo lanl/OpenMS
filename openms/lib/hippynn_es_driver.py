@@ -34,6 +34,7 @@ except ImportError:
     TORCH_AVAILABLE = False
 
 import numpy as np
+
 from openms.lib.misc import Molecule, periodictable
 from openms.qmd.es_driver import QuantumDriver
 
@@ -103,10 +104,7 @@ if HIPPYNN_AVAILABLE and TORCH_AVAILABLE:
         def get_Z(self):
             r"""Convert the element symbols to a tensor of atomic numbers (Z). This only
             need to be run once. when the class is initialized."""
-            if isinstance(self.mol, Molecule):
-                Z = [[periodictable[a]["z"] for a in self.mol.elements]]
-            else:
-                Z = [[periodictable[a]["z"] for a in mol.elements] for mol in self.mol]
+            Z = [[periodictable[a]["z"] for a in mol.elements] for mol in self.mol]
             # lower case tensor to keep the int type
             self.Z = torch.tensor(Z)
             del Z
@@ -116,12 +114,8 @@ if HIPPYNN_AVAILABLE and TORCH_AVAILABLE:
             conversion needs to be done every time when the coordinates are updated,
             for example, in MD simulations.
             """
-            if isinstance(self.mol, Molecule):
-                # R = [self.mol.atom_coords(unit=self.coords_unit)]
-                R = [self.mol.coords]
-            else:
-                R = [_.coords for _ in self.mol]
-                # R = [_.atom_coords(unit=self.coords_unit) for _ in self.mol]
+            R = [_.coords for _ in self.mol]
+            # R = [_.atom_coords(unit=self.coords_unit) for _ in self.mol]
             # converting list of np.nparray to tensor is extremely slow
             # could use some optimizations here
             # convert unit from a.u. to Angstrom
@@ -159,11 +153,8 @@ if HIPPYNN_AVAILABLE and TORCH_AVAILABLE:
         def calculate_force(self):
             self.make_predictions()
             forces = self.nuc_grad().numpy()
-            if isinstance(self.mol, Molecule):
-                self._assign_forces(self.mol, forces[0])
-            else:
-                for i, mol in enumerate(self.mol):
-                    self._assign_forces(mol, forces[i])
+            for i, mol in enumerate(self.mol):
+                self._assign_forces(mol, forces[i])
 
         def get_nact(self, nacr: torch.Tensor):
             r"""Return the non-adiabatic coupling terms (NACT) between all pairs of excited
@@ -181,10 +172,7 @@ if HIPPYNN_AVAILABLE and TORCH_AVAILABLE:
             :return: NACT. Shape (n_molecules, n_state_pairs).
             :rtype: torch.Tensor
             """
-            if isinstance(self.mol, Molecule):
-                v = [self.mol.veloc]
-            else:
-                v = [_.veloc for _ in self.mol]
+            v = [_.veloc for _ in self.mol]
             v = torch.Tensor(np.array(v))
             n_molecules, n_atoms, n_dims = v.shape
             # reshape velocities for batched matrix multiplications
@@ -232,11 +220,8 @@ if HIPPYNN_AVAILABLE and TORCH_AVAILABLE:
 
         def update_potential(self):
             e = self.pred["E"]
-            if isinstance(self.mol, Molecule):
-                self._assign_energies(self.mol, e[0])
-            else:
-                for i, mol in enumerate(self.mol):
-                    self._assign_energies(mol, e[i])
+            for i, mol in enumerate(self.mol):
+                self._assign_energies(mol, e[i])
 
         def get_dipoles(self):
             r"""Return the transition dipoles of all states.

@@ -3,13 +3,16 @@ The code is modified from PyUnixMD(https://github.com/skmin-lab/unixmd)
 (todo) add PyUnixMD licenses and citations
 """
 
-import numpy
+import datetime
+import os
+import shutil
+import textwrap
 from typing import List, Union
-import openms
 
-from openms.lib.misc import Molecule, fs2au, au2A, au2K, call_name, typewriter
-import textwrap, datetime
-import os, shutil
+import numpy
+
+import openms
+from openms.lib.misc import Molecule, au2A, au2K, call_name, fs2au, typewriter
 
 
 class BaseMD(object):
@@ -24,7 +27,7 @@ class BaseMD(object):
     :param integer verbosity: Verbosity of output
     """
 
-    def __init__(self, molecule: Union[Molecule, List[Molecule]], thermostat, **kwargs):
+    def __init__(self, molecule: List[Molecule], thermostat, **kwargs):
         self.dt = 1.0
         self.nsteps = 10
         self.out_freq = 1
@@ -42,7 +45,7 @@ class BaseMD(object):
         self.cstep = -1  # classical step
         self.qstep = -1  # quantum step
 
-        self.force = numpy.zeros((self.mol.natm, self.mol.ndim))
+        # self.force = numpy.zeros((self.mol.natm, self.mol.ndim))
         # self.accel = numpy.zeros((self.mol.natm, self.mol.ndim))
         self.accel = None
 
@@ -149,25 +152,16 @@ class BaseMD(object):
     # def compute_accel(self):
     #    self.accel = self.force / self.mol.mass.reshape(-1,1)
 
-    def _update_position(self, coords: numpy.ndarray, veloc: numpy.ndarray):
+    def next_position(self):
         """Routine to update nuclear positions
 
         .. math::
             r(t_i+1) = r(t_i) + \Delta t * v(t_i) + 0.5(/delta t)^2 a(t_i)
         """
-        # self.mol.veloc += 0.5 * self.dt * self.force / self.mol.mass.reshape(-1, 1)
-        return coords + self.dt * veloc
-
-    def next_position_single_molecule(self):
-        self.mol.coords = self._update_position(self.mol.coords, self.mol.veloc)
-
-    def next_position_many_molecule(self):
         for mol in self.mol:
-            mol.coords = self._update_position(mol.coords, mol.veloc)
+            mol.coords += self.dt * mol.veloc
 
-    def _update_velocity(
-        self, veloc: numpy.ndarray, force: numpy.ndarray, mass: numpy.ndarray
-    ):
+    def next_velocity_many_molecule(self, current_state=0):
         """
         Compute the next velocity using the Velocity Verlet algorithm. The
         necessary equations of motion for the velocity is
@@ -179,38 +173,17 @@ class BaseMD(object):
         Hence, this function should be called twice, with forces at t_i + 1 and t_i respectively
         (the first is called with next_position).
         """
-        return veloc + 0.5 * self.dt * force / mass.reshape(-1, 1)
-
-    def next_velocity_single_molecule(self):
-        self.mol.veloc = self._update_velocity(
-            self.mol.veloc, self.mol.states[0].forces, self.mol.mass
-        )
-
-    def next_velocity_many_molecule(self):
         for mol in self.mol:
-            mol.veloc = self._update_velocity(mol.veloc, mol.states[0].forces, mol.mass)
-
-    def calculate_force(self):
-        """Routine to calculate the forces"""
-        pass
+            force = mol.states[current_state].forces
+            mol.veloc += 0.5 * self.dt * force / mol.mass.reshape(-1, 1)
 
     def update_potential(self):
         """Routine to update the potential of molecules"""
         pass
 
-    def update_energy_single_molecule(self):
-        self.mol.get_etot()
-
-    def update_energy_many_molecule(self):
+    def update_energy(self):
         for mol in self.mol:
             mol.get_etot()
-
-    def _temperature(self, ekin: float, ndof: int):
-        return ekin * 2.0 / ndof * au2K
-
-    def temperature_single_molecule(self):
-        self.mol.get_ekin()
-        return self._temperature(self.mol.ekin, self.mol.ndof)
 
     def temperature_many_molecule(self):
         ekin = 0
@@ -219,7 +192,7 @@ class BaseMD(object):
             self.mol.get_ekin()
             ekin += mol.ekin
             ndof += mol.ndof
-        return self._temperature(ekin, ndof)
+        return ekin * 2.0 / ndof * au2K
 
     def print_init(self, qm, restart):
         """Routine to print the initial information of dynamics
@@ -359,22 +332,10 @@ class BOMD(BaseMD):
     integer verbosity: Verbosity of output
     """
 
-    def __init__(
-        self, molecule: Union[Molecule, List[Molecule]], thermostat=None, **kwargs
-    ):
+    def __init__(self, molecule: List[Molecule], thermostat=None, **kwargs):
         # Initialize input values
         super().__init__(molecule, thermostat, **kwargs)
         self.md_type = self.__class__.__name__
-        if isinstance(molecule, Molecule):
-            self.next_position = self.next_position_single_molecule
-            self.next_velocity = self.next_velocity_single_molecule
-            self.update_energy = self.update_energy_single_molecule
-            self.temperature = self.temperature_single_molecule
-        else:
-            self.next_position = self.next_position_many_molecule
-            self.next_velocity = self.next_velocity_many_molecule
-            self.update_energy = self.update_energy_many_molecule
-            self.temperature = self.temperature_many_molecule
 
     def kernel(self, qm, **kwargs):
         r"""Run MQC dynamics according to BOMD"""
@@ -423,7 +384,9 @@ class BOMD(BaseMD):
             print(cstep)
             self.next_velocity()
             self.next_position()
-            qm.mol = self.mol
+            # TODO: wrap this into a function
+            for i in range(len(self.mol)):
+                qm.mol[i].coords = self.mol[i].coords
             # print("6\n", file=xyz)
             # for i in range(6):
             #     print(
@@ -439,6 +402,11 @@ class BOMD(BaseMD):
             # qm.get_data(self.mol, base_dir, bo_list, self.dt, cstep, force_only=False)
 
             qm.calculate_force()
+            # TODO: wrap this into a function
+            for i in range(len(self.mol)):
+                mol = self.mol[i]
+                for j in range(len(mol.states)):
+                    mol.forces = qm.mol[i].states[j].forces
             self.next_velocity()
 
             if self.thermo != None:
@@ -447,6 +415,11 @@ class BOMD(BaseMD):
             temp = self.temperature()
             # print("temperature", temp)
             qm.update_potential()
+            # TODO: wrap this into a function
+            for i in range(len(self.mol)):
+                mol = self.mol[i]
+                for j in range(len(mol.states)):
+                    mol.energy = qm.mol[i].states[j].energy
             self.update_energy()
             # print("total energy", self.mol.etot)
 

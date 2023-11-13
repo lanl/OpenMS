@@ -149,8 +149,6 @@ set(MPI_CXX_SKIP_MPICXX TRUE CACHE BOOL "MPI_CXX_SKIP_MPICXX")
 # Configure options ============================================================
 # all features are summaried at the end!
 
-
-
 option(ENABLE_MPI "Enable MPI" ON)
 option(ENABLE_QMD "Enable QMD/MQC/CTMQC" ON)
 option(ENABLE_MEEP "Using MEEP for solvng maxwell equations" ON)
@@ -330,8 +328,8 @@ message("FFTW library path: ${FFTW_LIBRARY_DIR}")
 message("FFTW include path: ${FFTW_INCLUDE_DIR}")
 
 if(ENABLE_MEEP)
-    # if building meep, we need to build libctl, harminv, mpb as well,
-    # a) build libctl
+  # if building meep, we need to build libctl, harminv, mpb as well,
+  # a) build libctl
   ExternalProject_Add(libctl
     URL https://github.com/NanoComp/libctl/releases/download/v4.2.0/libctl-4.2.0.tar.gz
     PREFIX ${PROJECT_BINARY_DIR}/deps
@@ -436,12 +434,10 @@ endif()
 # build Tiledarray 
 # TODO
 # find path to python
-# specify toolchainpath
 
 if(ENABLE_TA)
   message("TA lib will be build")
   message("EIGEN3 PATH is:      " ${EIGEN3_PATH})
-  message("toolchain used is:   " ${toolchainpath})
   message("Use scalapack in TA: " ${ENABLE_TASCALAPACK})
   message("Enable CUDA in TA:   " ${ENABLE_TACUDA})
   message("Enable MPI in TA:    " ${ENABLE_MPI})
@@ -473,7 +469,7 @@ if(ENABLE_TA)
     INSTALL_COMMAND cmake --build build --target install
     TEST_COMMAND "" # empty command, will not run tests during build
     #TEST_COMMAND cmake --build build --target check
-    TEST_AFTER_INSTALL TRUE # Run tests after installation with "make check" 
+    TEST_AFTER_INSTALL TRUE # Run tests after installation with "make check"
     #CMAKE_CACHE_ARGS
   )
 
@@ -487,7 +483,7 @@ if(ENABLE_TA)
 endif()
 
 
-# build TAMM 
+# build TAMM
 if(BUILD_TAMM) # git@github.com:NWChemEx-Project/TAMM.git
   ExternalProject_Add(libtamm
     PREFIX ${PROJECT_BINARY_DIR}/deps
@@ -495,7 +491,6 @@ if(BUILD_TAMM) # git@github.com:NWChemEx-Project/TAMM.git
     GIT_REPOSITORY https://github.com/NWChemEx-Project/TAMM.git
     GIT_TAG main
   )
-  
 endif() # ENABLE_LIBXC
 
 ## build target
@@ -503,10 +498,10 @@ endif() # ENABLE_LIBXC
 #  DEPENDS ${MY_PROJECT_TARGETS}
 #)
 
-add_custom_target(test
-  COMMAND ${CMAKE_COMMAND} --build . --target test --config $<CONFIGURATION>
-#  DEPENDS build_external_projects
-)
+#add_custom_target(test
+#  COMMAND ${CMAKE_COMMAND} --build . --target test --config $<CONFIGURATION>
+##  DEPENDS build_external_projects
+#)
 
 
 message("")

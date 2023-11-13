@@ -16,8 +16,8 @@ if(GSL_FOUND)
 else()
     message(WARNING "GSL library not found. It will be downloaded and built")
     ExternalProject_Add(gsl
-        URL https://ftp.gnu.org/gnu/gsl/gsl-2.4.tar.gz
-        #URL ftp://ftp.gnu.org/gnu/gsl/gsl-2.4.tar.gz
+        #URL https://ftp.gnu.org/gnu/gsl/gsl-2.4.tar.gz
+        URL ftp://ftp.gnu.org/gnu/gsl/gsl-2.4.tar.gz
 	PREFIX ${PROJECT_BINARY_DIR}/gsl
         INSTALL_DIR ${PROJECT_SOURCE_DIR}/deps/
         CONFIGURE_COMMAND ../gsl/configure --prefix=<INSTALL_DIR>

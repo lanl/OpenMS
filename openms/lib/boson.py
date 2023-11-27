@@ -5,11 +5,12 @@ r"""
 from typing import Union, List
 import numpy
 from pyscf import gto
+from pyscf import lib
 from pyscf.lib import logger
 from cqcpy import utils
 
 
-def get_dipole_ao(mol, add_nuc=True):
+def get_dipole_ao(mol, add_nuc_dipole=True):
     r"""
     dipole integral
     """
@@ -18,7 +19,7 @@ def get_dipole_ao(mol, add_nuc=True):
     charges = mol.atom_charges()
     coords = mol.atom_coords()
     charge_center = (0, 0, 0)  # numpy.einsum('i,ix->x', charges, coords)
-    if add_nuc:
+    if add_nuc_dipole:
         charge_center = (
             numpy.einsum("i,ix->x", charges, coords) / mol.tot_electrons()
         )  # charges.sum()
@@ -27,7 +28,7 @@ def get_dipole_ao(mol, add_nuc=True):
     return dipole_ao
 
 
-def get_quadrupole_ao(mol, add_nuc=True):
+def get_quadrupole_ao(mol, add_nuc_dipole=True):
     r"""
     quadrupole integral
     | xx, xy, xz |
@@ -46,7 +47,7 @@ def get_quadrupole_ao(mol, add_nuc=True):
     charges = mol.atom_charges()
     coords = mol.atom_coords()
     charge_center = (0, 0, 0)  # numpy.einsum('i,ix->x', charges, coords)
-    if add_nuc:
+    if add_nuc_dipole:
         charge_center = (
             numpy.einsum("i,ix->x", charges, coords) / mol.tot_electrons()
         )  # charges.sum()
@@ -69,8 +70,9 @@ class Boson(object):
         vec=None,
         gfac=None,
         n_boson_states: Union[int, List[int]] = 1,
-        shift=True,
-        add_nuc = True
+        shift=False,
+        add_nuc_dipole = True,
+        **kwargs
     ):
         r"""
         :param object mol: molecule object
@@ -87,7 +89,7 @@ class Boson(object):
         self.verbose = self._mol.verbose
         self.stdout = self._mol.stdout
         self.shift = shift
-        self.add_nuc = add_nuc
+        self.add_nuc_dipole = add_nuc_dipole
 
         if omega is None:
             logger.warn(
@@ -131,6 +133,15 @@ class Boson(object):
                 )
             else:
                 self.gfac = gfac
+
+        self.use_cs = kwargs['use_cs'] if 'use_cs' in kwargs else True
+        if 'z_lambda' in kwargs:
+            self.z_lambda = kwargs['z_lambda']
+            self.use_cs = False
+            if len(self.z_lambda) != self.nmodes:
+                raise ValueError("z_lambda should has the same size cavity_freq!")
+        else:
+            self.z_lambda = numpy.zeros(self.nmodes)
 
         # If gfac is None and vec is not None,
         # normalize vec and set gfac as the normalization factor
@@ -235,6 +246,9 @@ class Boson(object):
             g_wx = self.get_geb_ao(mode)
             self.cs_z[mode] = -np.sum(ao_density * g_wx) / self.omega[mode]
 
+    def update_settings(self):
+        for k in range(self.nmodes):
+            pass
 
 # class phonon which will compute the phonon modes and e-ph coupling strength
 class Phonon(Boson):
@@ -254,7 +268,7 @@ class Photon(Boson):
         super().__init__(*args, **kwargs)
 
         # whether to add nuclear dipole contribution
-        #self.add_nuc = add_nuc
+        #self.add_nuc_dipole = add_nuc_dipole
 
         self.dipole_ao = None
         self.quadrupole_ao = None
@@ -271,10 +285,10 @@ class Photon(Boson):
         r"""
         return dipole matrix
         """
-        self.dipole_ao = get_dipole_ao(self._mol, add_nuc=self.add_nuc)
+        self.dipole_ao = get_dipole_ao(self._mol, add_nuc_dipole=self.add_nuc_dipole)
 
     def get_quadrupole_ao(self):
-        self.quadrupole_ao = get_quadrupole_ao(self._mol, add_nuc=self.add_nuc)
+        self.quadrupole_ao = get_quadrupole_ao(self._mol, add_nuc_dipole=self.add_nuc_dipole)
 
     def get_polarized_dipole_ao(self, mode):
         """
@@ -307,7 +321,9 @@ class Photon(Boson):
             nao = self._mol.nao_nr()
             gmat = numpy.empty((self.nmodes, nao, nao))
             for mode in range(self.nmodes):
-                gmat[mode] = self.get_polarized_dipole_ao(mode) * self.couplings[mode]
+                gmat[mode] = self.get_polarized_dipole_ao(mode) #* self.couplings[mode]
+                logger.debug(self, f" Norm of gao without w {numpy.linalg.norm(gmat[mode])}")
+                gmat[mode] *= self.couplings[mode]
                 #gmat = numpy.einsum("Jx,J,xuv->Juv", self.vec, self.gfac, self.dipole_ao)
             self.gmat = gmat
 
@@ -324,9 +340,40 @@ class Photon(Boson):
 
         logger.debug(self, f" Norm of Q_ao {numpy.linalg.norm(self.q_dot_lambda)}")
 
+    # hf  utilties
+    def update_cs(self, dm):
+        r"""
+        Update coherent state z_\alpha = \langle \lambda\cdot \boldsymbol{D}\rangle
+        """
+        #mu_mo = lib.einsum("pq, Xpq ->X", dm, self.dipole_ao)
+        #self.z_lambda = 0.0
+        #for imode in range(self.nmodes):
+        #    self.z_lambda -= self.couplings[imode] * numpy.dot(mu_mo, self.vec[imode]) # e_\alpha \cdot <D>
+
+        # CS z_\alpha = <\lambda\cdot D>
+        self.z_lambda = lib.einsum("pq, Xpq ->X", dm, self.gmat)
+
     # -------------------------------------------
     # post-hf integrals
     # -------------------------------------------
+    def add_oei_ao(self, dm):
+        r"""
+        return DSE-mediated oei.. This is universal for bare HF or QED-HF.
+        DSE-mediated oei
+
+        .. math::
+
+            -<\lambda\cdot D> g^\alpha_{uv} - 0.5 q^\alpha_{uv}
+            = -Tr[\rho g^\alpha] g^\alpha_{uv} - 0.5 q^\alpha_{uv}
+
+        """
+        self.get_q_dot_lambda()
+        self.get_gmatao()
+        if self.use_cs:
+            self.update_cs(dm)
+        oei = - lib.einsum("Xpq, X->pq", self.gmat, self.z_lambda)
+        oei -= numpy.sum(self.q_dot_lambda, axis=0)
+        return oei
 
     def get_mos(self):
         r"""
@@ -334,6 +381,7 @@ class Photon(Boson):
         """
 
         mf = self._mf
+        self.nmo = 2*self._mol.nao_nr()
         if mf.mo_coeff is None:
             mf.kernel()
         if mf.mo_occ.ndim == 1:
@@ -352,21 +400,38 @@ class Photon(Boson):
 
     def tmat(self):
         """Return T-matrix in the spin orbital basis."""
-        t = self.mol.get_hcore()
+        t = self._mol.get_hcore()
         return utils.block_diag(t, t)
 
     def fock(self):
         from pyscf import scf
+        from pyscf.scf import ghf
 
         if self.pa is None or self.pb is None:
             raise Exception("Cannot build Fock without density ")
-        h1 = self.mol.get_hcore()
+
+        #h1 = self._mol.get_hcore()
+        h1 = self._mf.get_hcore()
+
+        # add DSE-oei contribution
+        h1 += self.add_oei_ao(self.pa+self.pb)
+
         ptot = utils.block_diag(self.pa, self.pb)
         h1 = utils.block_diag(h1, h1)
-        myhf = scf.GHF(self.mol)
-        fock = h1 + myhf.get_veff(self.mol, dm=ptot)
+
+        # this only works for bare HF
+        #myhf = scf.GHF(self._mol)
+        #fock = h1 + myhf.get_veff(self._mol, dm=ptot)
+
+        # we use jk_buld from mf object instead
+        jkbuild = self._mf.get_jk
+        vj, vk = ghf.get_jk(self._mol, dm=ptot, hermi=1, jkbuild=jkbuild)
+        #vj, vk = self._mf.get_jk(self._mol, dm=self.pa+self.pb, hermi=1) # in ao
+        fock = h1 + vj - vk
+
         return fock
 
+    # this only works with bare HF
     def hf_energy(self):
         F = self.fock()
         T = self.tmat()
@@ -387,11 +452,11 @@ class Photon(Boson):
         va, vb = self.nmo // 2 - na, self.nmo // 2 - nb
         Co = utils.block_diag(self.ca[:, :na], self.cb[:, :nb])
         Cv = utils.block_diag(self.ca[:, na:], self.cb[:, nb:])
-        # print('entering fock')
-
-        # add DSE-mediated oei
 
         F = self.fock()
+        logger.debug(self, f" -YZ: F.shape = {F.shape}")
+        logger.debug(self, f" -YZ: Norm of F with DSE oei {numpy.linalg.norm(F)}")
+
         if self.shift:
             Foo = numpy.einsum("pi,pq,qj->ij", Co, F, Co) - 2 * numpy.einsum(
                 "I,pi,Ipq,qj->ij", self.xi, Co, self.gmatso, Co

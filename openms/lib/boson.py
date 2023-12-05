@@ -642,3 +642,7 @@ if __name__ == "__main__":
     for i in range(nmodes):
         g_wx = qed.get_geb_ao(i)
         print("e-ph coupling matrix of mode ", i, "is \n", g_wx)
+
+    # get I
+    I = qed.get_I()
+    F = qed.g_fock()

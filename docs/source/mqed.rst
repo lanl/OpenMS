@@ -13,14 +13,13 @@ Hamiltonian
 
 .. math::
 
-  \hat{H} = & \hat{H}_M + \sum_\alpha \omega_\alpha b^\dagger b + \sum_\alpha \boldsymbol{D}\cdot \boldsymbol{\lambda}_\alpha (b^\dagger+b) + \frac{1}{2}\sum_\alpha (\boldsymbol{D}\cdot \boldsymbol{\lambda}_\alpha)^2\\
-          = & \hat{H}_M + \sum_\alpha \omega_\alpha b^\dagger b + \sum_\alpha \lambda_\alpha  \boldsymbol{D}\cdot \boldsymbol{e}_\alpha  (b^\dagger+b)
+  \hat{H} = & \hat{H}_M + \sum_\alpha \omega_\alpha b^\dagger b + \sum_\alpha \sqrt{\frac{\omega_\alpha}{2}}\boldsymbol{D}\cdot \boldsymbol{\lambda}_\alpha (b^\dagger+b) + \frac{1}{2}\sum_\alpha (\boldsymbol{D}\cdot \boldsymbol{\lambda}_\alpha)^2\\
+          = & \hat{H}_M + \sum_\alpha \omega_\alpha b^\dagger b + \sum_\alpha \sqrt{\frac{\omega_\alpha}{2}}\lambda_\alpha \boldsymbol{D}\cdot \boldsymbol{e}_\alpha  (b^\dagger+b)
             + \frac{1}{2}\sum_\alpha (\lambda_\alpha\boldsymbol{D}\cdot \boldsymbol{e}_\alpha)^2
 
 where
 
-- :math:`\lambda_\alpha=\sqrt{\frac{1}{2\omega_\alpha V_\alpha}}`.
-  :math:`\lambda_\alpha=\sqrt{\frac{1}{2\omega_\alpha V_\alpha}}` and
+- :math:`\lambda_\alpha=\sqrt{\frac{1}{\epsilon V_\alpha}}` and
   :math:`e_\alpha` are the amplitude and unit vector of the photon mode, respectively.
 - :math:`V` is the cavity volume.
 - :math:`\omega` is the energy of the photon mode.
@@ -35,6 +34,14 @@ Program overview
    :undoc-members:
    :show-inheritance:
 
+QED Hartree-Fock
+----------------
+
+.. automodule:: openms.mqed.qedhf
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Self-consistent (variational) QED-HF solver
 -------------------------------------------
 
@@ -43,10 +50,10 @@ Self-consistent (variational) QED-HF solver
    :undoc-members:
    :show-inheritance:
 
-Multiscale Hartree-Fock
------------------------
+(Multiscale) QED Hartree-Fock
+-----------------------------
 
-.. automodule:: openms.mqed.mqed_hf
+.. automodule:: openms.mqed.ms_qedhf
    :members:
    :undoc-members:
    :show-inheritance:

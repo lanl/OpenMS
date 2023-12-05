@@ -23,10 +23,29 @@ from pyscf.scf import hf
 from pyscf.dft import rks
 # from mqed.lib      import logger
 
+from pyscf.lib import logger
+from pyscf.scf import diis
+from pyscf.scf import _vhf
+from pyscf.scf import chkfile
+from pyscf.data import nist
+from pyscf import __config__
+
+
+WITH_META_LOWDIN = getattr(__config__, 'scf_analyze_with_meta_lowdin', True)
+PRE_ORTH_METHOD = getattr(__config__, 'scf_analyze_pre_orth_method', 'ANO')
+MO_BASE = getattr(__config__, 'MO_BASE', 1)
+TIGHT_GRAD_CONV_TOL = getattr(__config__, 'scf_hf_kernel_tight_grad_conv_tol', True)
+MUTE_CHKFILE = getattr(__config__, 'scf_hf_SCF_mute_chkfile', False)
+
+
+# For code compatibility in python-2 and python-3
+if sys.version_info >= (3,):
+    unicode = str
+
 
 r"""
-Theoretical background
-^^^^^^^^^^^^^^^^^^^^^^
+Theoretical background of QEDHF
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Within the Coherent State (CS) representation (for photonic DOF), the
 QEDHF wavefunction ansatz is
@@ -57,36 +76,16 @@ With the ansatz, the QEDHF energy is
 
   E_{QEDHF}= E_{HF} + \frac{1}{2}\langle \boldsymbol{lambda}\cdot [\boldsymbol{D}-\langle \boldsymbol{D}\rangle)]^2\rangle,
 
-
 """
 
-from pyscf.lib import logger
-from pyscf.scf import diis
-from pyscf.scf import _vhf
-from pyscf.scf import chkfile
-from pyscf.data import nist
-from pyscf import __config__
 
-
-WITH_META_LOWDIN = getattr(__config__, 'scf_analyze_with_meta_lowdin', True)
-PRE_ORTH_METHOD = getattr(__config__, 'scf_analyze_pre_orth_method', 'ANO')
-MO_BASE = getattr(__config__, 'MO_BASE', 1)
-TIGHT_GRAD_CONV_TOL = getattr(__config__, 'scf_hf_kernel_tight_grad_conv_tol', True)
-MUTE_CHKFILE = getattr(__config__, 'scf_hf_SCF_mute_chkfile', False)
-
-# For code compatibility in python-2 and python-3
-if sys.version_info >= (3,):
-    unicode = str
-
-
-"""
- the only difference against bare hf kernel is that we include get_hcore within
- the scf cycle because qedhf has DSE-mediated hcore which depends on DM
-"""
-
+# this kernel is not used at this moment as it slows down the convergence !!!
 def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
            dump_chk=True, dm0=None, callback=None, conv_check=True, **kwargs):
-    '''kernel: the SCF driver.
+    '''kernel: the QEDHF SCF driver.
+
+    the only difference against bare hf kernel is that we include get_hcore within
+    the scf cycle because qedhf has DSE-mediated hcore which depends on DM
 
     Args:
         mf : an instance of SCF class
@@ -223,7 +222,8 @@ Keyword argument "init_dm" is replaced by "dm0"''')
         dm = mf.make_rdm1(mo_coeff, mo_occ)
         vhf = mf.get_veff(mol, dm, dm_last, vhf)
         if isinstance(mf, mqed.qedhf.RHF):
-            h1e = mf.get_hcore(mol, dm) # seems converg slower in thic as diis does not apply to hcore
+            # seems converge slower in this as diis does not apply to hcore
+            h1e = mf.get_hcore(mol, dm)
         e_tot = mf.energy_tot(dm, h1e, vhf)
 
         # Here Fock matrix is h1e + vhf, without DIIS.  Calling get_fock
@@ -433,18 +433,14 @@ class RHF(hf.RHF):
         vj_dse = numpy.zeros((n_dm,nao,nao))
         vk_dse = numpy.zeros((n_dm,nao,nao))
         for i in range(n_dm):
-            scaled_mu = 0.0
-            for imode in range(self.qed.nmodes):
-                scaled_mu += numpy.einsum("pq, pq ->", dm[i], self.gmat[imode])# <\lambada * D>
-
             # DSE-medaited J
-            for imode in range(self.qed.nmodes):
-                vj_dse[i] += scaled_mu * self.gmat[imode]
+            scaled_mu = lib.einsum("pq, Xpq ->X", dm[i], self.gmat)# <\lambada * D>
+            vj_dse[i] += lib.einsum("Xpq, X->pq", self.gmat, scaled_mu)
 
             # DSE-mediated K
-            vk_dse[i] += numpy.einsum("Xpr, Xqs, rs -> pq", self.gmat, self.gmat, dm[i])
-            #gdm = numpy.einsum("Xqs, rs -> Xqr", self.gmat, dm)
-            #vk += numpy.einsum("Xpr, Xqr -> pq", self.gmat, gdm)
+            vk_dse[i] += lib.einsum("Xpr, Xqs, rs -> pq", self.gmat, self.gmat, dm[i])
+            #gdm = lib.einsum("Xqs, rs -> Xqr", self.gmat, dm)
+            #vk += lib.einsum("Xpr, Xqr -> pq", self.gmat, gdm)
 
         vj += vj_dse.reshape(dm_shape)
         vk += vk_dse.reshape(dm_shape)
@@ -511,7 +507,7 @@ class RHF(hf.RHF):
 
         nuc = self.energy_nuc()
         e_tot = self.energy_elec(dm, h1e, vhf)[0] + nuc
-        e_tot += 0.5 * numpy.einsum("pq,pq->", self.oei, dm)
+        e_tot += 0.5 * lib.einsum("pq,pq->", self.oei, dm)
         dse = self.dse(dm)  # dipole sefl-energy(0.5*z^2)
         e_tot += dse
         self.scf_summary["nuc"] = nuc.real
@@ -628,6 +624,7 @@ def get_veff(mf, dm, dm_last=None):
 """
 
 
+# depreciated standalone qedhf function
 def qedrhf(model, options):
     # restricted qed hf
     # make a copy for qedhf
@@ -892,4 +889,3 @@ if __name__ == "__main__":
     qed.kernel()
     I = qed.get_I()
     F = qed.g_fock()
-

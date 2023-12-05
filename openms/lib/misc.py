@@ -323,6 +323,10 @@ class Molecule(mole.Mole):
         self.epot = self.states[self.current_state].energy
         self.etot = self.ekin + self.epot
 
+    def get_coefficient(self, init_coef, init_state):
+        self.coef = init_coef
+        self.state = init_state
+
     def reset_bo(self, calc_coupling):
         """Reset BO energies, forces and nonadiabatic couplings
 

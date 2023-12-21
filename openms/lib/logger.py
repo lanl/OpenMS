@@ -91,7 +91,7 @@ class Logger(object):
     def critical(self, message):
         if self.log_levels[self.verbose] >= self.log_levels["CRITICAL"]:
             self.log_basic("CRITICAL", message)
-    
+
     def log(self, message):
         if self.log_levels[self.verbose] >= self.log_levels["QUIET"]:
             self.log_basic("", message)

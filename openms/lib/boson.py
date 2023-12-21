@@ -8,7 +8,8 @@ from pyscf import gto
 from pyscf import lib
 from pyscf.lib import logger
 from cqcpy import utils
-
+from cqcpy.ov_blocks import one_e_blocks
+from cqcpy.ov_blocks import two_e_blocks, two_e_blocks_full
 
 def get_dipole_ao(mol, add_nuc_dipole=True):
     r"""
@@ -30,7 +31,7 @@ def get_dipole_ao(mol, add_nuc_dipole=True):
 
 def get_quadrupole_ao(mol, add_nuc_dipole=True):
     r"""
-    quadrupole integral
+    quadratic integral
     | xx, xy, xz |
     | yx, yy, yz |
     | zx, zy, zz |
@@ -317,6 +318,9 @@ class Photon(Boson):
         return g_wx
 
     def get_gmatao(self):
+        r"""
+        Only difference from get_geb_ao is the sqrt(w/2) factor in get_geb_ao
+        """
         if self.gmat is None:
             nao = self._mol.nao_nr()
             gmat = numpy.empty((self.nmodes, nao, nao))
@@ -486,26 +490,22 @@ class Photon(Boson):
         nao = self.nmo // 2
         C = numpy.hstack((self.ca, self.cb))
 
-        # add the DSE-mediated eri (todo)
+        if False:
+            # don't add DSE-mediated eri
+            eri = ao2mo.general(self._mol, [C,]*4, compact=False).reshape([self.nmo,]*4)
+        else:
+            # add the DSE-mediated eri
+            bare_eri =  self._mol.intor("int2e", aosym="s1")
+            logger.debug(self, f"bare_eri.shape {bare_eri.shape}")
+            for mode in range(self.nmodes):
+                bare_eri += numpy.einsum("pq,rs->pqrs", self.gmat[mode], self.gmat[mode])
+            eri = ao2mo.general(bare_eri, [C,]*4, compact=False).reshape([self.nmo,]*4)
 
-        eri = ao2mo.general(
-            self.mol,
-            [
-                C,
-            ]
-            * 4,
-            compact=False,
-        ).reshape(
-            [
-                self.nmo,
-            ]
-            * 4
-        )
-        eri[:nao, nao:] = eri[nao:, :nao] = eri[:, :, :nao, nao:] = eri[
-            :, :, nao:, :nao
-        ] = 0
-        # print("\nnorm(I_ao)=", numpy.linalg.norm(eri))
+        eri[:nao, nao:] = eri[nao:, :nao] = eri[:, :, :nao, nao:] = eri[:, :, nao:, :nao] = 0
+
         Ua_mo = eri.transpose(0, 2, 1, 3) - eri.transpose(0, 2, 3, 1)
+        logger.debug(self, f" -YZ: Norm of I with DSE eri {numpy.linalg.norm(Ua_mo)}")
+
         temp = [i for i in range(self.nmo)]
         oidx = temp[:na] + temp[self.nmo // 2 : self.nmo // 2 + nb]
         vidx = temp[na : self.nmo // 2] + temp[self.nmo // 2 + nb :]
@@ -597,6 +597,7 @@ class Photon(Boson):
         self.get_gmatao()
 
         # gmatso
+        # add factor of sqrt(w/2) into the coupling
         gmatso = [
             utils.block_diag(self.gmat[i], self.gmat[i]) for i in range(len(self.gmat))
         ]

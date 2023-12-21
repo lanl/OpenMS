@@ -82,6 +82,22 @@ __citation__ = textwrap.dedent(
 """
 )
 
+_citations = {}
+_citations["openms"] = __citation__
+
+_citations["scqedhf"] = textwrap.dedent(f"""\
+{" " * 4} X. Li and Y. Zhang, "First-principles molecular quantum electrodynamics theory
+{" " * 4}     at all coupling strengths, arXiv:2309.02349.
+""")
+
+_citations["pccp2023"] = textwrap.dedent(f"""\
+{" " * 4} BM Weight, X Li, Y Zhang, Theory and modeling of light-matter interactions in
+{" " * 4}     chemistry: current and future. Phys. Chem. Chem. Phys., 25, 31554 (2023).
+""")
+
+# create a emtpy citation dict to store the citation for each job
+runtime_refs = []
+
 #
 OPENMS_PATH = os.getenv("OPENMS_PATH")
 if OPENMS_PATH:

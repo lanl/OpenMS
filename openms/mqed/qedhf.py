@@ -24,10 +24,9 @@ from pyscf.dft import rks
 # from mqed.lib      import logger
 
 from pyscf.lib import logger
-from pyscf.scf import diis
+#from pyscf.scf import diis
 from pyscf.scf import _vhf
 from pyscf.scf import chkfile
-from pyscf.data import nist
 from pyscf import __config__
 
 
@@ -301,6 +300,7 @@ class TDMixin(lib.StreamObject):
 
 
 from openms.lib.boson import Photon
+import openms
 
 class RHF(hf.RHF):
     # class HF(lib.StreamObject):
@@ -310,6 +310,10 @@ class RHF(hf.RHF):
     """
 
     def __init__(self, mol, xc=None, **kwargs):
+        # print headers
+        print(self, openms.__logo__)
+        openms.runtime_refs.append(openms._citations["pccp2023"])
+
         hf.RHF.__init__(self, mol)
         # if xc is not None:
         #    rks.KohnShamDFT.__init__(self, xc)
@@ -507,11 +511,27 @@ class RHF(hf.RHF):
 
         nuc = self.energy_nuc()
         e_tot = self.energy_elec(dm, h1e, vhf)[0] + nuc
+
+        # Note we need the following terms just because we didn't add the self.oei term into
+        # the one-electorn part (h1e).
         e_tot += 0.5 * lib.einsum("pq,pq->", self.oei, dm)
         dse = self.dse(dm)  # dipole sefl-energy(0.5*z^2)
         e_tot += dse
+
         self.scf_summary["nuc"] = nuc.real
         return e_tot
+
+    def post_kernel(self, envs):
+        r"""
+        Use the post kernel to print citation informations
+        """
+        breakline = '='*80
+        print(f"\n{breakline}")
+        print(f"*  Hoollary, the job is done!\n")
+        print(f"Citations:")
+        for i, citation in enumerate(openms.runtime_refs):
+            print(f"[{i+1}]. {citation}")
+        print(f"{breakline}\n")
 
     """
     def scf(self, dm0=None, **kwargs):
@@ -540,7 +560,7 @@ class RHF(hf.RHF):
         return self.e_tot
     """
 
-#----------------------------------------------
+    #----------------------------------------------
 
     """
     def get_jk(self, mol=None, dm=None, hermi=1, with_j=True, with_k=True,

@@ -1,23 +1,7 @@
-/*    
 
-       ######*        
-             #*    #####*         *#######
-            ##     ##   ##        ##        ###*   #####*   ###*  
-          ##*      ##   ##  ***   #######   ##  #    ##     ##  #
-            ##     ##   ##        ##        ##  #    ##     ##  #
-             #*    #####*         #*        ###*     #*     ###* 
-       ######*
-
-                             Metal     < ver. 8.803 >
-                                                                    */
-
-/******************************************************************** 
+/********************************************************************
            3D Finite Difference Time Domain (FDTD)
-                      Version 8.803
 ---------------------------------------------------------------------
-Se-Heon Kim
-Department of Electrical Engineering, Caltech
-Bug report to : seheon@caltech.edu 
 ---------------------------------------------------------------------
 */
 
@@ -48,44 +32,44 @@ Bug report to : seheon@caltech.edu
 //-----------------------------------------------------------------//
 struct obj 
 {
-	char shape[10];
-	float centeri;
-	float centerj;
-	float centerk;
-	float size1;
-	float size2;
-	float size3;
-	float epsilon;
-	float **matrix;  // contour matrix data
-	int   col; // matrix col num
-	int   row; // matrix row num
+    char shape[10];
+    float centeri;
+    float centerj;
+    float centerk;
+    float size1;
+    float size2;
+    float size3;
+    float epsilon;
+    float **matrix;  // contour matrix data
+    int   col; // matrix col num
+    int   row; // matrix row num
 };
 struct mobj 
 {
-	char shape[10];
-	float centeri;
-	float centerj;
-	float centerk;
-	float size1;     ///////////// Drude model /////////////////
-	float size2;     //                                       //
-	float size3;     //                    (omega_p)^2        //
-	float epsilon_b; //  eps(w) = eps_b - ------------------  //  
-	float omega_p;   //                   w^2 + j w gamma_0   //
-	float gamma_0;   ///////////////////////////////////////////
-	float **matrix;  // contour matrix data
-	int   col; // matrix col num
-	int   row; // matrix row num
+    char shape[10];
+    float centeri;
+    float centerj;
+    float centerk;
+    float size1;     ///////////// Drude model /////////////////
+    float size2;     //                                       //
+    float size3;     //                    (omega_p)^2        //
+    float epsilon_b; //  eps(w) = eps_b - ------------------  //
+    float omega_p;   //                   w^2 + j w gamma_0   //
+    float gamma_0;   ///////////////////////////////////////////
+    float **matrix;  // contour matrix data
+    int   col; // matrix col num
+    int   row; // matrix row num
 };
 struct COMPLEX 
 {
-	float real;
-	float imag;
+    float real;
+    float imag;
 };
 struct ngrid_info // for non-uniform grid function
 {
-	int lattice_nz;
-	float nz_start;
-	float nz_end;
+    int lattice_nz;
+    float nz_start;
+    float nz_end;
 };
 
 //-----------------------------------------------------------------//
@@ -115,22 +99,23 @@ void input_object(char *shape,
                     float centerx,
                     float centery,
                     float centerz,
-                    float size1,	// discrination level
+                    float size1,    // discrination level
                     float size2,        // height
                     float size3,        // compression factor
                     float epsilon);
 void input_object_Euler_rotation(char *shape, 
-		char *matrix_file, 
-		float centerx, 
-		float centery, 
-		float centerz, 
-		float size1, 
-		float size2, 
-		float size3, 
-		float alpha, 
-		float beta, 
-		float gamma, 
-		float epsilon);
+        char *matrix_file, 
+        float centerx, 
+        float centery, 
+        float centerz, 
+        float size1, 
+        float size2,
+        float size3,
+        float alpha,
+        float beta,
+        float gamma,
+        float epsilon);
+void input_molecular(char *shape, float centerx, float centery, float centerz, float size1, float size2, float size3);
 void input_Drude_medium(char *shape, float centerx, float centery, float centerz, float size1, float size2, float size3, float epsilon_b, float omega_p, float gamma_0, float lattice_n);
 void input_Drude_medium2(char *shape, char *matrix_file, float centerx, float centery, float centerz, float size1, float size2, float size3, float epsilon_b, float omega_p, float gamma_0, float lattice_n);
 void random_object(char *shape, float radius, float height, float epsilon, float x_min, float x_max, float y_min, float y_max, float z_min, float z_max, int gen_number, int seed);
@@ -139,12 +124,19 @@ void far_field_param(float *OMEGA, float DETECT);
 void make_2n_size(int NROW, int mm);
 void far_field_FFT(int NROW, float NA, float Nfree, float *OMEGA, int mm);
 void coefficient();
+void coefficient_cpml();
 float sigmax(float a);
 float sigmay(float a);
 float sigmaz(float a);
+float cpmlax(float a, float pmlbl, float pmlbr);
+float cpmlbx(float a, float pmlbl, float pmlbr);
+float kappa_x(float a, float pmlbl, float pmlbr);
+
 void propagate();
 void propagate_tri(); ///// for triangular lattice
 void Gaussian_dipole_source(char *component,float x,float y,float z,float frequency,float phaes,long to,long tdecay);
+void external_source(char *component,float x,float y,float z,float Ext);
+void external_planewave(char *Ecomp, char *Hcomp, float z,float Ext);
 void Gaussian_planewave(char *Ecomp, char *Hcomp, float position, float frequency, long to,long tdecay);
 void Gaussian_beam_prop_Gauss(char *Ecomp, char *Hcomp, float x, float y, float z, float z_c, float wo, float n, float frequency, long to,long tdecay);
 void Lorentzian_planewave(char *Ecomp, char *Hcomp, float position, float frequency, long to,long tdecay);
@@ -227,6 +219,7 @@ extern float orderxr, orderyr, orderzr;
 extern float sig_axl, sig_ayl, sig_azl;
 extern float sig_axr, sig_ayr, sig_azr;
 extern float ds_x, ds_y, ds_z, dt;
+extern float dt_nm;
 extern float *ds_nz;
 extern float S_factor;
 extern float pi, eo, uo, ups, light_speed;
@@ -237,11 +230,16 @@ extern int xparity, yparity, zparity;
 extern float wave_vector_x, wave_vector_y;
 extern int use_periodic_x, use_periodic_y;  
 
+extern int m_pml,ma_pml;
+extern float sigmaCPML,alphaCPML,kappaCPML;
+
 /// in memory.c ///
 extern char ***position;
 extern float ***epsilonx,***epsilony,***epsilonz;
 extern float ***mepsilon,***momega,***mgamma;
 extern float ***Ex,***Ey,***Ez;
+extern float ***dPx,***dPy,***dPz;
+extern float ***dPx_old,***dPy_old,***dPz_old;
 extern float ***Jx,***Jy,***Jz;
 extern float ***Hx,***Hy,***Hz;
 extern float ***Dx,***Dy,***Dz;
@@ -268,14 +266,18 @@ extern float ***Ey_cos, ***Ey_sin;
 extern float ***Hx_cos, ***Hx_sin;
 extern float ***Hy_cos, ***Hy_sin;
 
+// cpml
+extern float ***psi_Exy, ***psi_Exz;
+extern float ***psi_Eyx, ***psi_Eyz;
+extern float ***psi_Ezy, ***psi_Ezx;
+extern float ***psi_Hxy, ***psi_Hxz;
+extern float ***psi_Hyx, ***psi_Hyz;
+extern float ***psi_Hzy, ***psi_Hzx;
+
+
 /// in input.c ///
 extern float back_epsilon;
 
 /// in output.c ///
 extern float global_W;
-
-
-
-
-
 

@@ -2,14 +2,14 @@
 #
 # @ 2023. Triad National Security, LLC. All rights reserved.
 #
-#This program was produced under U.S. Government contract 89233218CNA000001 
-# for Los Alamos National Laboratory (LANL), which is operated by Triad 
-#National Security, LLC for the U.S. Department of Energy/National Nuclear 
-#Security Administration. All rights in the program are reserved by Triad 
-#National Security, LLC, and the U.S. Department of Energy/National Nuclear 
-#Security Administration. The Government is granted for itself and others acting 
-#on its behalf a nonexclusive, paid-up, irrevocable worldwide license in this 
-#material to reproduce, prepare derivative works, distribute copies to the 
+#This program was produced under U.S. Government contract 89233218CNA000001
+# for Los Alamos National Laboratory (LANL), which is operated by Triad
+#National Security, LLC for the U.S. Department of Energy/National Nuclear
+#Security Administration. All rights in the program are reserved by Triad
+#National Security, LLC, and the U.S. Department of Energy/National Nuclear
+#Security Administration. The Government is granted for itself and others acting
+#on its behalf a nonexclusive, paid-up, irrevocable worldwide license in this
+#material to reproduce, prepare derivative works, distribute copies to the
 #public, perform publicly and display publicly, and to permit others to do so.
 #
 # Author: Yu Zhang <zhy@lanl.gov>
@@ -150,6 +150,7 @@ extern float orderxr, orderyr, orderzr;
 extern float sig_axl, sig_ayl, sig_azl;
 extern float sig_axr, sig_ayr, sig_azr;
 extern float ds_x, ds_y, ds_z, dt;
+extern float dt_nm;
 extern float *ds_nz;
 extern float S_factor;
 extern float pi, eo, uo, ups, light_speed;
@@ -158,14 +159,17 @@ extern int pisize, pjsize, pksize;
 extern int cisize, cjsize, cksize;
 extern int xparity, yparity, zparity;
 extern float wave_vector_x, wave_vector_y;
-extern int use_periodic_x, use_periodic_y;  
+extern int use_periodic_x, use_periodic_y;
 
-
+extern int m_pml,ma_pml;
+extern float sigmaCPML,alphaCPML,kappaCPML;
 
 extern char ***position;
 extern float ***epsilonx,***epsilony,***epsilonz;
 extern float ***mepsilon,***momega,***mgamma;
 extern float ***Ex,***Ey,***Ez;
+extern float ***dPx,***dPy,***dPz;
+extern float ***dPx_old,***dPy_old,***dPz_old;
 extern float ***Jx,***Jy,***Jz;
 extern float ***Hx,***Hy,***Hz;
 extern float ***Dx,***Dy,***Dz;
@@ -192,6 +196,12 @@ extern float ***Ey_cos, ***Ey_sin;
 extern float ***Hx_cos, ***Hx_sin;
 extern float ***Hy_cos, ***Hy_sin;
 
+extern float ***psi_Exy, ***psi_Exz;
+extern float ***psi_Eyx, ***psi_Eyz;
+extern float ***psi_Ezy, ***psi_Ezx;
+extern float ***psi_Hxy, ***psi_Hxz;
+extern float ***psi_Hyx, ***psi_Hyz;
+extern float ***psi_Hzy, ***psi_Hzx;
 
 extern float back_epsilon;
 extern float global_W;
@@ -212,8 +222,8 @@ void lattice_size(int lx, int ly, int lz);
 void non_uniform_grid(char *component, float z_i, float z_f, int nlz);
 int non_uniform_z_to_i(float z);
 float non_uniform_i_to_z(int i);
-int ngrid_lattice_nz_z(float z); 
-int ngrid_lattice_nz_i(int i); 
+int ngrid_lattice_nz_z(float z);
+int ngrid_lattice_nz_i(int i);
 int find_max_lattice_nz();
 void pml_size(int il,int ir,int jl,int jr,int kl,int kr);
 void set_default_parameter(float S);
@@ -224,29 +234,30 @@ void Hz_parity(int x,int y,int z);
 void periodic_boundary(int x_on, int y_on, float k_x, float k_y);
 void memory();
 void make_epsilon();
-void make_metal_structure(); 
+void make_metal_structure();
 void background(float epsilon);
 void input_object(char *shape,
                     char *matrix_file,
                     float centerx,
                     float centery,
                     float centerz,
-                    float size1,	// discrination level
+                    float size1,    // discrination level
                     float size2,        // height
                     float size3,        // compression factor
                     float epsilon);
-void input_object_Euler_rotation(char *shape, 
-		char *matrix_file, 
-		float centerx, 
-		float centery, 
-		float centerz, 
-		float size1, 
-		float size2, 
-		float size3, 
-		float alpha, 
-		float beta, 
-		float gamma, 
-		float epsilon);
+void input_object_Euler_rotation(char *shape,
+        char *matrix_file,
+        float centerx,
+        float centery,
+        float centerz,
+        float size1,
+        float size2,
+        float size3,
+        float alpha,
+        float beta,
+        float gamma,
+        float epsilon);
+void input_molecular(char *shape, float centerx, float centery, float centerz, float size1, float size2, float size3);
 void input_Drude_medium(char *shape, float centerx, float centery, float centerz, float size1, float size2, float size3, float epsilon_b, float omega_p, float gamma_0, float lattice_n);
 void input_Drude_medium2(char *shape, char *matrix_file, float centerx, float centery, float centerz, float size1, float size2, float size3, float epsilon_b, float omega_p, float gamma_0, float lattice_n);
 void random_object(char *shape, float radius, float height, float epsilon, float x_min, float x_max, float y_min, float y_max, float z_min, float z_max, int gen_number, int seed);
@@ -255,12 +266,18 @@ void far_field_param(float *OMEGA, float DETECT);
 void make_2n_size(int NROW, int mm);
 void far_field_FFT(int NROW, float NA, float Nfree, float *OMEGA, int mm);
 void coefficient();
+void coefficient_cpml();
 float sigmax(float a);
 float sigmay(float a);
 float sigmaz(float a);
+float cpmlax(float a, float pmlbl, float pmlbr);
+float cpmlbx(float a, float pmlbl, float pmlbr);
+float kappa_x(float a, float pmlbl, float pmlbr);
 void propagate();
 void propagate_tri(); ///// for triangular lattice
 void Gaussian_dipole_source(char *component,float x,float y,float z,float frequency,float phaes,long to,long tdecay);
+void external_source(char *component,float x,float y,float z,float Ext);
+void external_planewave(char *Ecomp, char *Hcomp, float z,float Ext);
 void Gaussian_planewave(char *Ecomp, char *Hcomp, float position, float frequency, long to,long tdecay);
 void Gaussian_beam_prop_Gauss(char *Ecomp, char *Hcomp, float x, float y, float z, float z_c, float wo, float n, float frequency, long to,long tdecay);
 void Lorentzian_planewave(char *Ecomp, char *Hcomp, float position, float frequency, long to,long tdecay);

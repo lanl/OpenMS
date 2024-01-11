@@ -1,9 +1,9 @@
 from typing import Callable, Union
 
-import numpy
+import numpy as np
 
 
-def rk4(func: Callable, t0: float, y0: Union[float, numpy.array], dt: float):
+def rk4(func: Callable, t0: float, y0: Union[float, np.array], dt: float):
     """Runge-Kutta 4 integrator for an arbitrary univariate function.
 
     :param func: derivate of the function needs to be integrated. dy/dt
@@ -17,6 +17,8 @@ def rk4(func: Callable, t0: float, y0: Union[float, numpy.array], dt: float):
     :return: value of function y at t0 + dt
     :rtype: Union[float, numpy.array]
     """
+    # TODO: the error of current implementation is slightly larger than scipy's
+    # FIXME: the current implementation suffers from much larger error when dt is increased
     k1 = func(t0, y0)
     k2 = func(t0 + dt / 2, y0 + k1 * dt / 2)
     k3 = func(t0 + dt / 2, y0 + k2 * dt / 2)

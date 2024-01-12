@@ -16,13 +16,14 @@
 from openms.qmd import QuantumDriver
 import numpy as np
 from math import erf
-from misc import eps
+from openms.lib.misc import eps
 import warnings
 
 """
 Shin-Metiu model:
     H=
 """
+
 
 # TO be finished
 class Shin_Metiu(QuantumDriver):
@@ -70,5 +71,3 @@ class Shin_Metiu(QuantumDriver):
 
         self.dx = (self.xmax - self.xmin) / float(self.nx - 1)
         self.H = np.zeros((self.nx, self.nx))
-
-

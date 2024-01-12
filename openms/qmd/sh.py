@@ -14,7 +14,7 @@ import numpy as np
 import openms
 from openms.lib.misc import Molecule, fs2au, au2A, call_name, typewriter
 from openms.qmd.es_driver import QuantumDriver
-from openms.qmd.propogator import rk4
+from openms.qmd.propagator import rk4
 from .mqc import MQC
 
 
@@ -63,7 +63,7 @@ class SH(MQC):
         # call the BaseMD.initialize for the nuclear part.
         base_dir, md_dir, qm_log_dir = super().initialize(*args)
 
-        # initialization for electroic part (TBD)
+        # initialization for electronic part (TBD)
         return base_dir, md_dir, qm_log_dir
         # return NotImplementedError("Method not implemented!")
 
@@ -137,3 +137,68 @@ class SH(MQC):
                     ham[i, k, j] = -nact[i, counter]
                     counter += 1
         return ham
+
+    def get_densities(self):
+        return np.einsum("ij, ik -> ijk", np.conj(self.coef), self.coef)
+
+    def hopping_probability(self, density: np.array):
+        # p = 2 * self.edt * density * self.curr_ham
+        # for i in range(len(self.mol)):
+        #     for j in range(self.states):
+        #         for k in range(self.states):
+        #             if j == k:
+        #                 p[i, j, k] = 0
+        #             else:
+        #                 p[i, j, k] = -np.real(p[i, j, k]) / density[i, j, j]
+        p = np.empty((len(self.mol), self.nstates))
+        for i in range(len(self.mol)):
+            current_state = self.states[i]
+            for j in range(self.states):
+                if j == current_state:
+                    p[i, j] = 0
+                else:
+                    tmp = -np.real(
+                        density[i, current_state, j]
+                        * self.curr_ham[i, current_state, j]
+                    )
+                    p[i, j] = 2 * self.edt * tmp / density[i, j, j]
+        return p
+
+    def check_hops(self, probability: np.array, energies: np.array, nacr: np.array):
+        tmp = self.prng.random(probability.shape)
+        sort_idx = np.argsort(probability)
+        sorted_probability = np.take_along_axis(probability, sort_idx, axis=1)
+        possible_hops = sorted_probability > tmp
+        for i in range(len(self.mol)):
+            for j in range(self.nstates):
+                if possible_hops[i, j]:
+                    final_state = sort_idx[i, j]
+                    (
+                        self.states[i],
+                        self.curr_veloc[i],
+                        hop_type,
+                    ) = self.velocity_rescaling(
+                        self.states[i], final_state, self.curr_veloc[i], energies, nacr
+                    )
+                    continue
+
+    def velocity_rescaling(
+        self,
+        state_i: int,
+        state_f: int,
+        veloc: np.array,
+        energies: np.array,
+        nacr: np.array,
+    ):
+        nuclear_force = (energies[state_i] - energies[state_f]) * nacr[state_i, state_f]
+        tmp = veloc - nuclear_force * self.dt
+        # frustrated hops
+        if np.any((tmp * veloc) < 0):
+            return state_i, veloc, 2
+        else:
+            return state_f, tmp, 1
+
+    def instantaneous_decoherence(self, state):
+        coef = np.zeros(self.nstates)
+        coef[state] = 1.0
+        return coef

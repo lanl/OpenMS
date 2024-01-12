@@ -9,7 +9,7 @@ import shutil
 import textwrap
 from typing import List, Union
 
-import numpy
+import numpy as np
 
 import openms
 from openms.lib.misc import Molecule, au2A, au2K, call_name, fs2au, typewriter
@@ -48,6 +48,7 @@ class BaseMD(object):
         # self.force = numpy.zeros((self.mol.natm, self.mol.ndim))
         # self.accel = numpy.zeros((self.mol.natm, self.mol.ndim))
         self.accel = None
+        self.prng = np.random.RandomState(seed=kwargs.get("seed"))
 
     def initialize(
         self,
@@ -296,9 +297,7 @@ class BaseMD(object):
         :param integer cstep: Current MD step
         """
         # Write FINAL.xyz file including positions and velocities
-        tmp = (
-            f'{self.mol.natm:6d}\n{"":2s}Step:{cstep + 1:6d}{"":12s}Position(A){"":34s}Velocity(au)'
-        )
+        tmp = f'{self.mol.natm:6d}\n{"":2s}Step:{cstep + 1:6d}{"":12s}Position(A){"":34s}Velocity(au)'
         for iat in range(self.mol.natm):
             tmp += (
                 "\n"

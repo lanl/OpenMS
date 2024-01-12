@@ -2,19 +2,21 @@
 basic MQC module
 """
 
-import numpy
-import openms
+import datetime
+import os
+import shutil
+import textwrap
+from typing import List, Union
 
-
-
-from openms.lib.misc import fs2au, au2A, call_name, typewriter
-import textwrap, datetime
 import numpy as np
-import os, shutil
-from .bomd import BaseMD
+
+import openms
+from openms.lib.misc import Molecule, fs2au, au2A, call_name, typewriter
+from openms.qmd.es_driver import QuantumDriver
+from .bomd import BOMD
 
 
-class MQC(BaseMD):
+class MQC(BOMD):
     """Class for nuclear/electronic propagator used in MQC dynamics
 
     Attributes:
@@ -22,11 +24,36 @@ class MQC(BaseMD):
 
     """
 
-    def __init__(self, molecule, thermostat=None, **kwargs):
+    def __init__(
+        self,
+        molecule: List[Molecule],
+        init_states: np.array,
+        init_coef: np.array,
+        qm: QuantumDriver,
+        thermostat=None,
+        **kwargs,
+    ):
+        """Parent class for all mixed quantum-classical methods
+
+        :param molecule: list of molecular objects
+        :type molecule: List[Molecule]
+        :param init_states: initial states of each molecule
+        :type init_states: np.array
+        :param init_coef: initial wavefunction coefficients of each molecule
+        :type init_coef: np.array
+        :param qm: electronic structure driver
+        :type qm: QuantumDriver
+        :param thermostat: thermostat, defaults to None
+        :type thermostat: object, optional
+        """
         # Initialize input values
-        self.init_state = 0
-        self.init_coef = None
-        self.nesteps = 20
+        self.states = init_states
+        self.coef = init_coef
+        self.nesteps = 4
+        self.edt = self.dt / self.nesteps
+        self.qm = qm
+        self.nstates = molecule[0].nstates
+        self.current_time = 0
         self.propagator = "rk4"
         self.elec_object = "density"
         self.l_print_dm = True
@@ -57,7 +84,8 @@ class MQC(BaseMD):
             )
 
         # Initialize coefficients and densities
-        self.mol.get_coefficient(self.init_coef, self.init_state)
+        for m in self.mol:
+            m.get_coefficient(self.init_coef, self.init_state)
 
     def electronic_propagator(self):
         r"""Propagator for electronic EOM.

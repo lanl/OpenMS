@@ -14,16 +14,23 @@
 # Author: Yu Zhang <zhy@lanl.gov>
 #
 
+from dataclasses import dataclass
+from functools import wraps
 import os, sys
 import ctypes
-import numpy
 import textwrap
+import time
 
+# derived molecule class
+from pyscf.gto import mole
+from pyscf import data
 from openms import __config__
+import numpy
 
 c_double_p = ctypes.POINTER(ctypes.c_double)
 c_int_p = ctypes.POINTER(ctypes.c_int)
 c_null_ptr = ctypes.POINTER(ctypes.c_void_p)
+
 
 def load_library(libname):
     try:
@@ -169,22 +176,23 @@ amu2au = 1822.888486192
 au2A = 0.529177249
 A2au = 1 / au2A
 au2fs = 0.02418884344
-fs2au = 1 / au2fs # = 41.34137304
-au2K = 3.15774646E+5
+fs2au = 1 / au2fs  # = 41.34137304
+au2K = 3.15774646e5
 au2eV = 27.2113961
-eV2au = 1 / au2eV # = 0.03674931
+eV2au = 1 / au2eV  # = 0.03674931
 au2kcalmol = 627.503
-kcalmol2au = 1 / au2kcalmol # = 0.00159362
+kcalmol2au = 1 / au2kcalmol  # = 0.00159362
 
 # Speed of light in atomic unit
 c = 137.035999108108
 
 # Frequency unit
-cm2au = 1.0E-8 * au2A * c
-eps = 1.0E-12
+cm2au = 1.0e-8 * au2A * c
+eps = 1.0e-12
 
 for k, v in periodictable.items():
     v["m"] *= amu2au
+
 
 def wall_time(func):
     @wraps(func)
@@ -192,133 +200,156 @@ def wall_time(func):
         tbegin = time.time()
         func(*args, **kwargs)
         tend = time.time()
-        print (f"{func.__name__} : Elapsed time = {tend - tbegin} seconds", flush=True)
+        print(f"{func.__name__} : Elapsed time = {tend - tbegin} seconds", flush=True)
+
     return timer
 
+
 def gaussian1d(x, const, sigma, x0):
-    if (sigma < 0.0):
+    if sigma < 0.0:
         return -1
     else:
-        res = const / (sigma * numpy.sqrt(2. * numpy.pi)) * numpy.exp(- (x - x0) ** 2 / (2. * sigma ** 2))
+        res = (
+            const
+            / (sigma * numpy.sqrt(2.0 * numpy.pi))
+            * numpy.exp(-((x - x0) ** 2) / (2.0 * sigma**2))
+        )
         return res
 
+
 def Lorentz1d(x, const, sigma, x0):
-    if (sigma < 0.0):
+    if sigma < 0.0:
         return -1
     else:
-        res = const * sigma / ((x-x0)**2 + sigma * sigma)
+        res = const * sigma / ((x - x0) ** 2 + sigma * sigma)
         return res
+
 
 def call_name():
     return sys._getframe(1).f_code.co_name
 
-def typewriter(string, dir_name, filename, mode):
-    """ Function to open/write any string in dir_name/filename
 
-        :param string string: Text string for output file
-        :param string dir_name: Directory of output file
-        :param string filename: Filename of output file
-        :param string mode: Fileopen mode
+def typewriter(string, dir_name, filename, mode):
+    """Function to open/write any string in dir_name/filename
+
+    :param string string: Text string for output file
+    :param string dir_name: Directory of output file
+    :param string filename: Filename of output file
+    :param string mode: Fileopen mode
     """
     tmp_name = os.path.join(dir_name, filename)
     with open(tmp_name, mode) as f:
         f.write(string + "\n")
 
 
-# derived molecule class
-from pyscf.gto import mole
-from pyscf import data
+@dataclass
+class State:
+    forces: numpy.ndarray
+    energy: float = 0
 
 
 class Molecule(mole.Mole):
-
     def __init__(self, **kwargs):
-       super().__init__(**kwargs)
-       self.mol_type = self.__class__.__name__
-       lmodel  = False
-       if "lmodel" in kwargs: lmodel = kwargs["lmodel"]
-       self.ndim = kwargs["ndim"] if "ndim" in kwargs else 3
-       self.lmodel = lmodel
-       if lmodel:
-          print(f"this is model system in {self.ndim} dimension")
+        super().__init__(**kwargs)
+        self.mol_type = self.__class__.__name__
+        lmodel = False
+        if "lmodel" in kwargs:
+            lmodel = kwargs["lmodel"]
+        self.ndim = kwargs["ndim"] if "ndim" in kwargs else 3
+        self.lmodel = lmodel
+        if lmodel:
+            print(f"this is model system in {self.ndim} dimension")
 
-       self.veloc = None # velocity
-       self.mass = None
+        self.veloc = None  # velocity
+        self.mass = None
 
-       self.build(**kwargs)
+        self.build(**kwargs)
 
-       self.lqmmm = False
-       self.coords = self.atom_coords()
-       print(f"no. of atoms is {self.natm}")
-#
+        self.lqmmm = False
+        self.coords = self.atom_coords()
+        print(f"no. of atoms is {self.natm}")
+
+    #
     def build(self, **kwargs):
-       #if not self.lmodel:
-       print("using pyscf Mole.build()!")
-       child_args = ["lmodel", "nstates", "ndim", "veloc"]
-       parent_args = {k: v for k, v in kwargs.items() if k not in child_args}
+        # if not self.lmodel:
+        print("using pyscf Mole.build()!")
+        child_args = ["lmodel", "nstates", "ndim", "veloc"]
+        parent_args = {k: v for k, v in kwargs.items() if k not in child_args}
 
-       super().build(**parent_args)
-       #else:
-       #   print("own model build")
+        super().build(**parent_args)
+        # else:
+        #   print("own model build")
 
-       nstates = kwargs["nstates"] if "nstates" in kwargs else 1
-       self.nstates = nstates
-       # self.states = [State(self.ndim, self.natm) for i in range(self.nstates)]
+        nstates = kwargs["nstates"] if "nstates" in kwargs else 1
+        self.nstates = nstates
+        self.states = [
+            State(numpy.zeros((self.natm, self.ndim))) for _ in range(self.nstates)
+        ]
 
-       #
-       self.ndof = self.ndim * self.natm
+        #
+        self.ndof = self.ndim * self.natm
 
-       # Initialize other properties
-       self.nac = numpy.zeros((self.nstates, self.nstates, self.natm, self.ndim))
-       self.nac_old = numpy.zeros((self.nstates, self.nstates, self.natm, self.ndim))
-       self.rho = numpy.zeros((self.nstates, self.nstates), dtype=numpy.complex128)
+        # Initialize other properties
+        self.nac = numpy.zeros((self.nstates, self.nstates, self.natm, self.ndim))
+        self.nac_old = numpy.zeros((self.nstates, self.nstates, self.natm, self.ndim))
+        self.rho = numpy.zeros((self.nstates, self.nstates), dtype=numpy.complex128)
 
-       self.nacme = numpy.zeros((self.nstates, self.nstates))
-       self.nacme_old = numpy.zeros((self.nstates, self.nstates))
+        self.nacme = numpy.zeros((self.nstates, self.nstates))
+        self.nacme_old = numpy.zeros((self.nstates, self.nstates))
 
-       # initialize velocities
-       if self.veloc is None:
-           self.veloc = numpy.full((self.natm, self.ndim), 0.0)
+        # initialize velocities
+        if self.veloc is None:
+            self.veloc = numpy.full((self.natm, self.ndim), 0.0)
 
-       self.mass = numpy.array([
-           data.elements.COMMON_ISOTOPE_MASSES[m] * data.nist.AMU2AU
-           for m in self.atom_charges()])
+        self.mass = numpy.array(
+            [
+                data.elements.COMMON_ISOTOPE_MASSES[m] * data.nist.AMU2AU
+                for m in self.atom_charges()
+            ]
+        )
 
-       self.ekin = 0.
-       self.ekin_qm = 0.
-       self.epot = 0.
-       self.etot = 0.
-       self.lnacme = False
+        self.current_state = 0
+        self.ekin = 0.0
+        self.ekin_qm = 0.0
+        self.epot = 0.0
+        self.etot = 0.0
+        self.lnacme = False
 
     def get_ekin(self):
-        """Compute kinetic energy
-        """
-        self.ekin = numpy.sum(0.5 * self.mass * numpy.sum(self.veloc ** 2, axis=1))
+        """Compute kinetic energy"""
+        self.ekin = numpy.sum(0.5 * self.mass * numpy.sum(self.veloc**2, axis=1))
+
+    def get_etot(self):
+        self.epot = self.states[self.current_state].energy
+        self.etot = self.ekin + self.epot
+
+    def get_coefficient(self, init_coef, init_state):
+        self.coef = init_coef
+        self.state = init_state
 
     def reset_bo(self, calc_coupling):
-        """ Reset BO energies, forces and nonadiabatic couplings
+        """Reset BO energies, forces and nonadiabatic couplings
 
-            :param boolean calc_coupling: Check whether the dynamics includes coupling calculation
+        :param boolean calc_coupling: Check whether the dynamics includes coupling calculation
         """
-        for states in self.states:
-            states.energy = 0.
-            states.force = numpy.zeros((self.natm, self.ndim))
 
-        if (calc_coupling):
-            if (self.lnacme):
+        if calc_coupling:
+            if self.lnacme:
                 self.nacme = numpy.zeros((self.nstates, self.nstates))
             else:
-                self.nac = numpy.zeros((self.nstates, self.nstates, self.natm, self.ndim))
+                self.nac = numpy.zeros(
+                    (self.nstates, self.nstates, self.natm, self.ndim)
+                )
 
     def __str__(self):
-        """Print function for the molecular class (print the information about molecule)
+        """Print function for the molecular class (print the information about molecule)"""
 
-        """
-
-        header = textwrap.dedent(f"""\
+        header = textwrap.dedent(
+            f"""\
         {"-" * 68}
         {"Initial Coordinate and Velocity (au)":>45s}
-        {"-" * 68}\n""")
+        {"-" * 68}\n"""
+        )
         header += " Atom "
         xyzlabel = ["X", "Y", "Z"]
         for i in range(self.ndim):
@@ -333,28 +364,36 @@ class Molecule(mole.Mole):
         geom_info = textwrap.dedent(header)
 
         for nth, atoms in enumerate(self._atom):
-            #geom_info += f"  {atoms:3s}"
+            # geom_info += f"  {atoms:3s}"
             geom_info += f" {atoms[0]}"
             for isp in range(self.ndim):
-                geom_info += f"{self.pos[nth, isp]:14.6f}"
+                geom_info += f"{self.coords[nth, isp]:14.6f}"
             for isp in range(self.ndim):
                 geom_info += f"{self.veloc[nth, isp]:14.6f}"
             geom_info += f"{self.mass[nth]:15.5f}\n"
-        #print (geom_info, flush=True)
+        # print (geom_info, flush=True)
 
-        molecule_info = textwrap.dedent(f"""\
+        # FIXME: multiplicity is wrong here
+        molecule_info = textwrap.dedent(
+            f"""\
         {"-" * 68}
         {"Molecule Information":>43s}
         {"-" * 68}
           Number of Atoms (QM)     = {self.natm:>16d}
           multiplicity (QM)        = {self.spin:>16d}
-        """)
-        molecule_info += textwrap.indent(textwrap.dedent(f"""\
+        """
+        )
+        molecule_info += textwrap.indent(
+            textwrap.dedent(
+                f"""\
           Degrees of Freedom       = {int(self.ndof):>16d}
           Charge                   = {(self.charge)}
           Number of Electrons      = {(self.nelec)}
           Number of States         = {self.nstates}
-        """), "  ")
+        """
+            ),
+            "  ",
+        )
 
         # Model case (todo)
 

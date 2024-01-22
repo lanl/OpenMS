@@ -144,6 +144,13 @@ class Boson(object):
         else:
             self.z_lambda = numpy.zeros(self.nmodes)
 
+        if "couplings_var" in kwargs:
+            self.couplings_var = kwargs["couplings_var"]
+            self.optimize_varf = False
+        else:
+            self.optimize_varf = True
+            self.couplings_var = 0.5 * numpy.ones(self.nmodes)
+
         # If gfac is None and vec is not None,
         # normalize vec and set gfac as the normalization factor
         if gfac is None and vec is not None:
@@ -167,7 +174,6 @@ class Boson(object):
         self.cs_z = numpy.zeros(self.nmodes, dtype=float)
         self.couplings = self.gfac
         self.couplings_bilinear = numpy.zeros(self.nmodes, dtype=float)
-        self.couplings_var = numpy.zeros(self.nmodes, dtype=float)
         self.couplings_res = numpy.zeros(self.nmodes, dtype=float)
         self.couplings_self = numpy.zeros(self.nmodes, dtype=float)
 
@@ -179,6 +185,10 @@ class Boson(object):
             self.couplings_self[k] = 0.5 * self.couplings[k] ** 2
 
         self.print_summary()
+
+    def update_couplings(self):
+        for k in range(self.nmodes):
+            self.couplings_res[k] = 1.0 - self.couplings_var[k]
 
     def print_summary(self):
         r"""

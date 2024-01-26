@@ -24,8 +24,8 @@ from openms.mqed import qedhf
 
 from pyscf.scf import hf
 from pyscf.dft import rks
-
 # from mqed.lib      import logger
+
 
 TIGHT_GRAD_CONV_TOL = getattr(__config__, "scf_hf_kernel_tight_grad_conv_tol", True)
 

@@ -42,4 +42,12 @@ ELEC_GYRO = -1.76085963023e5  # rad * MHz / T
 #\gamma_e/2PI =
 ELEC_GFAC = -2.00231930426256 # unit less
 
+#
+mu_B_ev = 5.7883818060e-5   # eV/T
+mu_B_J = 9.2740100783e-24  # Bohr magneton (J/T)
+
+ev2J = 1.602176634e-19
+uev2J = 1.602176634e-25
+
+mu_0 = 4.0 * numpy.pi * 1e-7  # Magnetic permeability of free space (T m/A)
 

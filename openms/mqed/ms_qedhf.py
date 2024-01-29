@@ -65,12 +65,25 @@ if __name__ == "__main__":
     itest = 1
     zshift = itest * 2.0
 
-    mol = gto.M(
-        atom=f"H          0.86681        0.60144        {5.00000+zshift};\
+    atom = f"H          0.86681        0.60144        {5.00000+zshift};\
         F         -0.86681        0.60144        {5.00000+zshift};\
         O          0.00000       -0.07579        {5.00000+zshift};\
-        He         0.00000        0.00000        {7.50000+zshift}",
-        basis="cc-pvdz",
+        He         0.00000        0.00000        {7.50000+zshift}"
+
+    atom = f"C   0.00000000   0.00000000    {zshift};\
+             O   0.00000000   1.23456800    {zshift};\
+             H   0.97075033  -0.54577032    {zshift};\
+             C  -1.21509881  -0.80991169    {zshift};\
+             H  -1.15288176  -1.89931439    {zshift};\
+             C  -2.43440063  -0.19144555    {zshift};\
+             H  -3.37262777  -0.75937214    {zshift};\
+             O  -2.62194056   1.12501165    {zshift};\
+             H  -1.71446384   1.51627790    {zshift}"
+
+    mol = gto.M(
+        atom = atom,
+        basis="sto3g",
+        #basis="cc-pvdz",
         unit="Angstrom",
         symmetry=True,
         verbose=3,

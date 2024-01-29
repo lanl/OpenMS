@@ -25,7 +25,7 @@ multiscale QED solvers:
 
 import openms
 from openms import mqed
-from .mqed_hf import *
+from .qedhf import *
 
 
 def HF(mol, xc=None, **kwargs):

@@ -126,8 +126,8 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
         logger.info(mf, 'Set gradient conv threshold to %g', conv_tol_grad)
 
     mol = mf.mol
+    s1e = mf.get_ovlp(mol)
     if dm0 is None:
-        print("mf.init_guess=", mf.init_guess)
         dm = mf.get_init_guess(mol, mf.init_guess)
     else:
         dm = dm0
@@ -286,7 +286,7 @@ def unitary_transform(U, A):
     B = numpy.einsum("ki, kj->ij", U, B)
     return B
 
-def ao_to_reduced_ao(A_ao, P):
+def ao2rao(A_ao, P):
     r"""Transforms a matrix from the AO basis to the reduced AO (RAO) basis
 
     .. math::
@@ -296,8 +296,20 @@ def ao_to_reduced_ao(A_ao, P):
     where P is the projection onto the linarly independent AO basis
     """
 
-    # TBA
-    return None
+    AP = numpy.einsum("ik, kj->ij", A_ao, P)
+    A_rao = numpy.einsum("ik, kj->ij", P.conj().T, AP)
+    del AP
+    return A_rao
+
+def get_reduced_overlp(L):
+    r"""
+
+    .. math::
+
+       S_rao = L L^T
+
+    """
+    return numpy.einsum("ik, kj->ij", L, L.conj().T)
 
 def ao2oao(A_ao, X):
     r"""
@@ -320,22 +332,48 @@ def ao2oao(A_ao, X):
     A_oao = reduce(lib.dot, (X.conj().T, A_ao, X))
     return A_oao
 
-
 def oao2ao(A_oao, X):
     r"""
     Transform a matrix from OAO to AO
     """
-    Xinv = linalg.inv(X)
 
+    Xinv = linalg.inv(X)
     A_ao = reduce(lib.dot, (Xinv.conj().T, A_oao, Xinv))
     return A_ao
 
+def get_orbitals_from_oao(c, P, L):
+    r"""
+    Sets the orbital coefficients from the orbital coefficients in OAO
+
+       orbital_coefficients = P L^-T C
+    """
+    X = L.copy()
+    X = linalg.inv(X)
+    Y = numpy.einsum("ik, kj->ij", X.T, c)
+    return numpy.einsum("ik, ij->ij", P, Y)
+
+def get_orbitals_from_rao(c, P):
+    r"""
+    Sets the orbital coefficients from the orbital coefficients in RAO
+       orbital_coefficients = P C
+    """
+    return numpy.einsum("ik, kj->ij", P, c)
+
+def cholesky_diag_fock_rao(mf, h1e):
+    r"""
+    Diagonalize the Fock matrix in RAO basis
+    """
+    F_rao = ao2rao(h1e, mf.P)
+    S_rao = get_reduced_overlp(mf.L)
+    mo_energy, mo_coeff = eigh(F_rao, S_rao)
+    mo_coeff = get_orbitals_from_rao(mo_coeff, mf.P)
+
+    return mo_energy, mo_coeff
 
 # test oao2ao and ao2oao
 #F_oao = ao2oao(fock, self.X)
 #F_ao = oao2ao(F_oao, self.X)
 #print("is F_ao same as original fock?", numpy.allclose(F_ao, fock))
-
 
 def get_veff(mf, mol=None, dm=None, dm_last=0, vhf_last=0, hermi=1, vhfopt=None):
     r"""
@@ -432,7 +470,6 @@ def get_fock(
             Level shift (in AU) for virtual space.  Default is 0.
     """
     # copied from hf get_fock, the only difference is that we update h1 in eacy iteration
-
 
     h1e = mf.get_hcore(dress=True)
     if vhf is None:
@@ -855,13 +892,12 @@ class RHF(qedhf.RHF):
                 for r in range(nao):
                     for s in range(nao):
                         fc_derivative = self.gaussian_derivative(self.eta, 0, p, q, r=r, s=s)
-                        sum_derivative += fc_derivative
+                        if (q > p): sum_derivative += fc_derivative
                         twobody_deta[p] += (2.0 * self.eri_DO[p, q, r, s] - self.eri_DO[p, s, r, q]) * \
                                         dm_do[0, p, q] * dm_do[0, r, s] * fc_derivative
 
         self.eta_grad[0] = onebody_deta + twobody_deta
         #return onebody_deta + twobody_deta
-
 
     def eri_dipole(self):
         r"""
@@ -1212,10 +1248,6 @@ class RHF(qedhf.RHF):
 
         Uinv = linalg.inv(U)
         vhf = unitary_transform(Uinv, vhf_do)
-
-        # one electron part (residue for VT-QEDHF)
-        self.oei = self.qed.add_oei_ao(dm) * 0.0 # this is zero for scqedhf
-        vhf += self.oei
 
         return vhf
 

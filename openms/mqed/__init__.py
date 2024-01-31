@@ -16,8 +16,11 @@
 
 
 r"""
-multiscale QED solvers:
-   - mQED-HF
+QED solvers:
+   - QED-HF: non-self-consistent HF method for polariton. The converged HF of bare molecules is used to compute the DSE.
+   - scQEDHF: sel-consistent HF method for polariton. The DSE and MO are self-consistent updated.
+   - VT-QEDHF: variational QED-HF method for light-matter interaction at arbitray coupling strength (i.e., can handle cases beyond the polariton regime) by leveraging the variational transformation.
+   - MS-QEDHF: Multiscale QEDHF methods
    - mQED-TDSCF
    - mQED-CC
    - mQED-EOMCC

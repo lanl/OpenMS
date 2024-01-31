@@ -367,10 +367,7 @@ class Photon(Boson):
         # CS z_\alpha = <\lambda\cdot D>
         self.z_lambda = lib.einsum("pq, Xpq ->X", dm, self.gmat)
 
-    # -------------------------------------------
-    # post-hf integrals
-    # -------------------------------------------
-    def add_oei_ao(self, dm):
+    def add_oei_ao(self, dm, residue=False):
         r"""
         return DSE-mediated oei.. This is universal for bare HF or QED-HF.
         DSE-mediated oei
@@ -385,9 +382,18 @@ class Photon(Boson):
         self.get_gmatao()
         if self.use_cs:
             self.update_cs(dm)
-        oei = - lib.einsum("Xpq, X->pq", self.gmat, self.z_lambda)
-        oei -= numpy.sum(self.q_dot_lambda, axis=0)
+        if residue:
+            gvar2 = self.couplings_var**2 # element-wise
+            oei = - lib.einsum("Xpq, X->pq", self.gmat, gvar2 * self.z_lambda)
+            oei -= lib.einsum("Xpq, X->pq", self.q_dot_lambda, gvar2)
+        else:
+            oei = - lib.einsum("Xpq, X->pq", self.gmat, self.z_lambda)
+            oei -= numpy.sum(self.q_dot_lambda, axis=0)
         return oei
+
+    # -------------------------------------------
+    # post-hf integrals
+    # -------------------------------------------
 
     def get_mos(self):
         r"""

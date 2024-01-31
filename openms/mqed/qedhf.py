@@ -410,6 +410,34 @@ class RHF(hf.RHF):
         return self.bare_h1e + self.oei
     """
 
+    def get_g_dse_JK(self, dm):
+        r"""DSE-mediated JK terms
+        Note: this term exists even if we don't use CS representation
+        don't simply replace this term with z since z can be zero without CS.
+        """
+
+        dm_shape = dm.shape
+        nao = dm_shape[-1]
+        dm = dm.reshape(-1,nao,nao)
+        n_dm = dm.shape[0]
+        logger.debug(self, "No. of dm is %d", n_dm)
+
+        vj_dse = numpy.zeros((n_dm,nao,nao))
+        vk_dse = numpy.zeros((n_dm,nao,nao))
+        for i in range(n_dm):
+            # DSE-medaited J
+            scaled_mu = lib.einsum("pq, Xpq ->X", dm[i], self.gmat)# <\lambada * D>
+            vj_dse[i] += lib.einsum("Xpq, X->pq", self.gmat, scaled_mu)
+
+            # DSE-mediated K
+            vk_dse[i] += lib.einsum("Xpr, Xqs, rs -> pq", self.gmat, self.gmat, dm[i])
+            #gdm = lib.einsum("Xqs, rs -> Xqr", self.gmat, dm)
+            #vk += lib.einsum("Xpr, Xqr -> pq", self.gmat, gdm)
+
+        vj = vj_dse.reshape(dm_shape)
+        vk = vk_dse.reshape(dm_shape)
+        return vj, vk
+
     def get_jk(self, mol=None, dm=None, hermi=1, with_j=True, with_k=True, omega=None):
         # Note the incore version, which initializes an _eri array in memory.
         if mol is None:
@@ -425,6 +453,8 @@ class RHF(hf.RHF):
         else:
             vj, vk = RHF.get_jk(self, mol, dm, hermi, with_j, with_k, omega)
 
+        """
+        # the following code is moved to get_g_dse_JK as we need this part in VT-QEDHF method
         # note this term exists even if we don't use CS representation
         # don't simply replace this term with z since z can be zero without CS.
 
@@ -448,6 +478,11 @@ class RHF(hf.RHF):
 
         vj += vj_dse.reshape(dm_shape)
         vk += vk_dse.reshape(dm_shape)
+        """
+
+        vj_dse, vk_dse = self.get_g_dse_JK(dm)
+        vj += vj_dse
+        vk += vk_dse
 
         return vj, vk
 

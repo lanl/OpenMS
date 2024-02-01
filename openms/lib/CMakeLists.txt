@@ -1,18 +1,17 @@
 #
 # @ 2023. Triad National Security, LLC. All rights reserved.
 #
-#This program was produced under U.S. Government contract 89233218CNA000001 
-# for Los Alamos National Laboratory (LANL), which is operated by Triad 
-#National Security, LLC for the U.S. Department of Energy/National Nuclear 
-#Security Administration. All rights in the program are reserved by Triad 
-#National Security, LLC, and the U.S. Department of Energy/National Nuclear 
-#Security Administration. The Government is granted for itself and others acting 
-#on its behalf a nonexclusive, paid-up, irrevocable worldwide license in this 
-#material to reproduce, prepare derivative works, distribute copies to the 
-#public, perform publicly and display publicly, and to permit others to do so.
+# This program was produced under U.S. Government contract 89233218CNA000001
+# for Los Alamos National Laboratory (LANL), which is operated by Triad
+# National Security, LLC for the U.S. Department of Energy/National Nuclear
+# Security Administration. All rights in the program are reserved by Triad
+# National Security, LLC, and the U.S. Department of Energy/National Nuclear
+# Security Administration. The Government is granted for itself and others acting
+# on its behalf a nonexclusive, paid-up, irrevocable worldwide license in this
+# material to reproduce, prepare derivative works, distribute copies to the
+# public, perform publicly and display publicly, and to permit others to do so.
 #
 # Author: Yu Zhang <zhy@lanl.gov>
-#
 #
 # cmake file for buildig c, c++, fortran libs (TODO)
 #
@@ -47,7 +46,7 @@ endif()
 message("CMAKE_TOOLCHIAN_FILE=" ${CMAKE_TOOLCHAIN_FILE})
 
 # Bring camek toolkit ==========================================================
-# FetchContent is used to download and include external projects or libraries  
+# FetchContent is used to download and include external projects or libraries
 include(FetchContent)
 if (DEFINED PROJECT_BINARY_DIR)
   set(CMAKE_KIT_PREFIX_DIR PROJECT_BINARY_DIR)
@@ -152,6 +151,8 @@ set(MPI_CXX_SKIP_MPICXX TRUE CACHE BOOL "MPI_CXX_SKIP_MPICXX")
 option(ENABLE_MPI "Enable MPI" ON)
 option(ENABLE_QMD "Enable QMD/MQC/CTMQC" ON)
 option(ENABLE_MEEP "Using MEEP for solvng maxwell equations" ON)
+option(ENABLE_MEEP_OPENMP "Enable MEEP OPENMP" OFF)
+option(ENABLE_MEEP_MPI "Enable MEEP OPENMP" OFF)
 option(ENABLE_TA "Using TiledArray lib for tensor contraction" ON)
 option(ENABLE_TASCALAPACK "Enable ScaLAPACK Bindings in TiledArray" OFF)
 option(ENABLE_TACUDA "Enable use of CUDA with TiledArray" OFF)
@@ -328,6 +329,12 @@ message("FFTW library path: ${FFTW_LIBRARY_DIR}")
 message("FFTW include path: ${FFTW_INCLUDE_DIR}")
 
 if(ENABLE_MEEP)
+  message("")
+  message("***********************************")
+  message("***   MEEP is to be built")
+  message("***********************************")
+  message("")
+
   # if building meep, we need to build libctl, harminv, mpb as well,
   # a) build libctl
   ExternalProject_Add(libctl
@@ -365,10 +372,10 @@ if(ENABLE_MEEP)
     URL https://github.com/NanoComp/mpb/releases/download/v1.11.1/mpb-1.11.1.tar.gz
     PREFIX ${PROJECT_BINARY_DIR}/deps
     INSTALL_DIR ${PROJECT_SOURCE_DIR}/deps
-    CONFIGURE_COMMAND 
-    ${CMAKE_COMMAND} -E env LDFLAGS=${LDFLAGS} 
+    CONFIGURE_COMMAND
+    ${CMAKE_COMMAND} -E env LDFLAGS=${LDFLAGS}
     ${CMAKE_COMMAND} -E env CPPFLAGS=${CPPFLAGS}
-      ../mpb/configure --enable-shared=yes --without-scheme --with-fftw=${FFTW_LIBRARY_DIR} --enable-maintainer-mode --without-guile --without-libctl --prefix=<INSTALL_DIR>  
+      ../mpb/configure --enable-shared=yes --without-scheme --with-fftw=${FFTW_LIBRARY_DIR} --enable-maintainer-mode --without-guile --without-libctl --prefix=<INSTALL_DIR>
     BUILD_COMMAND make
     INSTALL_COMMAND make install
     TEST_COMMAND make check
@@ -379,6 +386,16 @@ if(ENABLE_MEEP)
   #set(LDFLAGS "-L$ENV{HOME}/local/fftw3.3.10/lib/ -L${PROJECT_SOURCE_DIR}/deps/lib")
   set(LDFLAGS  "-L${FFTW_LIBRARY_DIR} -L${PROJECT_SOURCE_DIR}/deps/lib")
   set(CPPFLAGS "-I${FFTW_INCLUDE_DIR} -I${PROJECT_SOURCE_DIR}/deps/include  -I${Python3_INCLUDE_DIRS}")
+
+  # Append the MPI configuration based on the ENABLE_MEEP_MPI variable
+  if (ENABLE_MEEP_MPI AND ENABLE_MEEP_OPENMP)
+    set(MEEP_CONFIGURE_MPI "--with-mpi=yes --with-openmp=yes")
+  elseif (ENABLE_MEEP_MPI)
+    set(MEEP_CONFIGURE_MPI "--with-mpi=yes")
+  elseif (ENABLE_MEEP_OPENMP)
+    set(MEEP_CONFIGURE_MPI "--with-openmp=yes")
+  endif()
+  message("MEEP_CONFIGURE_MPI is:      " ${MEEP_CONFIGURE_MPI})
 
   ExternalProject_Add(meep
     PREFIX ${PROJECT_BINARY_DIR}/deps
@@ -391,11 +408,10 @@ if(ENABLE_MEEP)
     # use released version
     URL https://github.com/NanoComp/meep/releases/download/v1.25.0/meep-1.25.0.tar.gz
 
-    CONFIGURE_COMMAND 
-    ${CMAKE_COMMAND} -E env LDFLAGS=${LDFLAGS} 
+    CONFIGURE_COMMAND
+    ${CMAKE_COMMAND} -E env LDFLAGS=${LDFLAGS}
     ${CMAKE_COMMAND} -E env CPPFLAGS=${CPPFLAGS}
-    	../meep/configure  --enable-shared=yes --without-scheme --with-libctl=<INSTALL_DIR> --with-mpb=yes --with-mpi=no  --with-python=yes --prefix=<INSTALL_DIR> 
-       #../meep/autogen.sh  --enable-shared=yes --without-scheme --with-libctl=<INSTALL_DIR> --with-mpb=yes --with-mpi=no  --with-python=yes --prefix=<INSTALL_DIR> 
+    	../meep/configure  --enable-shared=yes --without-scheme --with-libctl=<INSTALL_DIR> --with-mpb=yes ${MEEP_CONFIGURE_MPI} --with-python=yes --prefix=<INSTALL_DIR>
     BUILD_COMMAND make
     INSTALL_COMMAND make install
     #TEST_COMMAND make check
@@ -431,8 +447,7 @@ if(BUILD_BML)
   )
 endif()
 
-# build Tiledarray 
-# TODO
+# build Tiledarray
 # find path to python
 
 if(ENABLE_TA)

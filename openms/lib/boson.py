@@ -136,13 +136,17 @@ class Boson(object):
                 self.gfac = gfac
 
         self.use_cs = kwargs['use_cs'] if 'use_cs' in kwargs else True
-        if 'z_lambda' in kwargs:
+        if 'z_lambda' in kwargs and kwargs["z_lambda"] is not None:
             self.z_lambda = kwargs['z_lambda']
             self.use_cs = False
             if len(self.z_lambda) != self.nmodes:
                 raise ValueError("z_lambda should has the same size cavity_freq!")
         else:
             self.z_lambda = numpy.zeros(self.nmodes)
+        if self.use_cs:
+            logger.info(self, "CS basis for photon is used")
+        else:
+            logger.info(self, "Fock basis for photon is used")
 
         if "couplings_var" in kwargs:
             self.couplings_var = kwargs["couplings_var"]
@@ -184,7 +188,8 @@ class Boson(object):
             self.couplings_res[k] = 1.0 - self.couplings_var[k]
             self.couplings_self[k] = 0.5 * self.couplings[k] ** 2
 
-        self.print_summary()
+        if self.verbose > 3:
+            self.print_summary()
 
     def update_couplings(self):
         for k in range(self.nmodes):
@@ -383,7 +388,7 @@ class Photon(Boson):
         if self.use_cs:
             self.update_cs(dm)
         if residue:
-            gvar2 = self.couplings_var**2 # element-wise
+            gvar2 = self.couplings_res**2 # element-wise
             oei = - lib.einsum("Xpq, X->pq", self.gmat, gvar2 * self.z_lambda)
             oei -= lib.einsum("Xpq, X->pq", self.q_dot_lambda, gvar2)
         else:
@@ -416,7 +421,6 @@ class Photon(Boson):
         self.pb = numpy.einsum("ai,bi->ab", cb[:, :nb], cb[:, :nb])
         self.ptot = utils.block_diag(self.pa, self.pb)
 
-        logger.debug(self, "dimension of mo_occ = %d", mf.mo_occ.ndim)
 
     def tmat(self):
         """Return T-matrix in the spin orbital basis."""

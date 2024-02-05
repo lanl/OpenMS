@@ -1,53 +1,80 @@
+import unittest
 import numpy
-from pyscf import gto, scf, tdscf
+from pyscf import gto, scf
+from openms.mqed import qedhf
 
+class TestQEDHF(unittest.TestCase):
 
-zshift = 2.0
-mol         = gto.Mole()
-mol.verbose = 4
-mol.atom  = f"C                  0.00000000     0.00000000    {zshift};\
-     O                  0.00000000     1.23456800     {zshift};\
-     H                  0.97075033    -0.54577032     {zshift};\
-     C                 -1.21509881    -0.80991169     {zshift};\
-     H                 -1.15288176    -1.89931439     {zshift};\
-     C                 -2.43440063    -0.19144555     {zshift};\
-     H                 -3.37262777    -0.75937214     {zshift};\
-     O                 -2.62194056     1.12501165     {zshift};\
-     H                 -1.71446384     1.51627790     {zshift}"
+    def test_qedhf_cs(self):
+        ref = -262.052870927714
+        itest = 0
+        zshift = itest * 2.0
 
-#mol.basis = 'cc-pVDZ'
-mol.basis = 'STO-3G',
-mol.build()
+        atom = f"C   0.00000000   0.00000000    {zshift};\
+                 O   0.00000000   1.23456800    {zshift};\
+                 H   0.97075033  -0.54577032    {zshift};\
+                 C  -1.21509881  -0.80991169    {zshift};\
+                 H  -1.15288176  -1.89931439    {zshift};\
+                 C  -2.43440063  -0.19144555    {zshift};\
+                 H  -3.37262777  -0.75937214    {zshift};\
+                 O  -2.62194056   1.12501165    {zshift};\
+                 H  -1.71446384   1.51627790    {zshift}"
 
-#mf    = scf.RKS(mol)
-#mf.xc = "b3lyp"
-mf    = scf.HF(mol)
-mf.kernel()
+        mol = gto.M(
+            atom = atom,
+            basis="sto3g",
+            #basis="cc-pvdz",
+            unit="Angstrom",
+            symmetry=True,
+            verbose=3,
+        )
 
-dm = mf.make_rdm1()
+        nmode = 2 # create a zero (second) mode to test the code works for multiple modes
+        cavity_freq = numpy.zeros(nmode)
+        cavity_mode = numpy.zeros((nmode, 3))
+        cavity_freq[0] = 0.5
+        cavity_mode[0, :] = 0.1 * numpy.asarray([0, 1, 0])
 
-nmode = 1
-cavity_freq = numpy.zeros(nmode)
-cavity_mode = numpy.zeros((nmode, 3))
-cavity_freq[0] = 3.0 /27.211386245988
-cavity_mode[0,:] = 0.1 * numpy.asarray([1, 1, 1])
-cavity_mode[0,:] = 0.1 * numpy.asarray([0, 0, 1])
+        qedmf = qedhf.RHF(mol, xc=None, cavity_mode=cavity_mode, cavity_freq=cavity_freq)
+        qedmf.max_cycle = 500
+        qedmf.kernel() #dm0=dm)
+        self.assertAlmostEqual(qedmf.e_tot, ref, places=6, msg="Etot does not match the reference value.")
 
-#cavity_freq = numpy.asarray([0.2940])
-#cavity_mode = numpy.asarray([[0.001, 0.0, 0.0]])
+    def test_qedhf_fock(self):
+        ref = -262.050746414733
+        itest = 0
+        zshift = itest * 2.0
 
-#
-breakline = "*" * 50
-print("\n"+breakline)
-print("    QED HF calculation ")
-print(breakline+"\n")
+        atom = f"C   0.00000000   0.00000000    {zshift};\
+                 O   0.00000000   1.23456800    {zshift};\
+                 H   0.97075033  -0.54577032    {zshift};\
+                 C  -1.21509881  -0.80991169    {zshift};\
+                 H  -1.15288176  -1.89931439    {zshift};\
+                 C  -2.43440063  -0.19144555    {zshift};\
+                 H  -3.37262777  -0.75937214    {zshift};\
+                 O  -2.62194056   1.12501165    {zshift};\
+                 H  -1.71446384   1.51627790    {zshift}"
 
-# DFT/HFT-PF
-from openms import mqed
+        mol = gto.M(
+            atom = atom,
+            basis="sto3g",
+            #basis="cc-pvdz",
+            unit="Angstrom",
+            symmetry=True,
+            verbose=3,
+        )
 
-qedmf = mqed.HF(mol, xc=None, cavity_mode=cavity_mode, cavity_freq=cavity_freq)
-qedmf.max_cycle = 500
+        nmode = 2 # create a zero (second) mode to test the code works for multiple modes
+        cavity_freq = numpy.zeros(nmode)
+        cavity_mode = numpy.zeros((nmode, 3))
+        cavity_freq[0] = 0.5
+        cavity_mode[0, :] = 0.1 * numpy.asarray([0, 1, 0])
+        zlambda = numpy.zeros(nmode)
 
-qedmf.kernel(dm0=dm)
+        qedmf = qedhf.RHF(mol, xc=None, cavity_mode=cavity_mode, cavity_freq=cavity_freq, z_lambda=zlambda)
+        qedmf.max_cycle = 500
+        qedmf.kernel() #dm0=dm)
+        self.assertAlmostEqual(qedmf.e_tot, ref, places=6, msg="Etot does not match the reference value.")
 
-
+if __name__ == '__main__':
+    unittest.main()

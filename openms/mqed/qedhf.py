@@ -311,8 +311,9 @@ class RHF(hf.RHF):
 
     def __init__(self, mol, xc=None, **kwargs):
         # print headers
-        print(self, openms.__logo__)
-        openms.runtime_refs.append(openms._citations["pccp2023"])
+        logger.info(self, openms.__logo__)
+        if openms._citations["pccp2023"] not in openms.runtime_refs:
+            openms.runtime_refs.append(openms._citations["pccp2023"])
 
         hf.RHF.__init__(self, mol)
         # if xc is not None:
@@ -320,7 +321,7 @@ class RHF(hf.RHF):
 
         cavity = None
         qed = None
-        add_nuc_dipole = False
+        add_nuc_dipole = True # False
 
         if "cavity" in kwargs:
             cavity = kwargs["cavity"]
@@ -329,6 +330,9 @@ class RHF(hf.RHF):
         if "qed" in kwargs:
             qed = kwargs["qed"]
         else:
+            z_lambda = None
+            if "z_lambda" in kwargs:
+                z_lambda = kwargs["z_lambda"]
             if "cavity_mode" in kwargs:
                 cavity_mode = kwargs["cavity_mode"]
             else:
@@ -338,8 +342,8 @@ class RHF(hf.RHF):
                 cavity_freq = kwargs["cavity_freq"]
             else:
                 raise ValueError("The required keyword argument 'cavity_freq' is missing")
-            print("cavity_freq=", cavity_freq)
-            print("cavity_mode=", cavity_mode)
+            logger.debug(self, "cavity_freq = {cavity_freq}")
+            logger.debug(self, "cavity_mode = {cavity_mode}")
 
             nmode = len(cavity_freq)
             gfac = numpy.zeros(nmode)
@@ -347,7 +351,11 @@ class RHF(hf.RHF):
                 gfac[i] = numpy.sqrt(numpy.dot(cavity_mode[i], cavity_mode[i]))
                 if gfac[i] != 0:  # Prevent division by zero
                     cavity_mode[i] /= gfac[i]
-            qed = Photon(mol, mf=self, omega=cavity_freq, vec=cavity_mode, gfac=gfac, add_nuc_dipole=add_nuc_dipole, shift=False)
+            qed = Photon(mol, mf=self, omega=cavity_freq, vec=cavity_mode, gfac=gfac,
+                         add_nuc_dipole=add_nuc_dipole,
+                         z_lambda = z_lambda,
+                         shift=False)
+
         # end of define qed object
 
         self.qed = qed
@@ -369,6 +377,7 @@ class RHF(hf.RHF):
         # self.wfnsym     = None
         self.dip_ao = mol.intor("int1e_r", comp=3)
         self.bare_h1e = None # bare oei
+        self.oei = None
 
     #def make_dipolematrix(self):
     #    """
@@ -410,7 +419,7 @@ class RHF(hf.RHF):
         return self.bare_h1e + self.oei
     """
 
-    def get_g_dse_JK(self, dm):
+    def get_g_dse_JK(self, dm, residue=False):
         r"""DSE-mediated JK terms
         Note: this term exists even if we don't use CS representation
         don't simply replace this term with z since z can be zero without CS.
@@ -426,13 +435,15 @@ class RHF(hf.RHF):
         vk_dse = numpy.zeros((n_dm,nao,nao))
         for i in range(n_dm):
             # DSE-medaited J
-            scaled_mu = lib.einsum("pq, Xpq ->X", dm[i], self.gmat)# <\lambada * D>
-            vj_dse[i] += lib.einsum("Xpq, X->pq", self.gmat, scaled_mu)
+            gtmp = self.gmat
+            if residue: gtmp = self.gmat * self.qed.couplings_res
+            scaled_mu = lib.einsum("pq, Xpq ->X", dm[i], gtmp)# <\lambada * D>
+            vj_dse[i] += lib.einsum("Xpq, X->pq", gtmp, scaled_mu)
 
             # DSE-mediated K
-            vk_dse[i] += lib.einsum("Xpr, Xqs, rs -> pq", self.gmat, self.gmat, dm[i])
-            #gdm = lib.einsum("Xqs, rs -> Xqr", self.gmat, dm)
-            #vk += lib.einsum("Xpr, Xqr -> pq", self.gmat, gdm)
+            vk_dse[i] += lib.einsum("Xpr, Xqs, rs -> pq", gtmp, gtmp, dm[i])
+            #gdm = lib.einsum("Xqs, rs -> Xqr", gtmp, dm)
+            #vk += lib.einsum("Xpr, Xqr -> pq", gtmp, gdm)
 
         vj = vj_dse.reshape(dm_shape)
         vk = vk_dse.reshape(dm_shape)
@@ -525,16 +536,21 @@ class RHF(hf.RHF):
     def dump_flags(self, verbose=None):
         return hf.RHF.dump_flags(self, verbose)
 
-    def dse(self, dm):
+    def dse(self, dm, residue=False):
         r"""
-        compute dipole self-energy
+        compute dipole self-energy due to CS basis.
+        we can add this part into oei as well, then don't need to compute dse separtely:
+        since z^2 = z^2 * Tr[S D] /Ne = Tr[(z^2/Ne*S)*D]
+        i.e., we can add z^2/Ne*S into oei, where S is the overlap, Ne is total energy
+        and Ne = Tr[SD].
         """
-        dip = self.dip_moment(dm=dm)
+        # dip = self.dip_moment(dm=dm)
         # print("dipole_moment=", dip)
         e_dse = 0.0
-        e_dse += 0.5 * numpy.dot(self.qed.z_lambda, self.qed.z_lambda)
-
-        print("dipole self-energy=", e_dse)
+        z_lambda = self.qed.z_lambda
+        if residue: z_lambda *= self.qed.couplings_res
+        e_dse += 0.5 * numpy.dot(z_lambda, z_lambda)
+        #print("dipole self-energy=", e_dse)
         return e_dse
 
     def energy_tot(self, dm=None, h1e=None, vhf=None):
@@ -548,9 +564,12 @@ class RHF(hf.RHF):
         e_tot = self.energy_elec(dm, h1e, vhf)[0] + nuc
 
         # Note we need the following terms just because we didn't add the self.oei term into
-        # the one-electorn part (h1e).
-        e_tot += 0.5 * lib.einsum("pq,pq->", self.oei, dm)
-        dse = self.dse(dm)  # dipole sefl-energy(0.5*z^2)
+        # the one-electorn part (h1e), but adding it to veff, so only 1/2 * veff *D energy was calculated
+        # and the other half is missing.
+        if self.oei is not None:
+            e_tot += 0.5 * lib.einsum("pq,pq->", self.oei, dm)
+        # dipole self-energy due to CS basis, 0.5*z^2.
+        dse = self.dse(dm)
         e_tot += dse
 
         self.scf_summary["nuc"] = nuc.real

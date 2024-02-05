@@ -152,8 +152,6 @@ def full_cholesky_orth(S, threshold=1.e-7):
     L[:n_oao, :n_oao] = cholesky_vectors[:n_oao, :n_oao]
     del cholesky_vectors
 
-    print("test-zy: pivots = ", pivots)
-
     # note: values of pivtos is [1, n], not [0, n-1], so we need correct the index
     for i in range(n_oao):
         P[pivots[i] - 1, i] = 1.0

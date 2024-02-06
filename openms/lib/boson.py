@@ -90,6 +90,7 @@ class Boson(object):
         self.verbose = self._mol.verbose
         self.stdout = self._mol.stdout
         self.shift = shift
+        # whether to add nuclear dipole contribution
         self.add_nuc_dipole = add_nuc_dipole
 
         if omega is None:
@@ -97,7 +98,6 @@ class Boson(object):
                 self,
                 "omega is not set. Defaulting to None may lead to unexpected behavior.",
             )
-            # warnings.warn("omega is not set. Defaulting to None may lead to unexpected behavior.", UserWarning)
         else:
             self.omega = omega
             self.nmodes = len(self.omega)
@@ -175,7 +175,6 @@ class Boson(object):
         self.boson_type = self.__class__.__name__
 
         # self.polarizations = numpy.zeros((3, self.nmodes), dtype=float) #replaced by vec
-        self.cs_z = numpy.zeros(self.nmodes, dtype=float)
         self.couplings = self.gfac
         self.couplings_bilinear = numpy.zeros(self.nmodes, dtype=float)
         self.couplings_res = numpy.zeros(self.nmodes, dtype=float)
@@ -220,18 +219,6 @@ class Boson(object):
         """Template method to get coupling matrix in SO."""
         raise NotImplementedError("Subclasses must implement this method.")
 
-    def get_h_dse_ao(self):
-        r"""
-        DSE-mediated effective potential
-        """
-        raise NotImplementedError
-
-    def get_h_dse_ao_residue(self):
-        r"""
-        Residual DSE-mediated effective potential (for VT-HF)
-        """
-        raise NotImplementedError
-
     def construct_g_dse_JK(self):
         r"""
         DSE-mediated JK matrix
@@ -244,27 +231,8 @@ class Boson(object):
         """
         raise NotImplementedError
 
-    def get_geb_ao_1der(self, mode):
-        raise NotImplementedError
-
-    def update_coherent_states(self, ao_density):
-        """
-        Coherent state z is given from the bilinear coupling g_b and frequency w,
-        z = - <g_b> / w = - Tr[D g_b] / w
-
-        Written by Yu Zhang, June 2023
-        """
-
-        print(" update coherent state!!!!")
-        g_wx = numpy.zeros((self.nao, self.nao))
-
-        for mode in range(self.nmodes):
-            g_wx = self.get_geb_ao(mode)
-            self.cs_z[mode] = -np.sum(ao_density * g_wx) / self.omega[mode]
-
-    def update_settings(self):
-        for k in range(self.nmodes):
-            pass
+    def construct_g_dse_JK(self, ao_density, ao_G):
+        pass
 
 # class phonon which will compute the phonon modes and e-ph coupling strength
 class Phonon(Boson):
@@ -283,8 +251,6 @@ class Photon(Boson):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # whether to add nuclear dipole contribution
-        #self.add_nuc_dipole = add_nuc_dipole
 
         self.dipole_ao = None
         self.quadrupole_ao = None

@@ -30,10 +30,6 @@ class CDIIS(lib.diis.DIIS):
         self.space = 8
         self.Corth = Corth
         self.err_func = err_func
-        #?self._scf = mf
-        #?if hasattr(self._scf, 'get_orbsym'): # Symmetry adapted SCF objects
-        #?    self.orbsym = mf.get_orbsym(Corth)
-        #?    sym_forbid = self.orbsym[:,None] != self.orbsym
 
     def update(self, s, d, f, *args, **kwargs):
         var = None

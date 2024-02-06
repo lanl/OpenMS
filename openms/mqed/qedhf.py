@@ -368,38 +368,9 @@ class RHF(hf.RHF):
         self.gmat = self.qed.gmat
         self.qd2 = self.qed.q_dot_lambda
 
-        # print(f"{cavity} cavity mode is used!")
-        # self.verbose    = mf.verbose
-        # self.stdout     = mf.stdout
-        # self.mol        = mf.mol
-        # self.max_memory = mf.max_memory
-        # self.chkfile    = mf.chkfile
-        # self.wfnsym     = None
         self.dip_ao = mol.intor("int1e_r", comp=3)
         self.bare_h1e = None # bare oei
         self.oei = None
-
-    #def make_dipolematrix(self):
-    #    """
-    #    return dipole and quadrupole matrix in AO
-
-    #    Quarupole:
-    #    # | xx, xy, xz |
-    #    # | yx, yy, yz |
-    #    # | zx, zy, zz |
-    #    # xx <-> rrmat[0], xy <-> rrmat[3], xz <-> rrmat[6]
-    #    #                  yy <-> rrmat[4], yz <-> rrmat[7]
-    #    #                                   zz <-> rrmat[8]
-    #    """
-
-    #    self.mu_mo = None
-    #    charges = self.mol.atom_charges()
-    #    coords = self.mol.atom_coords()
-    #    charge_center = (0, 0, 0)  # numpy.einsum('i,ix->x', charges, coords)
-    #    with self.mol.with_common_orig(charge_center):
-    #        self.mu_mat_ao = self.mol.intor_symmetric("int1e_r", comp=3)
-    #        self.qmat = -self.mol.intor("int1e_rr")
-
 
     """
     def get_hcore(self, mol=None, dm=None):
@@ -464,33 +435,6 @@ class RHF(hf.RHF):
         else:
             vj, vk = RHF.get_jk(self, mol, dm, hermi, with_j, with_k, omega)
 
-        """
-        # the following code is moved to get_g_dse_JK as we need this part in VT-QEDHF method
-        # note this term exists even if we don't use CS representation
-        # don't simply replace this term with z since z can be zero without CS.
-
-        dm_shape = dm.shape
-        nao = dm_shape[-1]
-        dm = dm.reshape(-1,nao,nao)
-        n_dm = dm.shape[0]
-        logger.debug(self, "No. of dm is %d", n_dm)
-
-        vj_dse = numpy.zeros((n_dm,nao,nao))
-        vk_dse = numpy.zeros((n_dm,nao,nao))
-        for i in range(n_dm):
-            # DSE-medaited J
-            scaled_mu = lib.einsum("pq, Xpq ->X", dm[i], self.gmat)# <\lambada * D>
-            vj_dse[i] += lib.einsum("Xpq, X->pq", self.gmat, scaled_mu)
-
-            # DSE-mediated K
-            vk_dse[i] += lib.einsum("Xpr, Xqs, rs -> pq", self.gmat, self.gmat, dm[i])
-            #gdm = lib.einsum("Xqs, rs -> Xqr", self.gmat, dm)
-            #vk += lib.einsum("Xpr, Xqr -> pq", self.gmat, gdm)
-
-        vj += vj_dse.reshape(dm_shape)
-        vk += vk_dse.reshape(dm_shape)
-        """
-
         vj_dse, vk_dse = self.get_g_dse_JK(dm)
         vj += vj_dse
         vk += vk_dse
@@ -522,10 +466,6 @@ class RHF(hf.RHF):
             vj, vk = self.get_jk(mol, ddm, hermi)
             vhf = vj - vk * 0.5
             vhf += numpy.asarray(vhf_last)
-
-        # add photon contribution
-        #if self.mu_mat_ao is None:
-        #    self.make_dipolematrix()
 
         # DSE-mediated oei
         self.oei = self.qed.add_oei_ao(dm)
@@ -587,60 +527,6 @@ class RHF(hf.RHF):
             print(f"[{i+1}]. {citation}")
         print(f"{breakline}\n")
 
-    """
-    def scf(self, dm0=None, **kwargs):
-
-        cput0 = (logger.process_clock(), logger.perf_counter())
-
-        self.dump_flags()
-        self.build(self.mol)
-
-        if self.max_cycle > 0 or self.mo_coeff is None:
-            self.converged, self.e_tot, \
-                    self.mo_energy, self.mo_coeff, self.mo_occ = \
-                    kernel(self, self.conv_tol, self.conv_tol_grad,
-                           dm0=dm0, callback=self.callback,
-                           conv_check=self.conv_check, **kwargs)
-        else:
-            # Avoid to update SCF orbitals in the non-SCF initialization
-            # (issue #495).  But run regular SCF for initial guess if SCF was
-            # not initialized.
-            self.e_tot = kernel(self, self.conv_tol, self.conv_tol_grad,
-                                dm0=dm0, callback=self.callback,
-                                conv_check=self.conv_check, **kwargs)[1]
-
-        logger.timer(self, 'SCF', *cput0)
-        self._finalize()
-        return self.e_tot
-    """
-
-    #----------------------------------------------
-
-    """
-    def get_jk(self, mol=None, dm=None, hermi=1, with_j=True, with_k=True,
-               omega=None):
-        # Note the incore version, which initializes an _eri array in memory.
-        #print("debug-zy: qed get_jk")
-        if mol is None: mol = self.mol
-        if dm is None: dm = self.make_rdm1()
-        if (not omega and
-            (self._eri is not None or mol.incore_anyway or self._is_mem_enough())):
-            if self._eri is None:
-                self._eri = mol.intor('int2e', aosym='s8')
-            vj, vk = hf.dot_eri_dm(self._eri, dm, hermi, with_j, with_k)
-        else:
-            vj, vk = SCF.get_jk(self, mol, dm, hermi, with_j, with_k, omega)
-
-        # add photon contribution, not done yet!!!!!!! (todo)
-        # update molecular-cavity couplings
-        vp = numpy.zeros_like(vj)
-
-        vj += vp
-        vk += vp
-        return vj, vk
-    """
-
-
 class RKS(rks.KohnShamDFT, RHF):
     def __init__(self, mol, xc="LDA,VWN", **kwargs):
         RHF.__init__(self, mol, **kwargs)
@@ -653,49 +539,6 @@ class RKS(rks.KohnShamDFT, RHF):
     get_veff = rks.get_veff
     get_vsap = rks.get_vsap
     energy_elec = rks.energy_elec
-
-
-"""
-class RKS(rks.RKS):
-
-    def __init__(self, mol, xc=None, **kwargs):
-        print("debug- DFT driver is used!")
-        print("xc=", xc)
-        rks.RKS.__init__(self, mol, xc=xc)
-
-        cavity = None
-        if "cavity" in kwargs:
-            cavity = kwargs['cavity']
-            if "cavity_mode" in kwargs:
-                cavity_mode = kwargs['cavity_mode']
-            else:
-                raise ValueError("The required keyword argument 'cavity_mode' is missing")
-
-            if "cavity_freq" in kwargs:
-                cavity_freq = kwargs['cavity_freq']
-            else:
-                raise ValueError("The required keyword argument 'cavity_freq' is missing")
-
-            print('cavity_freq=', cavity_freq)
-            print('cavity_mode=', cavity_mode)
-
-        print(f"{cavity} cavity mode is used!")
-
-    def dump_flags(self, verbose=None):
-        return rks.RKS.dump_flags(self, verbose)
-
-"""
-
-
-# this eventually will moved to qedscf/rhf class
-#
-
-"""
-def get_veff(mf, dm, dm_last=None):
-  veff = None
-
-  return veff
-"""
 
 
 # depreciated standalone qedhf function

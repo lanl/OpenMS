@@ -50,7 +50,6 @@ class TDMixin(lib.StreamObject):
 from openms.lib.boson import Photon
 
 class RHF(qedhf.RHF):
-    # class HF(lib.StreamObject):
     r"""
     QEDSCF base class.   non-relativistic RHF.
 
@@ -61,7 +60,6 @@ class RHF(qedhf.RHF):
 
 
     # functions specific to ms_qedhf to be implemented
-
 
 
 if __name__ == "__main__":

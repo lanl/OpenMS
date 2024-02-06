@@ -425,67 +425,6 @@ def cholesky_diag_fock_rao(mf, h1e):
 
     return mo_energy, mo_coeff
 
-# test oao2ao and ao2oao
-#F_oao = ao2oao(fock, self.X)
-#F_ao = oao2ao(F_oao, self.X)
-#print("is F_ao same as original fock?", numpy.allclose(F_ao, fock))
-
-def get_veff(mf, mol=None, dm=None, dm_last=0, vhf_last=0, hermi=1, vhfopt=None):
-    r"""
-    QEDHF Veff construction
-    Coulomb + XC functional
-
-    .. note::
-        This function will modify the input ks object.
-
-    Args:
-        ks : an instance of :class:`RKS`
-            XC functional are controlled by ks.xc attribute.  Attribute
-            ks.grids might be initialized.
-        dm : ndarray or list of ndarrays
-            A density matrix or a list of density matrices
-
-    Kwargs:
-        dm_last : ndarray or a list of ndarrays or 0
-            The density matrix baseline.  If not 0, this function computes the
-            increment of HF potential w.r.t. the reference HF potential matrix.
-        vhf_last : ndarray or a list of ndarrays or 0
-            The reference Vxc potential matrix.
-        hermi : int
-            Whether J, K matrix is hermitian
-
-            | 0 : no hermitian or symmetric
-            | 1 : hermitian
-            | 2 : anti-hermitian
-
-    Returns:
-        matrix Veff = J + Vxc.  Veff can be a list matrices, if the input
-        dm is a list of density matrices.
-    """
-
-    # HF veff
-    # may implement a universal veff for QEDHF/RKS
-
-    """
-    if dm_last is None:
-        vj, vk = get_jk(mol, numpy.asarray(dm), hermi, vhfopt)
-        return vj - vk * .5
-    else:
-        ddm = numpy.asarray(dm) - numpy.asarray(dm_last)
-        vj, vk = get_jk(mol, ddm, hermi, vhfopt)
-        return vj - vk * .5 + numpy.asarray(vhf_last)
-    """
-
-    raise NotImplementedError
-
-
-# we don't need this, only need to define veff
-# def get_fock(mf, cav=None, h1e=None, s1e=None, vhf=None, dm=None, cycle=-1, diis=None,
-#             diis_start_cycle=None, level_shift_factor=None, damp_factor=None):
-#    '''F = h^{core} + V^{HF}
-#    cav: cavity object
-#
-#    '''
 
 def get_fock(
     mf,
@@ -565,62 +504,6 @@ def get_fock(
 
 # may be better to implement QEDHF as a HF instance, need to run bare HF first and run QED-HF
 # i.e., class HF(hf.SCF)
-
-
-def dot_eri_dm(eri, dm, hermi=0, with_j=True, with_k=True):
-    """Compute J, K matrices in terms of the given 2-electron integrals,
-    photon-mediated dressing factor, and density matrix:
-
-    # not done yet, TODO
-
-    J ~ numpy.einsum('pqrs,qp->rs', eri, dm)
-    K ~ numpy.einsum('pqrs,qr->ps', eri, dm)
-
-    Args:
-        eri : ndarray
-            8-fold or 4-fold ERIs or complex integral array with N^4 elements
-            (N is the number of orbitals)
-        dm : ndarray or list of ndarrays
-            A density matrix or a list of density matrices
-
-    Kwargs:
-        hermi : int
-            Whether J, K matrix is hermitian
-
-            | 0 : no hermitian or symmetric
-            | 1 : hermitian
-            | 2 : anti-hermitian
-
-    Returns:
-        Depending on the given dm, the function returns one J and one K matrix,
-        or a list of J matrices and a list of K matrices, corresponding to the
-        input density matrices.
-
-    Examples:
-
-    >>> from pyscf import gto, scf
-    >>> from pyscf.scf import _vhf
-    >>> mol = gto.M(atom='H 0 0 0; H 0 0 1.1')
-    >>> eri = _vhf.int2e_sph(mol._atm, mol._bas, mol._env)
-    >>> dms = numpy.random.random((3,mol.nao_nr(),mol.nao_nr()))
-    >>> j, k = scf.hf.dot_eri_dm(eri, dms, hermi=0)
-    >>> print(j.shape)
-    (3, 2, 2)
-    """
-    return None
-
-
-def eri_dress(eri, eta=None):
-    r"""Dress eri with photon displacements
-
-    eri ~ xx (todo)
-
-    """
-    for i in range(nao):
-        for j in range(nao):
-            fac = i - j
-
-    return None
 
 
 # inheritance from mqed_hf
@@ -751,55 +634,6 @@ class RHF(qedhf.RHF):
             self._eigh = addons._eigh_with_pivot_cholesky(threshold, cholesky_threshold)
 
 
-    """
-    # overwrite the _eigh function with pivoted_cholesky decomposition based eigh
-    def _eigh(mf, h, s, threshold=LINEAR_DEP_THRESHOLD,
-                                  cholesky_threshold=CHOLESKY_THRESHOLD):
-        x = partial_cholesky_orth_(s, canthr=threshold, cholthr=cholesky_threshold)
-        xhx = reduce(lib.dot, (x.conj().T, h, x))
-        e, c = linalg.eigh(xhx)
-        c = numpy.dot(x, c)
-        mf.x = x
-        return e, c
-    """
-
-    '''
-    def update_cs(self, dm):
-        r"""
-        Update coherent state
-
-        .. math::
-
-            z = \langle \bar{g} (=\lambda\cdot\mu) \rangle / \omega = - Tr[D \bar{g}] / \omega
-              = - Tr[D g] / \sqrt{2\omega}
-
-        here bilinear interaction \bar{g} is:
-
-        .. math::
-
-            \bar{g}_{pq} = \mu_{pq} * \lambda * \sqrt(\omega/2)
-
-        Note: the difference between :math:`\bar{g}` and :math:`g` is the factor: :math:`\sqrt{\omega/2}`, i.e, g is
-
-        .. math::
-
-            g_{pq} = \mu_{pq} * \lambda
-        """
-
-        print("DM(ao) =", numpy.einsum("ij,ij->", dm, dm))
-        for imode in range(self.qed.nmodes):
-            # gb = self.bilinear_integral(imode)
-            trace_gd = lib.einsum(
-                "pq, pq ->", dm, self.gmat[imode]
-            )  # trace of [gmat * DM]
-            print("Trace[gao * DM] =", trace_gd)
-            print("g*g =", numpy.einsum("ij,ij->", self.gmat[imode], self.gmat[imode]))
-            self.coherentstate[imode] = -trace_gd / numpy.sqrt(
-                self.cavity_freq[imode] * 2.0
-            )
-
-    '''
-
     def ao2mo(self, A):
         r"""Transform AO into MO
 
@@ -831,7 +665,6 @@ class RHF(qedhf.RHF):
                 degeneracy += 1
                 degeneracy2 += 1
             elif abs(ediff) > threshold and degeneracy > 1:
-                # ======================= resolve degeneracy in mo2dipole ==============
                 r = p + 1 - degeneracy
                 s = p + 1
 
@@ -868,7 +701,6 @@ class RHF(qedhf.RHF):
 
                 del vectors, deg_fock
                 degeneracy = 1
-                # ======================= resolve degeneracy (end) ==============
 
     def get_dm_do(self, dm, U):
         r"""Transform DM from ao to dipole orbital
@@ -980,7 +812,6 @@ class RHF(qedhf.RHF):
         via Cholesky decomposition of the repulsion integral matrix.
         Using ao2dipole
         """
-
         return None
 
     def construct_eri_DO(self, U):
@@ -1301,22 +1132,6 @@ class RHF(qedhf.RHF):
                         * dm_do[r, s] * fc
                         vhf_do[q, p] = vhf_do[p, q]
 
-        """
-        # construct vj vk in dpole, which is the same as above loop
-        if self._eri is not None or not self.direct_scf:
-            vj, vk = self.get_jk(mol, dm_do, hermi)
-            vhf = vj - vk * 0.5
-        else:
-            ddm = numpy.asarray(dm) - numpy.asarray(dm_last)
-            ddm = self.get_dm_do(ddm, U)
-            vj, vk = self.get_jk(mol, ddm, hermi)
-            vhf = vj - vk * 0.5
-            vhf += numpy.asarray(vhf_last)
-
-        # transform back to AO
-        vhf_do += vhf
-        """
-
         Uinv = linalg.inv(U)
         vhf = unitary_transform(Uinv, vhf_do)
 
@@ -1364,30 +1179,6 @@ class RHF(qedhf.RHF):
         self.scf_summary["nuc"] = nuc.real
         return e_tot
 
-    """
-    def get_jk(self, mol=None, dm=None, hermi=1, with_j=True, with_k=True,
-               omega=None):
-        # Note the incore version, which initializes an _eri array in memory.
-        #print("debug-zy: qed get_jk")
-        if mol is None: mol = self.mol
-        if dm is None: dm = self.make_rdm1()
-        if (not omega and
-            (self._eri is not None or mol.incore_anyway or self._is_mem_enough())):
-            if self._eri is None:
-                self._eri = mol.intor('int2e', aosym='s8')
-            vj, vk = hf.dot_eri_dm(self._eri, dm, hermi, with_j, with_k)
-        else:
-            vj, vk = SCF.get_jk(self, mol, dm, hermi, with_j, with_k, omega)
-
-        # add photon contribution, not done yet!!!!!!! (todo)
-        # update molecular-cavity couplings
-        vp = numpy.zeros_like(vj)
-
-        vj += vp
-        vk += vp
-        return vj, vk
-    """
-
     kernel = kernel
 
     def post_kernel(self, envs):
@@ -1401,7 +1192,6 @@ class RHF(qedhf.RHF):
         for i, citation in enumerate(openms.runtime_refs):
             logger.info(self, f"[{i+1}]. {citation}")
         logger.info(self, f"{breakline}\n")
-
 
 # end of scqedhf RHF class
 
@@ -1417,35 +1207,6 @@ class RKS(rks.KohnShamDFT, RHF):
     get_veff = rks.get_veff
     get_vsap = rks.get_vsap
     energy_elec = rks.energy_elec
-
-
-# class RKS(rks.RKS):
-#
-#    def __init__(self, mol, xc=None, **kwargs):
-#        print("debug- DFT driver is used!")
-#        print("xc=", xc)
-#        rks.RKS.__init__(self, mol, xc=xc)
-#
-#        cavity = None
-#        if "cavity" in kwargs:
-#            cavity = kwargs['cavity']
-#            if "cavity_mode" in kwargs:
-#                cavity_mode = kwargs['cavity_mode']
-#            else:
-#                raise ValueError("The required keyword argument 'cavity_mode' is missing")
-#
-#            if "cavity_freq" in kwargs:
-#                cavity_freq = kwargs['cavity_freq']
-#            else:
-#                raise ValueError("The required keyword argument 'cavity_freq' is missing")
-#
-#            print('cavity_freq=', cavity_freq)
-#            print('cavity_mode=', cavity_mode)
-#
-#        print(f"{cavity} cavity mode is used!")
-#
-#    def dump_flags(self, verbose=None):
-#        return rks.RKS.dump_flags(self, verbose)
 
 
 if __name__ == "__main__":

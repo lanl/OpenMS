@@ -243,8 +243,6 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
         mo_occ = mf.get_occ(mo_energy, mo_coeff)
         dm = mf.make_rdm1(mo_coeff, mo_occ)
 
-        # mf.eta -= 0.1 * mf.eta_grad
-
         # update energy
         time1 = time.time()
         vhf = mf.get_veff(mol, dm, dm_last, vhf)
@@ -783,22 +781,19 @@ class RHF(qedhf.RHF):
                 onebody_deta[p] -= 2.0 * dm_do[imode, p,p] * g_DO[imode, p] / self.qed.omega[imode]
 
         for imode in range(self.qed.nmodes):
-            for p in range(nao):
-                for q in range(nao):
-                    fc_derivative = self.gaussian_derivative(self.eta, imode, p, q)
-                    onebody_deta[p] += 2.0 * self.h1e_DO[p, q] * dm_do[imode, p, q] * fc_derivative \
-                                    - (2.0 * dm_do[imode, q, q] * dm_do[imode, p, p] - \
-                                             dm_do[imode, p, q] * dm_do[imode, q, p]) * \
-                                             g_DO[imode, q] / self.qed.omega[imode]
+            fc_derivative = self.gaussian_derivative_vectorized(self.eta, 0)
+            tmp1 = 2.0 * self.h1e_DO * dm_do[imode] * fc_derivative
+            tmp2 = (2.0 * dm_do[imode].diagonal().reshape(-1, 1) * dm_do[imode].diagonal() \
+                   - dm_do[imode] * dm_do[imode].T) \
+                   * g_DO[imode].reshape(1, -1) / self.qed.omega[imode]
+            onebody_deta += numpy.sum(tmp1 - tmp2, axis=1)
+        del fc_derivative, tmp1, tmp2
 
-        # two-electron part
-        for p in range(nao):
-            for q in range(nao):
-                for r in range(nao):
-                    for s in range(nao):
-                        fc_derivative = self.gaussian_derivative(self.eta, 0, p, q, r=r, s=s)
-                        twobody_deta[p] += (2.0 * self.eri_DO[p, q, r, s] - self.eri_DO[p, s, r, q]) * \
-                                        dm_do[0, p, q] * dm_do[0, r, s] * fc_derivative
+        fc_derivative = self.gaussian_derivative_vectorized(self.eta, 0, onebody=False)
+        fc_derivative *= (2.0 * self.eri_DO - self.eri_DO.transpose(0, 3, 2, 1))
+        tmp = lib.einsum('pqrs, rs-> pq', fc_derivative, dm_do[0, :, :], optimize=True)
+        twobody_deta = lib.einsum('pq, pq-> p', tmp, dm_do[0, :, :], optimize=True)
+        del fc_derivative, tmp
 
         self.eta_grad[0] = onebody_deta + twobody_deta
         #return onebody_deta + twobody_deta
@@ -806,13 +801,6 @@ class RHF(qedhf.RHF):
     # variable gradients, here we only have eta
     get_var_gradient = get_eta_gradient
 
-    def eri_DO_chelosky(self):
-        r"""
-        Tranform the integrals in the dipole basis.
-        via Cholesky decomposition of the repulsion integral matrix.
-        Using ao2dipole
-        """
-        return None
 
     def construct_eri_DO(self, U):
         r"""
@@ -864,26 +852,12 @@ class RHF(qedhf.RHF):
 
         # add dressing factor to two-body integrals (todo)
         for imode in range(self.qed.nmodes):
-            U = self.ao2dipole[imode]
-
+            #U = self.ao2dipole[imode]
             factor = self.FC_factor(self.eta, imode, onebody=False)
             eri_tmp = self.eri_DO * factor
             vj, vk = hf.dot_eri_dm(eri_tmp, dm, hermi, with_j, with_k)
-            #vj, vk = hf.dot_eri_dm(self.eri_DO, dm, hermi, with_j, with_k)
             del eri_tmp
-
         return vj, vk
-
-        """
-        if not omega and (self._eri is not None or mol.incore_anyway or self._is_mem_enough()):
-            if self._eri is None:
-                self._eri = mol.intor("int2e", aosym="s8")
-
-            # derssing two-body integral
-            vj, vk = hf.dot_eri_dm(self._eri, dm, hermi, with_j, with_k)
-        else:
-            vj, vk = RHF.get_jk(self, mol, dm, hermi, with_j, with_k, omega)
-        """
 
         # now add contribution from electron-photon coupling residue
         for imode in range(self.qed.nmodes):
@@ -936,33 +910,47 @@ class RHF(qedhf.RHF):
         """
         nao = self.gmat[imode].shape[0]
         if onebody:
-            factor = numpy.zeros((nao, nao))
-            for p in range(nao):
-                for q in range(p, nao):
-                    tmp = self.qed.couplings_var[imode] * (eta[imode, p] - eta[imode, q])
-                    if False: # depending on wether eta has sqrt(w/2) factors:
-                        tmp = tmp / numpy.sqrt(2.0 * self.qed.omega[imode])
-                    else:
-                        tmp = tmp / self.qed.omega[imode]
-                    factor[p, q] = numpy.exp(-0.5*tmp**2)
-                    #print("dress factor=", p, q, tmp)
-                    if q > p: factor[q, p] = factor[p, q]
-            return factor
+            p, q = numpy.ogrid[:nao, :nao]
+            diff_eta = eta[imode, p] - eta[imode, q]
+            tmp = self.qed.couplings_var[imode]
         else:
-            factor = numpy.zeros((nao, nao, nao, nao))
-            for p in range(nao):
-                for q in range(p, nao):
-                    for r in range(nao):
-                        for s in range(r, nao):
-                            eta_diff = (eta[imode, p] - eta[imode, q] + eta[imode, r] - eta[imode, s])
-                            tmp = self.qed.couplings_var[imode] * eta_diff
-                            if False: # depending on wether eta has sqrt(w/2) factors:
-                                tmp = tmp / numpy.sqrt(2.0 * self.qed.omega[imode])
-                            else:
-                                tmp = tmp / self.qed.omega[imode]
-                            tmp = numpy.exp(-0.5*tmp**2)
-                            factor[p, q, r, s] = factor[q, p, r, s] = factor[p, q, s, r] = factor[q, p, s, r] = tmp
-            return factor
+            p, q, r, s = numpy.ogrid[:nao, :nao, :nao, :nao]
+            diff_eta = eta[imode, p] - eta[imode, q] +  eta[imode, r] - eta[imode, s]
+            tmp = 1.0
+
+        tmp = 1.0
+        if False: # depending on wether eta has sqrt(w/2) factors:
+            tmp = tmp / numpy.sqrt(2.0 * self.qed.omega[imode])
+        else:
+            tmp = tmp / self.qed.omega[imode]
+        factor = numpy.exp(-0.5 * (tmp * diff_eta) ** 2)
+        if onebody:
+            return factor.reshape(nao, nao)
+        else:
+            return factor.reshape(nao, nao, nao, nao)
+
+    def gaussian_derivative_vectorized(self, eta, imode, onebody=True):
+        nao = eta.shape[1]
+        # Calculate diff_eta considering broadcasting
+        if onebody:
+            p, q = numpy.ogrid[:nao, :nao]
+            diff_eta = eta[imode, q] - eta[imode, p]
+        else:
+            p, q, r, s = numpy.ogrid[:nao, :nao, :nao, :nao]
+            diff_eta = eta[imode, q] - eta[imode, p] +  eta[imode, s] - eta[imode, r]
+
+        tmp = 1.0 # self.qed.couplings_var[imode]
+        if False:  # Adjust this condition as needed
+            tmp /= numpy.sqrt(2.0 * self.qed.omega[imode])
+        else:
+            tmp /= self.qed.omega[imode]
+
+        # Apply the derivative formula
+        derivative = numpy.exp(-0.5 * (tmp * diff_eta) ** 2) * (tmp ** 2) * diff_eta
+        if onebody:
+            return derivative.reshape(nao, nao)
+        else:
+            return  derivative.reshape(nao, nao, nao, nao)
 
 
     def gaussian_derivative(self, eta, imode, p, q, r=None, s = None):
@@ -982,7 +970,7 @@ class RHF(qedhf.RHF):
         if r is not None:
             diff_eta += (eta[imode, s] - eta[imode, r])
 
-        tmp = self.qed.couplings_var[imode]
+        tmp = 1.0 # self.qed.couplings_var[imode]
         if False: # depending on wether eta has sqrt(w/2) factors:
             tmp = tmp / numpy.sqrt(2.0 * self.qed.omega[imode])
         else:
@@ -1098,8 +1086,7 @@ class RHF(qedhf.RHF):
 
         nao = self.mol.nao_nr()
         """
-        DSE-mediated one-electron parts
-
+        DSE-mediated one-electron parts:
          2 * \title{g}_{pp} * sum_{q} [D_{qq} \title{g}_{qq}]
                                          mean_value
          -D_{qp}\tidle{g}_{pq} * \tilde{g}_{qq} (diagonal element is then g_pq(p)**2)
@@ -1111,27 +1098,27 @@ class RHF(qedhf.RHF):
 
         g_dot_D = numpy.diagonal(dm_do) @ self.g_dipole[imode, :]
         vhf_do = numpy.zeros((nao,nao))
-        # TODO: replace it with c++ code
-        for p in range(nao):
-            vhf_do[p, p] += (2.0 * self.g_dipole[imode, p] * g_dot_D -
-                            self.g_dipole[imode, p] ** 2 * dm_do[p, p]) / self.qed.omega[0]
 
-            for q in range(p+1, nao):
-                fc = self.get_gaussian_factor(self.eta[imode], p, q)
-                vhf_do[p, q] -= self.g_dipole[imode, p] * self.g_dipole[imode, q] \
-                                * dm_do[q, p] / self.qed.omega[0]
-                vhf_do[q, p] = vhf_do[p, q]
+        # vectorized code
+        p_indices = numpy.arange(nao)
+        vhf_do[p_indices, p_indices] += (2.0 * self.g_dipole[imode, p_indices] * g_dot_D -
+                                         numpy.square(self.g_dipole[imode, p_indices]) * dm_do[p_indices, p_indices]) / self.qed.omega[0]
 
-        # the loop will be replaced with c++ code
-        for p in range(nao):
-            for q in range(p, nao):
-                for r in range(nao):
-                    for s in range(nao):
-                        fc = self.get_gaussian_factor(self.eta[imode], p, q, k=r, l=s)
-                        vhf_do[p, q] += (self.eri_DO[p, q, r, s] - 0.5 * self.eri_DO[p, s, r, q]) \
-                        * dm_do[r, s] * fc
-                        vhf_do[q, p] = vhf_do[p, q]
+        vhf_do_offdiag = numpy.zeros_like(vhf_do)
+        # Calculate off-diagonal elements
+        p, q = numpy.triu_indices(nao, k=1)
+        vhf_do_offdiag[p, q] -= self.g_dipole[imode, p] * self.g_dipole[imode, q] * dm_do[q, p] / self.qed.omega[0]
+        vhf_do_offdiag[q, p] = vhf_do_offdiag[p, q]  # Exploit symmetry
+        vhf_do += vhf_do_offdiag
 
+        # vectorized code
+        fc_factor = self.FC_factor(self.eta, imode, onebody=False)
+        fc_factor *= (1.0 * self.eri_DO - 0.5 * self.eri_DO.transpose(0, 3, 2, 1))
+        vhf = 0.5 * lib.einsum('pqrs, rs->pq', fc_factor, dm_do, optimize=True)
+        vhf += 0.5 * lib.einsum('qprs, rs->pq', fc_factor, dm_do, optimize=True)
+        vhf_do += vhf
+
+        # transform back to AO
         Uinv = linalg.inv(U)
         vhf = unitary_transform(Uinv, vhf_do)
 
@@ -1171,10 +1158,6 @@ class RHF(qedhf.RHF):
 
         nuc = self.energy_nuc()
         e_tot = self.energy_elec(dm, h1e, vhf)[0] + nuc
-
-        #e_tot += 0.5 * numpy.einsum("pq,pq->", self.oei, dm)
-        #dse = self.dse(dm)  # dipole sefl-energy
-        #e_tot += dse
 
         self.scf_summary["nuc"] = nuc.real
         return e_tot

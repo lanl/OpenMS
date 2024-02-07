@@ -67,7 +67,8 @@ class RHF(scqedhf.RHF):
     def __init__(self, mol, xc=None, **kwargs):
         # print headers
         print(self, openms.__logo__)
-        openms.runtime_refs.append(openms._citations["scqedhf"])
+        if openms._citations["scqedhf"] not in openms.runtime_refs:
+            openms.runtime_refs.append(openms._citations["scqedhf"])
 
         scqedhf.RHF.__init__(self, mol, **kwargs)
         self.var_grad = numpy.zeros(self.qed.nmodes)
@@ -116,12 +117,12 @@ class RHF(scqedhf.RHF):
         diff_eta = (eta[imode, q] - eta[imode, p])
         if r is not None:
             diff_eta += (eta[imode, s] - eta[imode, r])
-        tmp = self.qed.couplings_var[imode]
+        tmp = 1.0 #self.qed.couplings_var[imode]
         if False: # depending on wether eta has sqrt(w/2) factors:
             tmp = tmp / numpy.sqrt(2.0 * self.qed.omega[imode])
         else:
             tmp = tmp / self.qed.omega[imode]
-        derivative = numpy.exp(-0.5*(tmp*diff_eta)**2) * (tmp * diff_eta) ** 2
+        derivative = - numpy.exp(-0.5*(tmp*diff_eta)**2) * (tmp * diff_eta) ** 2
 
         # in principle, the couplings_var should be > 0.0
         if self.qed.couplings_var[imode] < 0.0 or self.qed.couplings_var[imode] > 1.1:
@@ -129,6 +130,39 @@ class RHF(scqedhf.RHF):
 
         derivative /= self.qed.couplings_var[imode]
         return derivative
+
+    def gaussian_derivative_f_vector(self, eta, imode, onebody=True):
+        r"""
+        Compute derivative of FC factor with respect to f
+
+        .. math::
+
+            \frac{d G}{\partial f_\alpha} =
+        """
+        nao = self.gmat[imode].shape[0]
+        if onebody:
+            p, q = numpy.ogrid[:nao, :nao]
+            diff_eta = eta[imode, q] - eta[imode, p]
+        else:
+            p, q, r, s = numpy.ogrid[:nao, :nao, :nao, :nao]
+            diff_eta = eta[imode, q] - eta[imode, p] +  eta[imode, s] - eta[imode, r]
+
+        tmp = 1.0 #self.qed.couplings_var[imode]
+        if False: # depending on wether eta has sqrt(w/2) factors:
+            tmp = tmp / numpy.sqrt(2.0 * self.qed.omega[imode])
+        else:
+            tmp = tmp / self.qed.omega[imode]
+        derivative = - numpy.exp(-0.5*(tmp * diff_eta)**2) * (tmp * diff_eta) ** 2
+
+        # in principle, the couplings_var should be > 0.0
+        if self.qed.couplings_var[imode] < 0.0 or self.qed.couplings_var[imode] > 1.05:
+            raise ValueError(f"Couplings_var should be in [0,1], which is {self.qed.couplings_var[imode]}")
+        derivative /= self.qed.couplings_var[imode]
+
+        if onebody:
+            return derivative.reshape(nao, nao)
+        else:
+            return  derivative.reshape(nao, nao, nao, nao)
 
     def get_var_gradient(self, dm_do, g_DO, dm=None):
         r"""
@@ -153,31 +187,22 @@ class RHF(scqedhf.RHF):
         # will be replaced with c++ code
         for imode in range(nmodes):
             # one-electron part
-            derivative = numpy.zeros((nao,nao))
-            for p in range(nao):
-                for q in range(p, nao):
-                    derivative[p, q] = self.gaussian_derivative_f(self.eta, imode, p, q)
-                    if q > p:
-                        derivative[q, p] = derivative[p, q]
-            #
+            derivative = self.gaussian_derivative_f_vector(self.eta, imode)
             h_dot_g = self.h1e_DO * derivative # element_wise
             oei_derivative = numpy.einsum("pq, pq->", h_dot_g, dm_do[imode])
-            tmp = 2.0 * numpy.einsum("qq, pp, p, q->", dm_do[imode], dm_do[imode], g_DO[imode], g_DO[imode])
+            tmp = numpy.einsum("pp, p->p", dm_do[imode], g_DO[imode])
+            tmp = 2.0 * numpy.einsum("p,q->", tmp, tmp)
             tmp -= numpy.einsum("pq, pq, p, q->", dm_do[imode], dm_do[imode], g_DO[imode], g_DO[imode])
             oei_derivative += tmp / self.qed.omega[imode] / self.qed.couplings_var[imode]
 
             onebody_dvar[imode] += oei_derivative
 
             # two-electron part
-            tmp = 0.0
-            for p in range(nao):
-                for q in range(nao):
-                    for r in range(nao):
-                        for s in range(nao):
-                            derivative_f = self.gaussian_derivative_f(self.eta, imode, p, q, r=r, s=s)
-                            tmp += (2.0 * self.eri_DO[p, q, r, s] - self.eri_DO[p, s, r, q]) \
-                                 * dm_do[imode, p, q] * dm_do[imode, r, s] * derivative_f
-            twobody_dvar[imode] = tmp
+            derivative = self.gaussian_derivative_f_vector(self.eta, imode, onebody=False)
+            derivative *= (2.0 * self.eri_DO - self.eri_DO.transpose(0, 3, 2, 1))
+            tmp = lib.einsum('pqrs, rs-> pq', derivative, dm_do[imode], optimize=True)
+            tmp = lib.einsum('pq, pq->', tmp, dm_do[imode], optimize=True)
+            twobody_dvar[imode] = tmp/4.0
 
         self.var_grad = onebody_dvar + twobody_dvar
 
@@ -185,8 +210,8 @@ class RHF(scqedhf.RHF):
             # only works for nmode == 1
             # E_DSE = (1-f)^2 * original E_DSE,
             # so the gradient =  -2(1-f) * original E_DSE =  - E_DSE*2/(1-f)
-            self.dse_tot = self.energy_elec(dm, self.oei, self.oei + self.vhf_dse)[0]
-            self.dse_tot += self.dse(dm)
+            self.dse_tot = self.energy_elec(dm, self.oei, self.vhf_dse)[0]
+            self.dse_tot += self.dse(dm, residue=True)
             self.var_grad[0] -= self.dse_tot * 2.0 / (1.0 - self.qed.couplings_var[0])
 
     def get_var_norm(self):
@@ -204,6 +229,7 @@ class RHF(scqedhf.RHF):
             else:
                 precond = self.precond * 0.5
             self.qed.couplings_var -= precond * self.var_grad
+            self.qed.update_couplings()
 
     def pre_update_params(self):
         variables = self.eta
@@ -223,7 +249,7 @@ class RHF(scqedhf.RHF):
             self.eta = params[fsize:fsize+etasize].reshape(self.eta_grad.shape)
         if params.size > fsize + etasize:
             self.qed.couplings_var = params[fsize+etasize:].reshape(self.var_grad.shape)
-        self.qed.update_couplings()
+            self.qed.update_couplings()
         return f
 
     def energy_tot(self, dm=None, h1e=None, vhf=None):
@@ -240,7 +266,7 @@ class RHF(scqedhf.RHF):
         # the one-electorn part (h1e).
         if self.oei is not None:
             e_tot += 0.5 * lib.einsum("pq,pq->", self.oei, dm)
-        dse = self.dse(dm)  # dipole sefl-energy(0.5*z^2)
+        dse = self.dse(dm, residue=True)  # dipole sefl-energy(0.5*z^2)
         e_tot += dse
 
         self.scf_summary["nuc"] = nuc.real

@@ -5,7 +5,7 @@ from openms.mqed import vtqedhf as qedhf
 
 class TestVTQEDHF_f(unittest.TestCase):
     def test_energy_match(self):
-      refs = [-174.9973500833, -175.020526628437]
+      refs = [-174.9935188527, -175.016224162572]
       etots = []
       for j, falpha in enumerate([0.0, 1.0]):
 
@@ -23,7 +23,7 @@ class TestVTQEDHF_f(unittest.TestCase):
           cavity_freq = numpy.zeros(nmode)
           cavity_mode = numpy.zeros((nmode, 3))
           cavity_freq[0] = 0.5
-          cavity_mode[0, :] = 1.e-1 * numpy.asarray([0, 0, 1])
+          cavity_mode[0, :] = 1.e-1 * numpy.asarray([0, 1, 0])
           mol.verbose = 1
 
           qedmf = qedhf.RHF(mol, xc=None, cavity_mode=cavity_mode,
@@ -38,8 +38,7 @@ class TestVTQEDHF_f(unittest.TestCase):
           self.assertAlmostEqual(e_tot, refs[j], places=6, msg="Etot does not match the reference value.")
 
     def test_vtqed_min(self):
-      ref = -175.020538668929
-
+      ref = -175.0168599150538
       itest = -2
       zshift = itest * 2.5
 
@@ -54,7 +53,7 @@ class TestVTQEDHF_f(unittest.TestCase):
       cavity_freq = numpy.zeros(nmode)
       cavity_mode = numpy.zeros((nmode, 3))
       cavity_freq[0] = 0.5
-      cavity_mode[0, :] = 1.e-1 * numpy.asarray([0, 0, 1])
+      cavity_mode[0, :] = 1.e-1 * numpy.asarray([0, 1, 0])
       mol.verbose = 1
 
       qedmf = qedhf.RHF(mol, xc=None, cavity_mode=cavity_mode,

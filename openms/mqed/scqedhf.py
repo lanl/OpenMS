@@ -145,7 +145,6 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
 
     h1e = bare_hf.get_hcore(mol)
     vhf = bare_hf.get_veff(mol, dm)
-
     e_tot = mf.energy_tot(dm, h1e, vhf)
     logger.info(mf, 'init E= %.15g', e_tot)
 
@@ -161,13 +160,12 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
         mf.initialize_bare_fock(dm)
         mf.initialize_eta(dm)
 
-    # construct h1e, gmat in DO representation
+    # construct h1e, gmat in DO representation (used in SC/VT-QEDHF)
     mf.get_h1e_DO(mol, dm=dm)
 
 
-    h1e = mf.get_hcore(mol, dress=True)
+    h1e = mf.get_hcore(mol, dm, dress=True)
     vhf = mf.get_veff(mol, dm)
-
     e_tot = mf.energy_tot(dm, h1e, vhf)
     logger.info(mf, 'init E= %.15g', e_tot)
 
@@ -177,7 +175,6 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
     s1e = mf.get_ovlp(mol)
     cond = lib.cond(s1e)
     logger.debug(mf, 'cond(S) = %s', cond)
-
     if numpy.max(cond)*1e-17 > conv_tol:
         logger.warn(mf, 'Singularity detected in overlap matrix (condition number = %4.3g). '
                     'SCF may be inaccurate and hard to converge.', numpy.max(cond))
@@ -232,7 +229,7 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
 
         # use DIIS to update eta (in get_fock)
         time1 = time.time()
-        h1e = mf.get_hcore(mol, dress=True)
+        h1e = mf.get_hcore(mol, dm, dress=True)
         time_hcore = time.time() - time1
 
         time1 = time.time()
@@ -248,7 +245,7 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
         vhf = mf.get_veff(mol, dm, dm_last, vhf)
         time_veff = time.time() - time1
 
-        h1e = mf.get_hcore(mol, dress=True)
+        h1e = mf.get_hcore(mol, dm, dress=True)
         e_tot = mf.energy_tot(dm, h1e, vhf)
 
         # Here Fock matrix is h1e + vhf, without DIIS.  Calling get_fock
@@ -294,7 +291,7 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
         dm, dm_last = mf.make_rdm1(mo_coeff, mo_occ), dm
         vhf = mf.get_veff(mol, dm, dm_last, vhf)
 
-        h1e = mf.get_hcore(mol, dress=True)
+        h1e = mf.get_hcore(mol, dm, dress=True)
         e_tot, last_hf_e = mf.energy_tot(dm, h1e, vhf), e_tot
 
         fock = mf.get_fock(h1e, s1e, vhf, dm)
@@ -466,7 +463,7 @@ def get_fock(
         mf.initialize_bare_fock(dm)
         mf.initialize_eta(dm)
 
-    h1e = mf.get_hcore(dress=True)
+    h1e = mf.get_hcore(dm=dm, dress=True)
     if vhf is None:
         vhf = mf.get_veff(mf.mol, dm)
 
@@ -557,7 +554,7 @@ class RHF(qedhf.RHF):
         # removing linear dependency
         #self = remove_linear_dep(self)
 
-        # replace with our general DIIS
+        # will replace it with our general DIIS
         self.diis_space = 20
         self.DIIS = diis.SCF_DIIS
         #self.dump_flags()
@@ -1027,7 +1024,7 @@ class RHF(qedhf.RHF):
             # Tr[g_pq * D] in DO
             g_dot_D = numpy.diagonal(self.dm_do[imode, :, :]) @ self.g_dipole[imode, :]
 
-    def get_hcore(self, mol=None, dress=False):
+    def get_hcore(self, mol=None, dm=None, dress=False):
         r"""QED variational transformaiton dressed one-body integral.
 
         .. math::
@@ -1087,6 +1084,7 @@ class RHF(qedhf.RHF):
         nao = self.mol.nao_nr()
         """
         DSE-mediated one-electron parts:
+
          2 * \title{g}_{pp} * sum_{q} [D_{qq} \title{g}_{qq}]
                                          mean_value
          -D_{qp}\tidle{g}_{pq} * \tilde{g}_{qq} (diagonal element is then g_pq(p)**2)
@@ -1148,19 +1146,6 @@ class RHF(qedhf.RHF):
         if params.size > fsize:
             self.eta = params[fsize:fsize+etasize].reshape(self.eta_grad.shape)
         return f
-
-    def energy_tot(self, dm=None, h1e=None, vhf=None):
-        r"""Total QED Hartree-Fock energy, electronic part plus nuclear repulstion
-        See :func:`scf.hf.energy_elec` for the electron part
-
-        Note this function has side effects which cause mf.scf_summary updated.
-        """
-
-        nuc = self.energy_nuc()
-        e_tot = self.energy_elec(dm, h1e, vhf)[0] + nuc
-
-        self.scf_summary["nuc"] = nuc.real
-        return e_tot
 
     kernel = kernel
 

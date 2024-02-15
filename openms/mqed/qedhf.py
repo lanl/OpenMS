@@ -77,7 +77,6 @@ With the ansatz, the QEDHF energy is
 
 """
 
-
 # this kernel is not used at this moment as it slows down the convergence !!!
 def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
            dump_chk=True, dm0=None, callback=None, conv_check=True, **kwargs):
@@ -213,16 +212,17 @@ Keyword argument "init_dm" is replaced by "dm0"''')
     for cycle in range(mf.max_cycle):
         dm_last = dm
         last_hf_e = e_tot
-        if isinstance(mf, mqed.qedhf.RHF):
-            h1e = mf.get_hcore(mol, dm)
+
+        #if isinstance(mf, mqed.qedhf.RHF):
+        h1e = mf.get_hcore(mol, dm)
+
         fock = mf.get_fock(h1e, s1e, vhf, dm, cycle, mf_diis)
         mo_energy, mo_coeff = mf.eig(fock, s1e)
         mo_occ = mf.get_occ(mo_energy, mo_coeff)
         dm = mf.make_rdm1(mo_coeff, mo_occ)
         vhf = mf.get_veff(mol, dm, dm_last, vhf)
-        if isinstance(mf, mqed.qedhf.RHF):
-            # seems converge slower in this as diis does not apply to hcore
-            h1e = mf.get_hcore(mol, dm)
+        #if isinstance(mf, mqed.qedhf.RHF):
+        h1e = mf.get_hcore(mol, dm)
         e_tot = mf.energy_tot(dm, h1e, vhf)
 
         # Here Fock matrix is h1e + vhf, without DIIS.  Calling get_fock
@@ -259,8 +259,8 @@ Keyword argument "init_dm" is replaced by "dm0"''')
         mo_occ = mf.get_occ(mo_energy, mo_coeff)
         dm, dm_last = mf.make_rdm1(mo_coeff, mo_occ), dm
         vhf = mf.get_veff(mol, dm, dm_last, vhf)
-        if isinstance(mf, mqed.qedhf.RHF):
-            h1e = mf.get_hcore(mol, dm)
+        #if isinstance(mf, mqed.qedhf.RHF):
+        h1e = mf.get_hcore(mol, dm)
         e_tot, last_hf_e = mf.energy_tot(dm, h1e, vhf), e_tot
 
         fock = mf.get_fock(h1e, s1e, vhf, dm)
@@ -372,7 +372,9 @@ class RHF(hf.RHF):
         self.bare_h1e = None # bare oei
         self.oei = None
 
-    """
+    def get_h1e_DO(self, mol=None, dm=None):
+        pass
+
     def get_hcore(self, mol=None, dm=None):
         #
         # DSE-mediated oei: -<\lambda\cdot D> g^\alpha_{uv} - 0.5 q^\alpha_{uv}
@@ -380,20 +382,21 @@ class RHF(hf.RHF):
         #
 
         if mol is None: mol = self.mol
-        if dm is None:
-            dm = self.make_rdm1()
         if self.bare_h1e is None:
             self.bare_h1e = hf.get_hcore(mol)
 
-        self.oei = - lib.einsum("Xpq, X->pq", self.gmat, self.z_lambda)
-        self.oei -= numpy.sum(self.qd2, axis=0)
-        return self.bare_h1e + self.oei
-    """
+        if dm is not None:
+            self.oei = self.qed.add_oei_ao(dm)
+            return self.bare_h1e + self.oei
+        return self.bare_h1e
 
     def get_g_dse_JK(self, dm, residue=False):
         r"""DSE-mediated JK terms
         Note: this term exists even if we don't use CS representation
         don't simply replace this term with z since z can be zero without CS.
+        effective DSE-mediated eri is:
+
+             I' = lib.einsum("Xpq, Xrs->pqrs", gmat, gmat)
         """
 
         dm_shape = dm.shape
@@ -467,9 +470,6 @@ class RHF(hf.RHF):
             vhf = vj - vk * 0.5
             vhf += numpy.asarray(vhf_last)
 
-        # DSE-mediated oei
-        self.oei = self.qed.add_oei_ao(dm)
-        vhf += self.oei
 
         return vhf
 
@@ -483,6 +483,8 @@ class RHF(hf.RHF):
         since z^2 = z^2 * Tr[S D] /Ne = Tr[(z^2/Ne*S)*D]
         i.e., we can add z^2/Ne*S into oei, where S is the overlap, Ne is total energy
         and Ne = Tr[SD].
+
+        Feb 10: deprecated, we move thid term into oei
         """
         # dip = self.dip_moment(dm=dm)
         # print("dipole_moment=", dip)
@@ -493,27 +495,6 @@ class RHF(hf.RHF):
         #print("dipole self-energy=", e_dse)
         return e_dse
 
-    def energy_tot(self, dm=None, h1e=None, vhf=None):
-        r"""Total QED Hartree-Fock energy, electronic part plus nuclear repulstion
-        See :func:`scf.hf.energy_elec` for the electron part
-
-        Note this function has side effects which cause mf.scf_summary updated.
-        """
-
-        nuc = self.energy_nuc()
-        e_tot = self.energy_elec(dm, h1e, vhf)[0] + nuc
-
-        # Note we need the following terms just because we didn't add the self.oei term into
-        # the one-electorn part (h1e), but adding it to veff, so only 1/2 * veff *D energy was calculated
-        # and the other half is missing.
-        if self.oei is not None:
-            e_tot += 0.5 * lib.einsum("pq,pq->", self.oei, dm)
-        # dipole self-energy due to CS basis, 0.5*z^2.
-        dse = self.dse(dm)
-        e_tot += dse
-
-        self.scf_summary["nuc"] = nuc.real
-        return e_tot
 
     def post_kernel(self, envs):
         r"""
@@ -526,6 +507,32 @@ class RHF(hf.RHF):
         for i, citation in enumerate(openms.runtime_refs):
             print(f"[{i+1}]. {citation}")
         print(f"{breakline}\n")
+
+    def scf(self, dm0=None, **kwargs):
+
+        cput0 = (logger.process_clock(), logger.perf_counter())
+
+        self.dump_flags()
+        self.build(self.mol)
+
+        if self.max_cycle > 0 or self.mo_coeff is None:
+            self.converged, self.e_tot, \
+                    self.mo_energy, self.mo_coeff, self.mo_occ = \
+                    kernel(self, self.conv_tol, self.conv_tol_grad,
+                           dm0=dm0, callback=self.callback,
+                           conv_check=self.conv_check, **kwargs)
+        else:
+            # Avoid to update SCF orbitals in the non-SCF initialization
+            # (issue #495).  But run regular SCF for initial guess if SCF was
+            # not initialized.
+            self.e_tot = kernel(self, self.conv_tol, self.conv_tol_grad,
+                                dm0=dm0, callback=self.callback,
+                                conv_check=self.conv_check, **kwargs)[1]
+
+        logger.timer(self, 'SCF', *cput0)
+        self._finalize()
+        return self.e_tot
+    kernel = lib.alias(scf, alias_name='kernel')
 
 class RKS(rks.KohnShamDFT, RHF):
     def __init__(self, mol, xc="LDA,VWN", **kwargs):

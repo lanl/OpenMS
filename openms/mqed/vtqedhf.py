@@ -82,6 +82,14 @@ class RHF(scqedhf.RHF):
         self.qed.update_couplings()
         self.vhf_dse = None
 
+    def get_hcore(self, mol=None, dm=None, dress=False):
+        h1e = super().get_hcore(mol, dm, dress)
+
+        if dm is not None:
+            self.oei = self.qed.add_oei_ao(dm, residue=True) # this is zero for scqedhf
+            return h1e + self.oei
+        return h1e
+
     def get_veff(self, mol=None, dm=None, dm_last=0, vhf_last=0, hermi=1):
         r"""VTQED Hartree-Fock potential matrix for the given density matrix
 
@@ -93,10 +101,6 @@ class RHF(scqedhf.RHF):
 
         if self.qed.use_cs:
             self.qed.update_cs(dm)
-
-        # one electron part (residue for VT-QEDHF, TBA)
-        self.oei = self.qed.add_oei_ao(dm, residue=True) # this is zero for scqedhf
-        vhf += self.oei
 
         # two-electron part (residue, to be tested!)
         vj_dse, vk_dse = self.get_g_dse_JK(dm, residue=True)
@@ -252,25 +256,6 @@ class RHF(scqedhf.RHF):
             self.qed.update_couplings()
         return f
 
-    def energy_tot(self, dm=None, h1e=None, vhf=None):
-        r"""Total QED Hartree-Fock energy, electronic part plus nuclear repulstion
-        See :func:`scf.hf.energy_elec` for the electron part
-
-        Note this function has side effects which cause mf.scf_summary updated.
-        """
-
-        nuc = self.energy_nuc()
-        e_tot = self.energy_elec(dm, h1e, vhf)[0] + nuc
-
-        # Note we need the following terms just because we didn't add the self.oei term into
-        # the one-electorn part (h1e).
-        if self.oei is not None:
-            e_tot += 0.5 * lib.einsum("pq,pq->", self.oei, dm)
-        dse = self.dse(dm, residue=True)  # dipole sefl-energy(0.5*z^2)
-        e_tot += dse
-
-        self.scf_summary["nuc"] = nuc.real
-        return e_tot
 
 
 if __name__ == "__main__":

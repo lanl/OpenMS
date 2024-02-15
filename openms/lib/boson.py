@@ -338,28 +338,38 @@ class Photon(Boson):
         # CS z_\alpha = <\lambda\cdot D>
         self.z_lambda = lib.einsum("pq, Xpq ->X", dm, self.gmat)
 
-    def add_oei_ao(self, dm, residue=False):
+    def add_oei_ao(self, dm, s1e=None, residue=False):
         r"""
         return DSE-mediated oei.. This is universal for bare HF or QED-HF.
-        DSE-mediated oei
+        DSE-mediated oei:
 
         .. math::
 
-            -<\lambda\cdot D> g^\alpha_{uv} - 0.5 q^\alpha_{uv}
-            = -Tr[\rho g^\alpha] g^\alpha_{uv} - 0.5 q^\alpha_{uv}
+            -<\lambda\cdot D> g^\alpha_{uv} - 0.5 q^\alpha_{uv} + z^2 S/N_e
+            = -Tr[\rho g^\alpha] g^\alpha_{uv} - 0.5 q^\alpha_{uv} + z^2 S_Ne
 
+            = -z * g - 0.5 * q(or g^2) + z^2 S/N_e
+
+        since z^2 = z^2 * Tr[S D] /Ne = Tr[(z^2/Ne*S)*D]
+        i.e., we can add z^2/Ne*S into oei, where S is the overlap, Ne is total energy
+        and Ne = Tr[SD].
         """
         self.get_q_dot_lambda()
         self.get_gmatao()
+        if s1e is None:
+            s1e = self._mf.get_ovlp(self._mol)
+
         if self.use_cs:
             self.update_cs(dm)
+        gvar2 = numpy.ones(self.nmodes)
         if residue:
             gvar2 = self.couplings_res**2 # element-wise
-            oei = - lib.einsum("Xpq, X->pq", self.gmat, gvar2 * self.z_lambda)
-            oei -= lib.einsum("Xpq, X->pq", self.q_dot_lambda, gvar2)
-        else:
-            oei = - lib.einsum("Xpq, X->pq", self.gmat, self.z_lambda)
-            oei -= numpy.sum(self.q_dot_lambda, axis=0)
+
+        oei = - lib.einsum("Xpq, X->pq", self.gmat, gvar2 * self.z_lambda)
+        oei -= lib.einsum("Xpq, X->pq", self.q_dot_lambda, gvar2)
+        z2s = 0.5 * numpy.sum(self.z_lambda**2 * gvar2) * s1e/self._mol.nelectron
+        oei += z2s
+
         return oei
 
     # -------------------------------------------

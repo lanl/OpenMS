@@ -227,6 +227,7 @@ class RHF(scqedhf.RHF):
         self.eta -= self.precond * self.eta_grad
         if self.qed.optimize_varf:
             #TODO: give user warning to use smaller precond if it diverges
+            self.qed.couplings_var -= self.precond * self.var_grad
             self.qed.update_couplings()
 
     def pre_update_params(self):

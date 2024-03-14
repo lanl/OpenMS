@@ -376,6 +376,9 @@ class Photon(Boson):
     # post-hf integrals
     # -------------------------------------------
 
+    def get_omega(self):
+        return self.omega
+
     def get_mos(self):
         r"""
         get mo coefficients

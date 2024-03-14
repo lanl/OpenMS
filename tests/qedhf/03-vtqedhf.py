@@ -33,9 +33,9 @@ class TestVTQEDHF_f(unittest.TestCase):
           qedmf.max_cycle = 500
           #qedmf.verbose = 1
           qedmf.init_guess = "hcore"
-          _, e_tot, _, _, _ = qedmf.kernel(conv_tol=1.e-8)
-          etots.append(e_tot)
-          self.assertAlmostEqual(e_tot, refs[j], places=6, msg="Etot does not match the reference value.")
+          qedmf.kernel() #conv_tol=1.e-8)
+          etots.append(qedmf.e_tot)
+          self.assertAlmostEqual(qedmf.e_tot, refs[j], places=6, msg="Etot does not match the reference value.")
 
     def test_vtqed_min(self):
       ref = -175.0168599150538
@@ -63,8 +63,8 @@ class TestVTQEDHF_f(unittest.TestCase):
       qedmf.max_cycle = 500
       #qedmf.verbose = 1
       qedmf.init_guess = "hcore"
-      _, e_tot, _, _, _ = qedmf.kernel(conv_tol=1.e-8)
-      self.assertAlmostEqual(e_tot, ref, places=6, msg="Etot does not match the reference value.")
+      qedmf.kernel() #conv_tol=1.e-8)
+      self.assertAlmostEqual(qedmf.e_tot, ref, places=6, msg="Etot does not match the reference value.")
 
 if __name__ == '__main__':
     unittest.main()

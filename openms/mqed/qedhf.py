@@ -77,7 +77,6 @@ With the ansatz, the QEDHF energy is
 
 """
 
-# this kernel is not used at this moment as it slows down the convergence !!!
 def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
            dump_chk=True, dm0=None, callback=None, conv_check=True, **kwargs):
     '''kernel: the QEDHF SCF driver.
@@ -153,6 +152,7 @@ Keyword argument "init_dm" is replaced by "dm0"''')
         logger.info(mf, 'Set gradient conv threshold to %g', conv_tol_grad)
 
     mol = mf.mol
+    s1e = mf.get_ovlp(mol)
     if dm0 is None:
         dm = mf.get_init_guess(mol, mf.init_guess)
     else:
@@ -160,8 +160,14 @@ Keyword argument "init_dm" is replaced by "dm0"''')
 
     if mf.qed.use_cs:
         mf.qed.update_cs(dm)
-    vhf = mf.get_veff(mol, dm)
+
+    mf.initialize_var_param(dm)
+
+    # construct h1e, gmat in DO representation (used in SC/VT-QEDHF class)
+    mf.get_h1e_DO(mol, dm=dm)
+
     h1e = mf.get_hcore(mol, dm)
+    vhf = mf.get_veff(mol, dm)
     e_tot = mf.energy_tot(dm, h1e, vhf)
     logger.info(mf, 'init E= %.15g', e_tot)
 
@@ -213,6 +219,9 @@ Keyword argument "init_dm" is replaced by "dm0"''')
         dm_last = dm
         last_hf_e = e_tot
 
+        mf.get_h1e_DO(mol, dm=dm)
+        mf.get_var_gradient(dm)
+
         #if isinstance(mf, mqed.qedhf.RHF):
         h1e = mf.get_hcore(mol, dm)
 
@@ -232,6 +241,8 @@ Keyword argument "init_dm" is replaced by "dm0"''')
         norm_gorb = numpy.linalg.norm(mf.get_grad(mo_coeff, mo_occ, fock))
         if not TIGHT_GRAD_CONV_TOL:
             norm_gorb = norm_gorb / numpy.sqrt(norm_gorb.size)
+        norm_eta = mf.get_var_norm()
+        norm_gorb += norm_eta
         norm_ddm = numpy.linalg.norm(dm-dm_last)
         logger.info(mf, 'cycle= %d E= %.15g  delta_E= %4.3g  |g|= %4.3g  |ddm|= %4.3g',
                     cycle+1, e_tot, e_tot-last_hf_e, norm_gorb, norm_ddm)
@@ -284,6 +295,83 @@ Keyword argument "init_dm" is replaced by "dm0"''')
     # A post-processing hook before return
     mf.post_kernel(locals())
     return scf_conv, e_tot, mo_energy, mo_coeff, mo_occ
+
+# difference from hf.get_fock:
+# 1) generalize diis to include other variational  parameters;
+# 2) Due to 1), we now use pre_update_prams and set_params pre/post processing
+#    for DIIS update
+def get_fock(
+    mf,
+    h1e=None,
+    s1e=None,
+    vhf=None,
+    dm=None,
+    cycle=-1,
+    diis=None,
+    diis_start_cycle=None,
+    level_shift_factor=None,
+    damp_factor=None,
+):
+    """F = h^{core} + V^{HF}
+
+    Special treatment (damping, DIIS, or level shift) will be applied to the
+    Fock matrix if diis and cycle is specified (The two parameters are passed
+    to get_fock function during the SCF iteration)
+
+    Kwargs:
+        h1e : 2D ndarray
+            Core hamiltonian
+        s1e : 2D ndarray
+            Overlap matrix, for DIIS
+        vhf : 2D ndarray
+            HF potential matrix
+        dm : 2D ndarray
+            Density matrix, for DIIS
+        cycle : int
+            Then present SCF iteration step, for DIIS
+        diis : an object of :attr:`SCF.DIIS` class
+            DIIS object to hold intermediate Fock and error vectors
+        diis_start_cycle : int
+            The step to start DIIS.  Default is 0.
+        level_shift_factor : float or int
+            Level shift (in AU) for virtual space.  Default is 0.
+    """
+    # copied from hf get_fock, the only difference is that we update h1 in eacy iteration
+
+    mf.initialize_var_param(dm)
+
+    h1e = mf.get_hcore(dm=dm)
+    if vhf is None:
+        vhf = mf.get_veff(mf.mol, dm)
+
+    f = h1e + vhf
+    if cycle > -1:
+        mf.update_variational_params()
+
+    if cycle < 0 and diis is None:  # Not inside the SCF iteration
+        return f
+
+    if diis_start_cycle is None:
+        diis_start_cycle = mf.diis_start_cycle
+    if level_shift_factor is None:
+        level_shift_factor = mf.level_shift
+    if damp_factor is None:
+        damp_factor = mf.damp
+    if s1e is None:
+        s1e = mf.get_ovlp()
+    if dm is None:
+        dm = mf.make_rdm1()
+
+    if 0 <= cycle < diis_start_cycle - 1 and abs(damp_factor) > 1e-4:
+        f = damping(s1e, dm * 0.5, f, damp_factor)
+    if diis is not None and cycle >= diis_start_cycle:
+        #params = diis.update(s1e, dm, f, mf, h1e, vhf)
+        variables, gradients = mf.pre_update_params()
+        params = diis.update(s1e, dm, f, mf, h1e, vhf, var=variables, var_grad=gradients)
+        f = mf.set_params(params, fock_shape=f.shape)
+    if abs(level_shift_factor) > 1e-4:
+        f = level_shift(s1e, dm * 0.5, f, level_shift_factor)
+    return f
 
 
 TIGHT_GRAD_CONV_TOL = getattr(__config__, "scf_hf_kernel_tight_grad_conv_tol", True)
@@ -382,8 +470,9 @@ class RHF(hf.RHF):
         #
 
         if mol is None: mol = self.mol
-        if self.bare_h1e is None:
-            self.bare_h1e = hf.get_hcore(mol)
+        #if self.bare_h1e is None: # cause problems in constructing QEDCCSD eris (return different h1e)
+        #    self.bare_h1e = hf.get_hcore(mol)
+        self.bare_h1e = hf.get_hcore(mol)
 
         if dm is not None:
             self.oei = self.qed.add_oei_ao(dm)
@@ -422,6 +511,8 @@ class RHF(hf.RHF):
         vj = vj_dse.reshape(dm_shape)
         vk = vk_dse.reshape(dm_shape)
         return vj, vk
+
+    get_fock = get_fock
 
     def get_jk(self, mol=None, dm=None, hermi=1, with_j=True, with_k=True, omega=None):
         # Note the incore version, which initializes an _eri array in memory.
@@ -476,6 +567,31 @@ class RHF(hf.RHF):
     def dump_flags(self, verbose=None):
         return hf.RHF.dump_flags(self, verbose)
 
+    def get_var_gradient(self, dm=None):
+        pass
+
+    def get_var_norm(self):
+        r"""QEDHF does not have additional variables
+        """
+        return 0.0
+
+    def initialize_var_param(self, dm = None):
+        r"""
+        initialize additional variational parameters
+        """
+        pass
+
+    def update_variational_params(self):
+        pass
+
+    def pre_update_params(self):
+        return None, None
+
+    def set_params(self, params, fock_shape=None):
+        fsize = numpy.prod(fock_shape)
+        f = params[:fsize].reshape(fock_shape)
+        return f
+
     def dse(self, dm, residue=False):
         r"""
         compute dipole self-energy due to CS basis.
@@ -495,6 +611,20 @@ class RHF(hf.RHF):
         #print("dipole self-energy=", e_dse)
         return e_dse
 
+    def energy_elec(self, dm=None, h1e=None, vhf=None):
+        r"""
+        Our get_hcore depends on dm, so overwrite the default hf energy_elec
+        """
+
+        if dm is None: dm = self.make_rdm1()
+        if h1e is None: h1e = self.get_hcore(self.mol, dm)
+        if vhf is None: vhf = self.get_veff(self.mol, dm)
+        e1 = numpy.einsum('ij,ji->', h1e, dm).real
+        e_coul = numpy.einsum('ij,ji->', vhf, dm).real * .5
+        self.scf_summary['e1'] = e1
+        self.scf_summary['e2'] = e_coul
+        logger.debug(self, 'E1 = %s  E_coul = %s', e1, e_coul)
+        return e1+e_coul, e_coul
 
     def post_kernel(self, envs):
         r"""

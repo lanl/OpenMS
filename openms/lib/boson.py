@@ -400,7 +400,8 @@ class Photon(Boson):
 
     def tmat(self):
         """Return T-matrix in the spin orbital basis."""
-        t = self._mol.get_hcore()
+        #t = self._mol.get_hcore()
+        t = self._mf.get_hcore()
         return utils.block_diag(t, t)
 
     def fock(self):
@@ -492,7 +493,6 @@ class Photon(Boson):
         else:
             # add the DSE-mediated eri
             bare_eri =  self._mol.intor("int2e", aosym="s1")
-            logger.debug(self, f"bare_eri.shape {bare_eri.shape}")
             for mode in range(self.nmodes):
                 bare_eri += numpy.einsum("pq,rs->pqrs", self.gmat[mode], self.gmat[mode])
             eri = ao2mo.general(bare_eri, [C,]*4, compact=False).reshape([self.nmo,]*4)
@@ -543,6 +543,8 @@ class Photon(Boson):
             oooo=oooo,
         )
 
+    g_aint = get_I
+
     def mfG(self):
         if self.pa is None: self.get_mos()
         ptot = utils.block_diag(self.pa, self.pb)
@@ -561,17 +563,11 @@ class Photon(Boson):
         Co = utils.block_diag(self.ca[:, :na], self.cb[:, :nb])
         Cv = utils.block_diag(self.ca[:, na:], self.cb[:, nb:])
 
-        # g_mo = numpy.einsum('Ipq,pi,qj->Iij',g,Cab,Cab)
-        # print("\n|gmat|=", numpy.linalg.norm(g_mo))
 
         oo = numpy.einsum("Ipq,pi,qj->Iij", g, Co, Co)
         ov = numpy.einsum("Ipq,pi,qa->Iia", g, Co, Cv)
         vo = numpy.einsum("Ipq,pa,qi->Iai", g, Cv, Co)
         vv = numpy.einsum("Ipq,pa,qb->Iab", g, Cv, Cv)
-        # print('|g.oo|=', numpy.linalg.norm(oo))
-        # print('|g.ov|=', numpy.linalg.norm(ov))
-        # print('|g.vo|=', numpy.linalg.norm(vo))
-        # print('|g.vv|=', numpy.linalg.norm(vv))
         g = one_e_blocks(oo, ov, vo, vv)
         return (g, g)
 
@@ -593,9 +589,16 @@ class Photon(Boson):
         self.get_gmatao()
 
         # gmatso
+        #gmatso = [
+        #    utils.block_diag(self.gmat[i], self.gmat[i]) for i in range(len(self.gmat))
+        #]
         # add factor of sqrt(w/2) into the coupling
         gmatso = [
-            utils.block_diag(self.gmat[i], self.gmat[i]) for i in range(len(self.gmat))
+           utils.block_diag(
+               self.gmat[i] * numpy.sqrt(self.omega[i] / 2),
+               self.gmat[i] * numpy.sqrt(self.omega[i] / 2),
+           )
+           for i in range(len(self.gmat))
         ]
         self.gmatso = numpy.asarray(gmatso)
 
@@ -635,7 +638,6 @@ if __name__ == "__main__":
     qed = Photon(mol, mf=mf, omega=omega, vec=vec, gfac=gfac)
     qed.kernel()
 
-    #
     for i in range(nmodes):
         g_wx = qed.get_geb_ao(i)
         print("e-ph coupling matrix of mode ", i, "is \n", g_wx)

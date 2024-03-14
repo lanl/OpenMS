@@ -290,7 +290,6 @@ option(MEEP_GIT "Using github version of meep" OFF)
 set(BUILD_TARGETS)
 
 if(BUILD_INFDTD)
-
   if(Python3_Interpreter_FOUND)
     execute_process(
         COMMAND ${Python3_EXECUTABLE} -c "import numpy; print(numpy.get_include())"

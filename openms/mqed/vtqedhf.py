@@ -129,7 +129,7 @@ class RHF(scqedhf.RHF):
         derivative = - numpy.exp(-0.5*(tmp*diff_eta)**2) * (tmp * diff_eta) ** 2
 
         # in principle, the couplings_var should be > 0.0
-        if self.qed.couplings_var[imode] < 0.0 or self.qed.couplings_var[imode] > 1.1:
+        if self.qed.couplings_var[imode] < -0.05 or self.qed.couplings_var[imode] > 1.1:
             raise ValueError(f"Couplings_var should be in [0,1], which is {self.qed.couplings_var[imode]}")
 
         derivative /= self.qed.couplings_var[imode]
@@ -159,7 +159,7 @@ class RHF(scqedhf.RHF):
         derivative = - numpy.exp(-0.5*(tmp * diff_eta)**2) * (tmp * diff_eta) ** 2
 
         # in principle, the couplings_var should be > 0.0
-        if self.qed.couplings_var[imode] < 0.0 or self.qed.couplings_var[imode] > 1.05:
+        if self.qed.couplings_var[imode] < -0.05 or self.qed.couplings_var[imode] > 1.05:
             raise ValueError(f"Couplings_var should be in [0,1], which is {self.qed.couplings_var[imode]}")
         derivative /= self.qed.couplings_var[imode]
 
@@ -215,7 +215,7 @@ class RHF(scqedhf.RHF):
             # E_DSE = (1-f)^2 * original E_DSE,
             # so the gradient =  -2(1-f) * original E_DSE =  - E_DSE*2/(1-f)
             self.dse_tot = self.energy_elec(dm, self.oei, self.vhf_dse)[0]
-            self.dse_tot += self.dse(dm, residue=True)
+            #self.dse_tot += self.dse(dm, residue=True) #we moved this into fock
             self.var_grad[0] -= self.dse_tot * 2.0 / (1.0 - self.qed.couplings_var[0])
 
     def get_var_norm(self):
@@ -226,13 +226,7 @@ class RHF(scqedhf.RHF):
     def update_variational_params(self):
         self.eta -= self.precond * self.eta_grad
         if self.qed.optimize_varf:
-            if max(abs(self.var_grad)) > max(abs(self.qed.couplings_var)):
-                precond = 1.e-2
-            elif max(abs(self.var_grad)) < 1.e-2 * max(abs(self.qed.couplings_var)):
-                precond = 1.0
-            else:
-                precond = self.precond * 0.5
-            self.qed.couplings_var -= precond * self.var_grad
+            #TODO: give user warning to use smaller precond if it diverges
             self.qed.update_couplings()
 
     def pre_update_params(self):

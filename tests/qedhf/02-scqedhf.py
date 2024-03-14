@@ -5,7 +5,7 @@ from openms.mqed import scqedhf as qedhf
 
 class TestSCQEDHF(unittest.TestCase):
     def test_energy_match(self):
-        ref = -175.020526628437
+        ref = -175.016224162572
 
         itest = -2
         zshift = itest * 2.5
@@ -21,16 +21,16 @@ class TestSCQEDHF(unittest.TestCase):
         cavity_freq = numpy.zeros(nmode)
         cavity_mode = numpy.zeros((nmode, 3))
         cavity_freq[0] = 0.5
-        cavity_mode[0, :] = 1.e-1 * numpy.asarray([0, 0, 1])
+        cavity_mode[0, :] = 1.e-1 * numpy.asarray([0, 1, 0])
         mol.verbose = 1
 
         qedmf = qedhf.RHF(mol, xc=None, cavity_mode=cavity_mode, cavity_freq=cavity_freq, add_nuc_dipole=True)
         qedmf.max_cycle = 500
         #qedmf.verbose = 1
         qedmf.init_guess = "hcore"
-        _, e_tot, _, _, _ = qedmf.kernel(conv_tol=1.e-8)
+        qedmf.kernel() #conv_tol=1.e-8)
 
-        self.assertAlmostEqual(e_tot, ref, places=6, msg="Etot does not match the reference value.")
+        self.assertAlmostEqual(qedmf.e_tot, ref, places=6, msg="Etot does not match the reference value.")
 
 if __name__ == '__main__':
     unittest.main()

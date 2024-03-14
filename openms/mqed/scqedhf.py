@@ -156,9 +156,7 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
     if mf.qed.use_cs:
         mf.qed.update_cs(dm)
 
-    if mf.eta is None:
-        mf.initialize_bare_fock(dm)
-        mf.initialize_eta(dm)
+    mf.initialize_var_param(dm)
 
     # construct h1e, gmat in DO representation (used in SC/VT-QEDHF)
     mf.get_h1e_DO(mol, dm=dm)
@@ -459,9 +457,7 @@ def get_fock(
     """
     # copied from hf get_fock, the only difference is that we update h1 in eacy iteration
 
-    if mf.eta is None:
-        mf.initialize_bare_fock(dm)
-        mf.initialize_eta(dm)
+    mf.initialize_var_param(dm)
 
     h1e = mf.get_hcore(dm=dm, dress=True)
     if vhf is None:
@@ -1129,6 +1125,15 @@ class RHF(qedhf.RHF):
         var_norm = linalg.norm(self.eta_grad)/numpy.sqrt(self.eta.size)
         return var_norm
 
+    def initialize_var_param(self, dm = None):
+        r"""
+        initialize additional variational parameters
+        """
+        if self.eta is None:
+            #logger.debug(mf, "\n entering initialize bare fock")
+            self.initialize_bare_fock(dm)
+            self.initialize_eta(dm)
+
     def update_variational_params(self):
         self.eta -= self.precond * self.eta_grad
         # self.eta -= 0.1 * self.eta_grad
@@ -1147,7 +1152,32 @@ class RHF(qedhf.RHF):
             self.eta = params[fsize:fsize+etasize].reshape(self.eta_grad.shape)
         return f
 
-    kernel = kernel
+    #kernel = kernel
+    def scf(self, dm0=None, **kwargs):
+
+        cput0 = (logger.process_clock(), logger.perf_counter())
+
+        self.dump_flags()
+        self.build(self.mol)
+
+        if self.max_cycle > 0 or self.mo_coeff is None:
+            self.converged, self.e_tot, \
+                    self.mo_energy, self.mo_coeff, self.mo_occ = \
+                    kernel(self, self.conv_tol, self.conv_tol_grad,
+                           dm0=dm0, callback=self.callback,
+                           conv_check=self.conv_check, **kwargs)
+        else:
+            # Avoid to update SCF orbitals in the non-SCF initialization
+            # (issue #495).  But run regular SCF for initial guess if SCF was
+            # not initialized.
+            self.e_tot = kernel(self, self.conv_tol, self.conv_tol_grad,
+                                dm0=dm0, callback=self.callback,
+                                conv_check=self.conv_check, **kwargs)[1]
+
+        logger.timer(self, 'SCF', *cput0)
+        self._finalize()
+        return self.e_tot
+    kernel = lib.alias(scf, alias_name='kernel')
 
     def post_kernel(self, envs):
         r"""

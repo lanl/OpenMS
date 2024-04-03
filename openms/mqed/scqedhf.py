@@ -666,7 +666,7 @@ class RHF(qedhf.RHF):
                 fock = self.ao2mo(fock)
 
                 # dipole matrix in AO
-                r_ao = get_dipole_ao(self.mol, add_nuc_dipole=False)
+                r_ao = get_dipole_ao(self.mol, self.qed.add_nuc_dipole)
                 sum_dipole_ao = numpy.sum(r_ao, axis=0)
                 sum_dipole_mo = self.ao2mo(sum_dipole_ao)
 

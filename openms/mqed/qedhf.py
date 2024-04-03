@@ -79,13 +79,14 @@ With the ansatz, the QEDHF energy is
 
 def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
            dump_chk=True, dm0=None, callback=None, conv_check=True, **kwargs):
-    '''kernel: the QEDHF SCF driver.
+    r"""
+    kernel: the QEDHF SCF driver.
 
-    the only difference against bare hf kernel is that we include get_hcore within
+    The only difference against bare hf kernel is that we include get_hcore within
     the scf cycle because qedhf has DSE-mediated hcore which depends on DM
 
     Args:
-        mf : an instance of SCF class
+        mf : an instance of QEDSCF class
             mf object holds all parameters to control SCF.  One can modify its
             member functions to change the behavior of SCF.  The member
             functions which are called in kernel are
@@ -119,7 +120,7 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
             environment.
 
     Returns:
-        A list :   scf_conv, e_tot, mo_energy, mo_coeff, mo_occ
+        A list : scf_conv, e_tot, mo_energy, mo_coeff, mo_occ
 
         scf_conv : bool
             True means SCF converged
@@ -137,11 +138,14 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
     Examples:
 
     >>> from pyscf import gto, scf
-    >>> mol = gto.M(atom='H 0 0 0; H 0 0 1.1', basis='cc-pvdz')
+    >>> from openms.mqed import qedhf
+    >>> mol = gto.M(atom='Li 0 0 0; H 0 0 1.1', basis='cc-pvdz')
+    >>> qedmf = qedhf.RHF(mol, cavity_freq=0.1, cavity_mode=numpy.asarray([0, 0, 0.1]))
+    >>> qedmf.kernel()
     >>> conv, e, mo_e, mo, mo_occ = scf.hf.kernel(scf.hf.SCF(mol), dm0=numpy.eye(mol.nao_nr()))
-    >>> print('conv = %s, E(HF) = %.12f' % (conv, e))
-    conv = True, E(HF) = -1.081170784378
-    '''
+    >>> print('conv = %s, E(QEDHF) = %.12f' % (self.conv, self.e_tot))
+    conv = True, E(QEDHF) = -xxx
+    """
     if 'init_dm' in kwargs:
         raise RuntimeError('''
 You see this error message because of the API updates in pyscf v0.11.
@@ -300,6 +304,7 @@ Keyword argument "init_dm" is replaced by "dm0"''')
 # 1) generalize diis to include other variational  parameters;
 # 2) Due to 1), we now use pre_update_prams and set_params pre/post processing
 #    for DIIS update
+# 3) h1e depends on dm
 def get_fock(
     mf,
     h1e=None,
@@ -430,8 +435,8 @@ class RHF(hf.RHF):
                 cavity_freq = kwargs["cavity_freq"]
             else:
                 raise ValueError("The required keyword argument 'cavity_freq' is missing")
-            logger.debug(self, "cavity_freq = {cavity_freq}")
-            logger.debug(self, "cavity_mode = {cavity_mode}")
+            logger.debug(self, f"cavity_freq = {cavity_freq}")
+            logger.debug(self, f"cavity_mode = {cavity_mode}")
 
             nmode = len(cavity_freq)
             gfac = numpy.zeros(nmode)
@@ -456,7 +461,6 @@ class RHF(hf.RHF):
         self.gmat = self.qed.gmat
         self.qd2 = self.qed.q_dot_lambda
 
-        self.dip_ao = mol.intor("int1e_r", comp=3)
         self.bare_h1e = None # bare oei
         self.oei = None
 
@@ -600,7 +604,7 @@ class RHF(hf.RHF):
         i.e., we can add z^2/Ne*S into oei, where S is the overlap, Ne is total energy
         and Ne = Tr[SD].
 
-        Feb 10: deprecated, we move thid term into oei
+        Feb 10: deprecated, we move this term into oei
         """
         # dip = self.dip_moment(dm=dm)
         # print("dipole_moment=", dip)

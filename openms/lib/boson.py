@@ -130,7 +130,7 @@ class Boson(object):
                 or len(gfac) != len(omega)
             ):
                 raise ValueError(
-                    "The size of the first axis of 'vec' must be the same as the length of 'omega'."
+                    "The size of the first axis of 'gfac' must be the same as the length of 'omega'."
                 )
             else:
                 self.gfac = gfac
@@ -445,9 +445,9 @@ class Photon(Boson):
         Ehf += numpy.einsum("ij,ji->", ptot, T)
         # print(f"Electronic energy in hf_energy()= {Ehf}")
         if self.shift:
-            return 0.5 * Ehf + self.energy_nuc + self.const
+            return 0.5 * Ehf + self._mf.energy_nuc() + self.const
         else:
-            return 0.5 * Ehf + self.energy_nuc
+            return 0.5 * Ehf + self._mf.energy_nuc()
 
     def g_fock(self):
         if self.ca is None: self.get_mos()
@@ -481,7 +481,7 @@ class Photon(Boson):
             Fvv = numpy.einsum("pa,pq,qb->ab", Cv, F, Cv)
         return one_e_blocks(Foo, Fov, Fvo, Fvv)
 
-    def get_I(self):
+    def get_I(self, full=False):
         from pyscf import ao2mo
         if self.ca is None: self.get_mos()
 
@@ -504,6 +504,7 @@ class Photon(Boson):
 
         Ua_mo = eri.transpose(0, 2, 1, 3) - eri.transpose(0, 2, 3, 1)
         logger.debug(self, f" -YZ: Norm of I with DSE eri {numpy.linalg.norm(Ua_mo)}")
+        if full: return Ua_mo
 
         temp = [i for i in range(self.nmo)]
         oidx = temp[:na] + temp[self.nmo // 2 : self.nmo // 2 + nb]

@@ -10,7 +10,7 @@ How to cite
 Bibtex entry::
 
   @Misc{OpenMS,
-    title = {Openms: A Multiscale ecosystem for solving coupled Maxwell-Schr\"{o}dinger equations in Open quantum environments},
+    title = {Openms: A Multiscale ecosystem for solving coupled Maxwell-Schrödinger equations in Open quantum environments},
     author = {Yu Zhang},
     url = {https://github.com/lanl/OpenMS},
   }

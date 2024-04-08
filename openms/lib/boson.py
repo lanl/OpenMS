@@ -414,11 +414,11 @@ class Photon(Boson):
         if self.pa is None or self.pb is None:
             raise Exception("Cannot build Fock without density ")
 
-        #h1 = self._mol.get_hcore()
         h1 = self._mf.get_hcore()
 
         # add DSE-oei contribution
-        h1 += self.add_oei_ao(self.pa+self.pb)
+        if not self.shift:
+            h1 += self.add_oei_ao(self.pa+self.pb)
 
         ptot = utils.block_diag(self.pa, self.pb)
         h1 = utils.block_diag(h1, h1)
@@ -513,39 +513,27 @@ class Photon(Boson):
 
         vvvv = Ua_mo[numpy.ix_(vidx, vidx, vidx, vidx)]
         vvvo = Ua_mo[numpy.ix_(vidx, vidx, vidx, oidx)]
-        vvov = Ua_mo[numpy.ix_(vidx, vidx, oidx, vidx)]
         vovv = Ua_mo[numpy.ix_(vidx, oidx, vidx, vidx)]
-        ovvv = Ua_mo[numpy.ix_(oidx, vidx, vidx, vidx)]
         vvoo = Ua_mo[numpy.ix_(vidx, vidx, oidx, oidx)]
-        vovo = Ua_mo[numpy.ix_(vidx, oidx, vidx, oidx)]
-        voov = Ua_mo[numpy.ix_(vidx, oidx, oidx, vidx)]
-        ovvo = Ua_mo[numpy.ix_(oidx, vidx, vidx, oidx)]
-        ovov = Ua_mo[numpy.ix_(oidx, vidx, oidx, vidx)]
         oovv = Ua_mo[numpy.ix_(oidx, oidx, vidx, vidx)]
-        ooov = Ua_mo[numpy.ix_(oidx, oidx, oidx, vidx)]
-        oovo = Ua_mo[numpy.ix_(oidx, oidx, vidx, oidx)]
-        ovoo = Ua_mo[numpy.ix_(oidx, vidx, oidx, oidx)]
+        vovo = Ua_mo[numpy.ix_(vidx, oidx, vidx, oidx)]
         vooo = Ua_mo[numpy.ix_(vidx, oidx, oidx, oidx)]
+        ooov = Ua_mo[numpy.ix_(oidx, oidx, oidx, vidx)]
         oooo = Ua_mo[numpy.ix_(oidx, oidx, oidx, oidx)]
 
-        return two_e_blocks_full(
-            vvvv=vvvv,
-            vvvo=vvvo,
-            vovv=vovv,
-            voov=voov,
-            ovvv=ovvv,
-            ovoo=ovoo,
-            oovo=oovo,
-            vvov=vvov,
-            ovvo=ovvo,
-            ovov=ovov,
-            vvoo=vvoo,
-            oovv=oovv,
-            vovo=vovo,
-            vooo=vooo,
-            ooov=ooov,
-            oooo=oooo,
-        )
+        #vvov = Ua_mo[numpy.ix_(vidx, vidx, oidx, vidx)]
+        #ovvv = Ua_mo[numpy.ix_(oidx, vidx, vidx, vidx)]
+        #voov = Ua_mo[numpy.ix_(vidx, oidx, oidx, vidx)]
+        #ovvo = Ua_mo[numpy.ix_(oidx, vidx, vidx, oidx)]
+        #ovov = Ua_mo[numpy.ix_(oidx, vidx, oidx, vidx)]
+        #oovo = Ua_mo[numpy.ix_(oidx, oidx, vidx, oidx)]
+        #ovoo = Ua_mo[numpy.ix_(oidx, vidx, oidx, oidx)]
+
+        return two_e_blocks(vvvv=vvvv,
+                vvvo=vvvo, vovv=vovv,
+                vvoo=vvoo, oovv=oovv,
+                vovo=vovo, vooo=vooo,
+                ooov=ooov, oooo=oooo)
 
     g_aint = get_I
 

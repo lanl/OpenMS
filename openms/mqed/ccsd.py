@@ -7,6 +7,7 @@ import numpy
 import sys
 from cqcpy import cc_equations
 from cqcpy import cc_energy
+from . import epcc_equations
 from . import qedcc_equations
 
 from pyscf import lib

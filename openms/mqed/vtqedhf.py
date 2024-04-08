@@ -17,6 +17,7 @@
 import sys
 import copy
 import numpy
+import warnings
 from openms import __config__
 from pyscf import lib
 from pyscf.scf import hf
@@ -130,7 +131,8 @@ class RHF(scqedhf.RHF):
 
         # in principle, the couplings_var should be > 0.0
         if self.qed.couplings_var[imode] < -0.05 or self.qed.couplings_var[imode] > 1.1:
-            raise ValueError(f"Couplings_var should be in [0,1], which is {self.qed.couplings_var[imode]}")
+            warnings.warn(f"Warning: Couplings_var should be in [0,1], which is {self.qed.couplings_var[imode]}")
+            #raise ValueError(f"Couplings_var should be in [0,1], which is {self.qed.couplings_var[imode]}")
 
         derivative /= self.qed.couplings_var[imode]
         return derivative
@@ -160,7 +162,8 @@ class RHF(scqedhf.RHF):
 
         # in principle, the couplings_var should be > 0.0
         if self.qed.couplings_var[imode] < -0.05 or self.qed.couplings_var[imode] > 1.05:
-            raise ValueError(f"Couplings_var should be in [0,1], which is {self.qed.couplings_var[imode]}")
+            warnings.warn(f"Warning: Couplings_var should be in [0,1], which is {self.qed.couplings_var[imode]}")
+            #raise ValueError(f"Couplings_var should be in [0,1], which is {self.qed.couplings_var[imode]}")
         derivative /= self.qed.couplings_var[imode]
 
         if onebody:

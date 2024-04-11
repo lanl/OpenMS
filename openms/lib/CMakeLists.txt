@@ -148,6 +148,7 @@ set(MPI_CXX_SKIP_MPICXX TRUE CACHE BOOL "MPI_CXX_SKIP_MPICXX")
 # Configure options ============================================================
 # all features are summaried at the end!
 
+option(ENABLE_QEDLIB "Enable QED c++ libraries" OFF)
 option(ENABLE_MPI "Enable MPI" ON)
 option(ENABLE_QMD "Enable QMD/MQC/CTMQC" ON)
 option(ENABLE_MEEP "Using MEEP for solvng maxwell equations" ON)
@@ -170,6 +171,7 @@ if (ENABLE_TA)
 	endif()
 endif()
 
+add_feature_info(QEDLIB ENABLE_QEDLIB "C++ libraries for QED-related integrals")
 add_feature_info(TA ENABLE_TA "TiledArray: block-sparse tensor framework for modern (distributed-memory and heterogeneous) computing")
 add_feature_info(QMD ENABLE_QMD "QMD: Module of Mixed quantum-classical dynamics and quatum nuclear dynamics")
 add_feature_info(TAPYTHON ENABLE_TAPYTHON "Python binding of TiledArray lib")
@@ -308,6 +310,19 @@ if(ENABLE_QMD)
   message("Lib for QMD and MQC dynamics (TBA)")
   # rk4 lib?
   #add_subdirectory(./el_prop)
+endif()
+
+if(ENABLE_QEDLIB)
+  if(Python3_Interpreter_FOUND)
+    execute_process(
+        COMMAND ${Python3_EXECUTABLE} -c "import numpy; print(numpy.get_include())"
+        OUTPUT_VARIABLE NUMPY_INCLUDE_DIR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+  endif()
+  message(STATUS "NUMPY include dir: ${NUMPY_INCLUDE_DIR}")
+  add_subdirectory(./qedlibs/ libqed)
+  list(APPEND BUILD_TARGETS libqed)
 endif()
 
 # find FFTW_PATH (will be replaced with find_package (todo,to  add a toolchain))

@@ -16,7 +16,7 @@
 
 
 # modified from a fdtd code (ref: )
-r""" 
+r"""
 Selects the backend for the openms-package.
 The `openms` allows to choose a backend. The ``numpy`` backend is the
 default one, but there are also several additional PyTorch backends:
@@ -579,7 +579,7 @@ if TA_AVAILABLE:
                 stop = tile.range.stop
                 slices = tuple(slice(b, c) for b, c in zip(start, stop))
                 # print('tile.range=', tile.range)
-                # print('subarray=', nptensor[slices])
+                # print('subarray=', tensor[slices])
                 a[slices] = tile.data
             return a
 
@@ -589,7 +589,7 @@ if TA_AVAILABLE:
             """
             if world is None:
                 world = TA.get_default_world()
-            size = nptensor.shape
+            size = tensor.shape
 
             a = Array(size, block, world=world)
             for i, tile in enumerate(a):
@@ -597,8 +597,8 @@ if TA_AVAILABLE:
                 stop = tile.range.stop
                 slices = tuple(slice(b, c) for b, c in zip(start, stop))
                 # print('tile.range=', tile.range)
-                # print('subarray=', nptensor[slices])
-                tile.data = nptensor[slices]
+                # print('subarray=', tensor[slices])
+                tile.data = tensor[slices]
             return a
 
         @staticmethod

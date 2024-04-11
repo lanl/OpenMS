@@ -53,6 +53,14 @@ TBA
   make install
 ```
 
+## Test
+
+All the tests are written as unitttest cases. Use the following script to run all the tests (TBA)
+
+```
+python -m unittest discover -s tests -p 'test_*.py'
+```
+
 ## Documentation
 
 Details of installation instruction, usage, APIs, and examples can be

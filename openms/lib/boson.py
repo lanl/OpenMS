@@ -154,6 +154,9 @@ class Boson(object):
         else:
             self.optimize_varf = True
             self.couplings_var = 0.5 * numpy.ones(self.nmodes)
+        self.squeezed_cs = False
+        if "squeezed_cs" in kwargs:
+            self.squeezed_cs = kwargs["squeezed_cs"]
 
         # If gfac is None and vec is not None,
         # normalize vec and set gfac as the normalization factor

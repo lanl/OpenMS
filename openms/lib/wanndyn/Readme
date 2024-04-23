@@ -1,0 +1,11 @@
+
+In this folder, we will implement MLWF-based density matrix dynamics in crystals
+i\hbar\partial\rho_K(t)/\partial_t = [H_k,\rho_k] + \mathcal{L}_{scatt} + \mathcal{L}_{eph}
+
+where 1) \mathcal{L}_{ee} accounts for the electron-electron scattering
+      2) \mathcal{L}_{eph} accounts for the electron-phonon scatterings
+
+
+PS: This code may be re-arranged into a separate package.
+
+

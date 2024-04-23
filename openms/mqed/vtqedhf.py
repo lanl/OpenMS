@@ -48,7 +48,39 @@ Theoretical background of VT-QEDHF methods
 
 Transformation is:
 
-TBA
+.. math::
+
+   U(f) = \exp\left[-\frac{f_\alpha\boldsymbol{\lambda}_\alpha\cdot\boldsymbol{D}}{\sqrt{2\omega}}(b-b^\dagger)\right].
+
+where :math:`f_\alpha\in [0, 1]`. With :math:`U`, the transformed QED Hamiltonian
+becomes
+
+.. math::
+
+    \mathcal{H} = & \mathcal{H}_e + (1-f_\alpha)\sqrt{\frac{\omega_\alpha}{2}}\boldsymbol{\lambda}_\alpha\cdot\boldsymbol{D} (b+b^\dagger) \\
+                  & + \frac{1}{2} (1-f_\alpha)^2 \left(\boldsymbol{\lambda}_\alpha\cdot\boldsymbol{D}\right)^2.
+
+Where the dressed electronic Hamiltonian is
+
+.. math::
+
+    \mathcal{H}_e =  \tilde{h}_{\mu\nu}\hat{E}_{\mu\nu} + \tilde{I}_{\mu\nu\lambda\sigma}\hat{e}_{\mu\nu\lambda\sigma}.
+
+and
+
+.. math::
+
+    \tilde{h}_{\mu\nu}&=\sum_{\mu'\nu} h_{\mu'\nu'}X^\dagger_{\mu\mu'}X_{\nu\nu'} \\
+    \tilde{I}_{\mu\nu\lambda\sigma}&= \sum_{\mu'\nu'\lambda'\sigma'}X^\dagger_{\mu\mu'}X^\dagger_{\nu\nu'}I_{\mu'\nu'\lambda'\sigma'} X_{\lambda\lambda'}X_{\sigma\sigma'}.
+
+And
+
+.. math::
+
+    X_{\mu\nu} = \exp\left[-\sum_{\alpha}\frac{f_\alpha}{\sqrt{2\omega_\alpha}} \boldsymbol{\lambda}_\alpha\cdot\boldsymbol{D} (\hat{a}^\dagger_\alpha - \hat{a}_\alpha) \right]|_{\mu\nu}.
+
+Then we can derive the QEDHF functional and Fock matrix accordingly based on the HF ansatz.
+
 
 """
 
@@ -80,6 +112,9 @@ class RHF(scqedhf.RHF):
         else:
             self.qed.optimize_varf = True
             self.qed.couplings_var = 0.5 * numpy.ones(self.qed.nmodes)
+        if "squeezed_cs" in kwargs:
+            self.qed.squeezed_cs = kwargs['squeezed_cs']
+
         self.qed.update_couplings()
         self.vhf_dse = None
 

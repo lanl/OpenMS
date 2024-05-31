@@ -21,6 +21,9 @@ import scipy
 import itertools
 import logging
 
+from openms.qmc.trial import TrialHF
+from pyscf.lib import logger
+
 def read_fcidump(fname, norb):
     """
     :param fname: electron integrals dumped by pyscf
@@ -88,7 +91,6 @@ class QMCbase(object):
         self.dt = dt
         self.total_time = total_time
         self.propagator = None
-        self.trial = None
         self.nsteps = nsteps   #
         self.nblocks = 500     #
         self.pop_control_freq = 5                 # population control frequency
@@ -96,10 +98,18 @@ class QMCbase(object):
         self.eq_time = 2.0                        # time of equilibration phase
         self.eq_steps = int(self.eq_time/self.dt) # Number of time steps for the equilibration phase
         self.stablize_freq = 5                    # Frequency of stablization(re-normalization) steps
-
         self.energy_scheme = energy_scheme
+        self.verbose = 1
+        self.stdout = sys.stdout
+
+        self.trial = None
+
 
         # walker parameters
+        # TODO: move these variables into walker object
+        self.walker = None
+        self.__dict__.update(kwargs)
+
         self.taylor_order = taylor_order
         self.num_walkers = num_walkers
         self.renorm_freq = renorm_freq
@@ -122,10 +132,16 @@ class QMCbase(object):
         Build up the afqmc calculations
         """
         # set up trial wavefunction
+        logger.info(self, "\n========  Initialize Trial WF and Walker  ======== \n")
+        if self.trial is None:
+            self.trial = TrialHF(self.mol)
 
         # set up walkers
+        # TODO: move this into walker class
+        temp = self.trial.wf.copy()
+        self.walker_tensors = np.array([temp] * self.num_walkers, dtype=np.complex128)
+        self.walker_coeff = np.array([1.] * self.num_walkers)
 
-        pass
 
     def get_integrals(self):
         r"""
@@ -133,7 +149,10 @@ class QMCbase(object):
         return oei and eri in MO
         """
 
+        overlap = self.mol.intor('int1e_ovlp')
+        self.ao_coeff = lo.orth.lowdin(overlap)
         norb = self.ao_coeff.shape[0]
+
         import tempfile
         ftmp = tempfile.NamedTemporaryFile()
         tools.fcidump.from_mo(self.mol, ftmp.name, self.ao_coeff)
@@ -149,69 +168,16 @@ class QMCbase(object):
 
         return h1e, eri, ltensor
 
-    def prepare_trial(self, mf=None):
-        r"""
-        TODO: moved to trial class
-        """
-        if mf is None:
-            mf = scf.RHF(self.mol)
-            mf.kernel()
-
-        overlap = self.mol.intor('int1e_ovlp')
-        self.ao_coeff = lo.orth.lowdin(overlap)
-        xinv = np.linalg.inv(self.ao_coeff)
-
-        self.trial = mf.mo_coeff
-        self.trial = xinv.dot(mf.mo_coeff[:, :self.mol.nelec[0]])
-
-    def initialize_walker(self, mf=None):
-        r"""
-        """
-        print(f"\n========  Initializing walkers  ======== \n")
-
-        self.prepare_trial(mf)
-        temp = self.trial.copy()
-        self.walker_tensors = np.array([temp] * self.num_walkers, dtype=np.complex128)
-        self.walker_coeff = np.array([1.] * self.num_walkers)
 
     def propagation(self, h1e, xbar, ltensor):
-        r"""
-        Ref: https://www.cond-mat.de/events/correl13/manuscripts/zhang.pdf
-        Eqs 50 - 51
-        """
-        # 1-body propagator propagation
-        # e^{-dt/2*H1e}
-        one_body_op_power = scipy.linalg.expm(-self.dt/2 * h1e)
-        self.walker_tensors = np.einsum('pq, zqr->zpr', one_body_op_power, self.walker_tensors)
-
-        # 2-body propagator propagation
-        # exp[(x-\bar{x}) * L]
-        xi = np.random.normal(0.0, 1.0, self.nfields * self.num_walkers)
-        xi = xi.reshape(self.num_walkers, self.nfields)
-        two_body_op_power = 1j * np.sqrt(self.dt) * np.einsum('zn, npq->zpq', xi-xbar, ltensor)
-
-        temp = self.walker_tensors.copy()
-        for order_i in range(self.taylor_order):
-            temp = np.einsum('zpq, zqr->zpr', two_body_op_power, temp) / (order_i + 1.0)
-            self.walker_tensors += temp
-
-        # 1-body propagator propagation
-        # e^{-dt/2*H1e}
-        one_body_op_power = scipy.linalg.expm(-self.dt/2 * h1e)
-        self.walker_tensors = np.einsum('pq, zqr->zpr', one_body_op_power, self.walker_tensors)
-        # self.walker_tensosr = np.exp(-self.dt * nuc) * self.walker_tensors
-
-        # (x*\bar{x} - \bar{x}^2/2)
-        cfb = np.einsum("zn, zn->z", xi, xbar)-0.5*np.einsum("zn, zn->z", xbar, xbar)
-        cmf = -np.sqrt(self.dt)*np.einsum('zn, n->z', xi-xbar, self.mf_shift)
-        return cfb, cmf
+        pass
 
     def measure_observables(self, operator):
         observables = None
         return observables
 
     def walker_trial_overlap(self):
-        return np.einsum('pr, zpq->zrq', self.trial.conj(), self.walker_tensors)
+        return np.einsum('pr, zpq->zrq', self.trial.wf.conj(), self.walker_tensors)
 
     def renormalization(self):
         r"""
@@ -271,24 +237,23 @@ class QMCbase(object):
         """
 
         np.random.seed(self.random_seed)
-        self.initialize_walker()
 
+        logger.info(self, "\n======== get integrals ========")
         h1e, eri, ltensor = self.get_integrals()
         shifted_h1e = np.zeros(h1e.shape)
-        rho_mf = self.trial.dot(self.trial.T.conj())
+        rho_mf = self.trial.wf.dot(self.trial.wf.T.conj())
         self.mf_shift = 1j * np.einsum("npq,pq->n", ltensor, rho_mf)
 
         for p, q in itertools.product(range(h1e.shape[0]), repeat=2):
             shifted_h1e[p, q] = h1e[p, q] - 0.5 * np.trace(eri[p, :, :, q])
         shifted_h1e = shifted_h1e - np.einsum("n, npq->pq", self.mf_shift, 1j*ltensor)
 
-        self.precomputed_ltensor = np.einsum("pr, npq->nrq", self.trial.conj(), ltensor)
+        self.precomputed_ltensor = np.einsum("pr, npq->nrq", self.trial.wf.conj(), ltensor)
 
         time = 0.0
         energy_list = []
         time_list = []
         while time <= self.total_time:
-            #print(f"time: {time}")
             dump_result = (int(time/self.dt) % self.print_freq  == 0)
 
             # pre-processing: prepare walker tensor
@@ -296,7 +261,7 @@ class QMCbase(object):
             inv_overlap = np.linalg.inv(overlap)
             theta = np.einsum("zqp, zpr->zqr", self.walker_tensors, inv_overlap)
 
-            gf = np.einsum("zqr, pr->zpq", theta, self.trial.conj())
+            gf = np.einsum("zqr, pr->zpq", theta, self.trial.wf.conj())
             ltheta = np.einsum('npq, zqr->znpr', self.precomputed_ltensor, theta)
             trace_ltheta = np.einsum('znpp->zn', ltheta)
 
@@ -318,7 +283,7 @@ class QMCbase(object):
             if dump_result:
                 time_list.append(time)
                 energy_list.append(energy)
-                print(f" Time: {time:9.3f}    Energy: {energy:15.8f}")
+                logger.info(self, f" Time: {time:9.3f}    Energy: {energy:15.8f}")
 
             time += self.dt
 

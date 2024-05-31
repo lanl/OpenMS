@@ -59,18 +59,25 @@ class TrialWFBase(object):
         r"""
         build initial trial wave function
         """
+        pass
+
+# single determinant HF trial wavefunction
+class TrialHF(TrialWFBase):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+
+    def build(self):
+
         overlap = self.mol.intor('int1e_ovlp')
         ao_coeff = lo.orth.lowdin(overlap)
         xinv = np.linalg.inv(ao_coeff)
 
-        self.trial = mf.mo_coeff
-        self.trial = xinv.dot(mf.mo_coeff[:, :self.mol.nelec[0]])
+        self.wf = self.mf.mo_coeff
+        self.wf = xinv.dot(self.mf.mo_coeff[:, :self.mol.nelec[0]])
 
-        with h5py.File("input.h5", "w") as f:
-            f["ao_coeff"] = ao_coeff
-            f["xinv"] = xinv
-            f["trial"] = self.trial
 
+# define walker class
 
 class WalkerBase(object):
     r"""

@@ -32,6 +32,7 @@ TBA.
 import sys, os
 from pyscf import tools, lo, scf, fci
 import numpy as np
+import scipy
 import h5py
 
 from openms.qmc import qmc
@@ -61,6 +62,39 @@ class AFQMC(qmc.QMCbase):
         """
         hs_fields = None
         return hs_fields
+
+    def propagation(self, h1e, xbar, ltensor):
+        r"""
+        Ref: https://www.cond-mat.de/events/correl13/manuscripts/zhang.pdf
+        Eqs 50 - 51
+        """
+        # 1-body propagator propagation
+        # e^{-dt/2*H1e}
+        one_body_op_power = scipy.linalg.expm(-self.dt/2 * h1e)
+        self.walker_tensors = np.einsum('pq, zqr->zpr', one_body_op_power, self.walker_tensors)
+
+        # 2-body propagator propagation
+        # exp[(x-\bar{x}) * L]
+        xi = np.random.normal(0.0, 1.0, self.nfields * self.num_walkers)
+        xi = xi.reshape(self.num_walkers, self.nfields)
+        two_body_op_power = 1j * np.sqrt(self.dt) * np.einsum('zn, npq->zpq', xi-xbar, ltensor)
+
+        temp = self.walker_tensors.copy()
+        for order_i in range(self.taylor_order):
+            temp = np.einsum('zpq, zqr->zpr', two_body_op_power, temp) / (order_i + 1.0)
+            self.walker_tensors += temp
+
+        # 1-body propagator propagation
+        # e^{-dt/2*H1e}
+        one_body_op_power = scipy.linalg.expm(-self.dt/2 * h1e)
+        self.walker_tensors = np.einsum('pq, zqr->zpr', one_body_op_power, self.walker_tensors)
+        # self.walker_tensosr = np.exp(-self.dt * nuc) * self.walker_tensors
+
+        # (x*\bar{x} - \bar{x}^2/2)
+        cfb = np.einsum("zn, zn->z", xi, xbar)-0.5*np.einsum("zn, zn->z", xbar, xbar)
+        cmf = -np.sqrt(self.dt)*np.einsum('zn, n->z', xi-xbar, self.mf_shift)
+        return cfb, cmf
+
 
 class QEDAFQMC(AFQMC):
 

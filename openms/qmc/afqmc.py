@@ -16,24 +16,87 @@
 
 
 r"""
-Auxiliary-Field Quantum Monte Carlo
-===================================
 
 Theoretical background
 ----------------------
 
-Reference: https://www.cond-mat.de/events/correl13/manuscripts/zhang.pdf
+Phaseless formalism for complex auxiliary-fields :cite:`zhang2013af, zhang2021jcp`:
+
+Imaginary time evolution
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Most ground-state QMC methods are based on the
+imaginary time evolution
+
+.. math::
+
+  \ket{\Psi}\propto\lim_{\tau\rightarrow\infty} e^{-\tau\hat{H}}\ket{\Psi_T}.
+
+Numerically, the ground state can be projected out iteratively,
+
+.. math::
+
+   \ket{\Psi^{(n+1)}}=e^{-\Delta\tau \hat{H}}\ket{\Psi^{(n)}}.
+
+To evaluate the imaginary time propagation, Trotter decomposition is used to
+to break the evolution operator :math:`e^{-\Delta\tau H} \approx   e^{-\Delta\tau H_1}e^{-\Delta\tau H_2}`.
 
 
-TBA.
+Hubbard-Stratonovich transformation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Cholesky decomposition of eri:
+
+.. math::
+
+     (ij|kl) = \sum_\gamma L^*_{\gamma,il} L_{\gamma,kj}
+
+The two-body interactions becomes
+
+.. math::
+
+     H_2 = & \sum_{ijkl} V_{ijkl} c^\dagger_i c^\dagger_j c_k c_l \\
+         = & \sum_{ijkl} V_{ijkl} c^\dagger_i c_l c^\dagger_j c_k- \sum_{ijkl} c^\dagger_i c_l \delta_{jl} \\
+         = & \sum_{ijkl}\sum_\gamma (L^*_{\gamma,il} c^\dagger_i c_l) (L_{\gamma,kj}c^\dagger_j c_k)
+            - \sum_{ijkj} V_{ijkj} c^\dagger_i c_k
+
+Hence, the last term in above equation is a single-particle operator, which is defined as the
+shifted_h1e in the code.
+
+Finally,
+
+.. math::
+
+  e^{-\Delta\tau H} = \int d x p(x) B(x)
+
+where :math:`B(x)` is the Auxilary field.
+
+Importance sampling
+~~~~~~~~~~~~~~~~~~~
+
+With importance sampling, the global wave function is a weighted statical sum over
+:math:`N_w` walkers
+
+.. math::
+
+  \Psi^n = \sum_w
+
+
+Program overview
+----------------
 
 """
 
 import sys, os
-from pyscf import tools, lo, scf, fci
-import numpy as np
+from pyscf import tools, lo, scf, fci, ao2mo
+from pyscf.lib import logger
+import numpy
 import scipy
+import itertools
 import h5py
+
+from openms.mqed.qedhf import RHF as QEDRHF
+from openms.lib.boson import Photon
 
 from openms.qmc import qmc
 
@@ -44,6 +107,7 @@ class AFQMC(qmc.QMCbase):
     def __init__(self, system, *args, **kwargs):
 
         super().__init__(system, *args, **kwargs)
+        self.exp_h1e = None
 
     def dump_flags(self):
         r"""
@@ -62,6 +126,26 @@ class AFQMC(qmc.QMCbase):
         """
         hs_fields = None
         return hs_fields
+
+    def build_propagator(self, h1e, eri, ltensor):
+        r"""Pre-compute the propagators
+        """
+
+        # shifted h1e
+        self.shifted_h1e = numpy.zeros(h1e.shape)
+        rho_mf = self.trial.wf.dot(self.trial.wf.T.conj())
+        self.mf_shift = 1j * numpy.einsum("npq,pq->n", ltensor, rho_mf)
+        for p, q in itertools.product(range(h1e.shape[0]), repeat=2):
+            self.shifted_h1e[p, q] = h1e[p, q] - 0.5 * numpy.trace(eri[p, :, :, q])
+        self.shifted_h1e = self.shifted_h1e - numpy.einsum("n, npq->pq", self.mf_shift, 1j*ltensor)
+
+        self.precomputed_ltensor = numpy.einsum("pr, npq->nrq", self.trial.wf.conj(), ltensor)
+        self.exp_h1e = scipy.linalg.expm(-self.dt/2 * self.shifted_h1e)
+
+    def propagation_onebody(self, phi_w):
+        r"""Propgate one-body term
+        """
+        return numpy.einsum('pq, zqr->zpr', self.exp_h1e, phi_w)
 
     def propagation(self, h1e, xbar, ltensor):
         r"""
@@ -151,4 +235,3 @@ if __name__ == "__main__":
     ax.set_xlabel("imaginary time")
     plt.savefig("afqmc_gs1.pdf")
     #plt.show()
-

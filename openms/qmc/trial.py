@@ -76,8 +76,33 @@ class TrialHF(TrialWFBase):
         self.wf = self.mf.mo_coeff
         self.wf = xinv.dot(self.mf.mo_coeff[:, :self.mol.nelec[0]])
 
+# single determinant unrestricted HF trial wavefunction
+class TrialUHF(TrialWFBase):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
+    def build(self):
+        overlap = self.mol.intor('int1e_ovlp') # AO Overlap Matrix, S
+        ao_coeff = lo.orth.lowdin(overlap) # Eigenvectors of S**(1/2)
+        xinv = np.linalg.inv(ao_coeff) # S**(-1/2)
+
+        MO_ALPHA = self.mf.mo_coeff[0, :, :self.mol.nelec[0]] # Occupied ALPHA MO Coeffs
+        MO_BETA  = self.mf.mo_coeff[1, :, :self.mol.nelec[1]] # Occupied BETA MO Coeffs
+        self.wf  = [np.dot( xinv, MO_ALPHA )] # ALPHA ORBITALS AFTER LOWDIN ORTHOGONALIZATION
+        self.wf.append(np.dot( xinv, MO_BETA )) # BETA ORBITALS AFTER LOWDIN ORTHOGONALIZATION
+        self.wf  = np.array( self.wf ) # self.wf.shape = (spin, nocc mos per spin, nAOs)
+
+
+class multiCI(TrialWFbase):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    #def build(self):
+    #    pass
+
+#=====================================
 # define walker class
+#=====================================
 
 class WalkerBase(object):
     r"""
@@ -90,6 +115,4 @@ class WalkerBase(object):
     def build(self):
 
         pass
-
-
 

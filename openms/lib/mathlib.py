@@ -91,9 +91,9 @@ def unitary_transform(U, A):
 
 
 def get_l2_norm(A):
-   r"""Return L2 norm."""
-   # will be replaced by backend.dot
-   return numpy.sqrt(lib.dot(A, A))
+    r"""Return L2 norm."""
+    # will be replaced by backend.dot
+    return numpy.sqrt(lib.dot(A, A))
 
 
 def full_cholesky_decomposition(matrix, threshold):

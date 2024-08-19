@@ -34,7 +34,7 @@ class TDNEGF(object):
     def propagation(self):
         r"""Template method for main driver of propagating reduced density matrix."""
         return None
-    
+
     def self_energies(self):
         r"""Template method to evaluate self-energies due to sys-bath coupling."""
         return None

@@ -209,7 +209,7 @@ def kernel(mycc, eris=None, t1=None, t2=None, Sn=None, Un=None,
         for k in range(nfock2):
             U1n[k] /= D1p[k] #.transpose((0,2,1))
             if mycc.add_U2n:
-               U2n[k] /= D2p[k] #.transpose((...,2,3,0,1))
+                U2n[k] /= D2p[k] #.transpose((...,2,3,0,1))
 
         res = numpy.linalg.norm(T1old - T1) #/st1
         res += numpy.linalg.norm(T2old - T2) #/st2

@@ -45,11 +45,12 @@ class abinitCavity(CavityBase):
         """
 
         super().__init__()
-        
+
         self.structure = cavity_struct
 
 
     def build_cavity(self, dipole=None):
         """
-        Update cavity according to the new dipole. 
+        Update cavity according to the new dipole.
         """
+        pass

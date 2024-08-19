@@ -93,7 +93,8 @@ class DMA(object):
 
     def __init__(
         self, Nsite=1, Nexc=5,
-        epsilon=0.0, hopping=0.1, sigma=0.0, zeta=0.0, **kwargs):
+        epsilon=0.0, hopping=0.1, sigma=0.0, zeta=0.0, **kwargs
+    ):
         r"""
         Hamiltonian:
 
@@ -135,7 +136,6 @@ class DMA(object):
         self.c0 = 0.80
         self.c1 = 0.50
         self.c2 = 0.30
-
 
     def kernel(self):
         r"""
@@ -276,7 +276,7 @@ class DMA(object):
         compute the linear absorption
         selected: a subset of selected states for spectrum calculations
         """
-        
+
         if elist is None:
             raise Exception(
                 "elist is None! please specify a list of energies for spectrum!"

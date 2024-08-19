@@ -30,8 +30,8 @@ ELEC_GFAC = -2.00231930426256 # unit less
 def check_gfactor(gfactor):
     r"""
     Check if gfactor is matrix or scalar.
-        
-    :param float gfactor: (ndarray or float) g-factor 
+
+    :param float gfactor: (ndarray or float) g-factor
 
     Returns::
 
@@ -114,8 +114,8 @@ class Spin(object):
     :param float detuning: detuning from the Zeeman splitting. Default 0, unit: MHz.
 
     Other notes:
-    
-    Central spin is: 
+
+    Central spin is:
 
     .. math::
 
@@ -129,9 +129,9 @@ class Spin(object):
     Default unit is MHz
     """
 
-    def __init__(self, 
+    def __init__(self,
             coord = numpy.zeros(3),
-            D = 0.0, 
+            D = 0.0,
             E = 0.0,
             **kwargs):
 
@@ -142,7 +142,7 @@ class Spin(object):
         self.alpha = None
         self.beta = None
         self._zfs = None
-        self.gfactor = ELEC_GFAC 
+        self.gfactor = ELEC_GFAC
         self.detuning = 0.0
 
         self.__dict__.update(kwargs)
@@ -202,7 +202,7 @@ class SpinSystem(Spin):
     r"""
     Class for containing all the central spins in the system.
     """
-    def __init__(self, 
+    def __init__(self,
             coords = None,
             spin = None,
             coord = None,

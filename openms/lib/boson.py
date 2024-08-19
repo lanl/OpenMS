@@ -23,7 +23,6 @@ from scipy import linalg
 from pyscf import lib
 from pyscf import gto
 from pyscf.lib import logger
-
 from cqcpy import utils
 from cqcpy.ov_blocks import one_e_blocks
 from cqcpy.ov_blocks import two_e_blocks, two_e_blocks_full

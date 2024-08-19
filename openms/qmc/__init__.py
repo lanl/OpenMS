@@ -15,7 +15,9 @@
 #
 
 r"""
-QMC solvers:
+
+This is the collection of QMC solvers for electron-boson interactions
+
 """
 
 # TBA

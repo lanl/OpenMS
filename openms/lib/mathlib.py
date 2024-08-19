@@ -14,25 +14,38 @@
 # Author: Yu Zhang <zhy@lanl.gov>
 #
 
-# interface to call c or c++ math libs, such as cutensor, NCLL, etc.
+r"""
+Interface to call C or C++ math libraries.
+
+Library examples: cuTENSOR, NCCL, etc.
+"""
 
 import os, sys
 import warnings
 import ctypes
-import numpy
-from openms.lib import backend
 import h5py
-from threading import Thread
-from multiprocessing import Queue, Process
-from openms import __config__
-from openms.lib import logger
-import scipy.linalg
+
+import numpy
 from scipy.linalg import lapack
 from functools import reduce
 
+from threading import Thread
+from multiprocessing import Queue, Process
 
-# load c, c++, fortran libs
+from pyscf import lib # temporary
+
+from openms.lib import backend
+from openms.lib import logger
+from openms import __config__
+
+SAFE_EIGH_LINDEP = getattr(__config__, "lib_linalg_helper_safe_eigh_lindep", 1e-15)
+DAVIDSON_LINDEP = getattr(__config__, "lib_linalg_helper_davidson_lindep", 1e-14)
+DSOLVE_LINDEP = getattr(__config__, "lib_linalg_helper_dsolve_lindep", 1e-15)
+MAX_MEMORY = getattr(__config__, "lib_linalg_helper_davidson_max_memory", 2000)  # 2GB
+
+
 def load_library(libname):
+    r"""Load C, C++, Fortran libraries."""
     try:
         _loaderpath = os.path.dirname(__file__)
         return numpy.ctypeslib.load_library(libname, _loaderpath)
@@ -47,51 +60,62 @@ def load_library(libname):
                         return numpy.ctypeslib.load_library(libname, libpath)
         raise
 
-
 # load bml lib (todo)
 # libbml = lib.load_library('libbml')
 
-SAFE_EIGH_LINDEP = getattr(__config__, "lib_linalg_helper_safe_eigh_lindep", 1e-15)
-DAVIDSON_LINDEP = getattr(__config__, "lib_linalg_helper_davidson_lindep", 1e-14)
-DSOLVE_LINDEP = getattr(__config__, "lib_linalg_helper_dsolve_lindep", 1e-15)
-MAX_MEMORY = getattr(__config__, "lib_linalg_helper_davidson_max_memory", 2000)  # 2GB
-
+# -------------------------
 # other math algorithms TBA
+# -------------------------
 
-def sandwich_sym(A, U, transpose = False):
-    r"""sandwich (or similary) transformation
+def unitary_transform(U, A):
+    r"""
+    Unitary transform of :math:`\bm{A}` with :math:`\bm{U}`.
 
-    :math:`B = U^T A U` if not transpose else
-    :math:`B = U A U^T`.
+    :math:`\bm{\tilde{A}} = \bm{U}^\dagger \bm{A} \bm{U}`
+
+    Parameters
+    ----------
+    U : :class:`~numpy.ndarray`
+        Unitary transformation matrix, :math:`\bm{U}`.
+    A : :class:`~numpy.ndarray`
+        Matrix to transform, :math:`\bm{A}`.
+
+    Returns
+    -------
+    :class:`~numpy.ndarray`
+        Transformed matrix, :math:`\bm{\tilde{A}}`.
     """
 
-    if transpose:
-        # will change to backend.dot (todo)
-        return reduce(lib.dot, (U, A, U.conj().T))
-    else:
-        return reduce(lib.dot, (U.conj().T, A, U))
+    Atmp = lib.dot(A, U)
+    return lib.dot(U.conj().T, Atmp)
 
 
 def get_l2_norm(A):
-   r"""Return L2 norm
-   """
+   r"""Return L2 norm."""
    # will be replaced by backend.dot
    return numpy.sqrt(lib.dot(A, A))
 
 
-
 def full_cholesky_decomposition(matrix, threshold):
-    """
+    r"""
     Perform a full Cholesky decomposition using the LAPACK dpstrf function.
 
-    Parameters:
-    matrix (numpy.ndarray): The matrix M to decompose, such that P^T M P = L L^T.
-    threshold (float): Threshold to use in the Cholesky decomposition.
+    Parameters
+    ----------
+    matrix : :class:`~numpy.ndarray`
+        The matrix M to decompose, such that:
+        :math:`P^T M P = L L^T`.
+    threshold : float
+        Threshold to use in the Cholesky decomposition.
 
-    Returns:
-    numpy.ndarray: The Cholesky vectors L.
-    numpy.ndarray: The vector containing the information in P.
-    int: The number of Cholesky vectors.
+    Return
+    ------
+    cholesky_vectors : :class:`~numpy.ndarray`
+        The Cholesky vectors, :math:`L`.
+    pivots : :class:`~numpy.ndarray`
+        The vector containing the information in :math:`P`.
+    n_vectors : int
+        The number of Cholesky vectors.
     """
 
     dim_ = matrix.shape[0]
@@ -104,7 +128,7 @@ def full_cholesky_decomposition(matrix, threshold):
     lapack.dpstrf(cholesky_vectors, lower=1, tol=threshold)
 
     if info < 0:
-        raise ValueError('Cholesky decomposition failed! Something wrong in call to dpstrf')
+        raise ValueError('Cholesky decomposition failed! Something wrong in call to dpstrf.')
 
     # Zero upper unreferenced triangle
     for i in range(dim_):
@@ -113,11 +137,15 @@ def full_cholesky_decomposition(matrix, threshold):
 
     return cholesky_vectors, pivots, n_vectors
 
-def full_cholesky_orth(S, threshold=1.e-7):
-    r"""Full Cholesky orthogonalization
-    This funtion computes P and L, and the number of linearly
-    independent/orthonormal AOs (n_oao), resulting from a Full Cholesky decomposition
-    of the AO overlap matrix S to within the linear dependency threshold:
+
+def full_cholesky_orth(S, threshold=1.0e-7):
+    r"""
+    Full Cholesky orthogonalization.
+
+    Compute :math:`P`, :math:`L`, and the number of linearly independent/
+    orthonormal AOs (``n_oao``), resulting from a Full Cholesky decomposition
+    of the AO overlap matrix :math:`S` within linear dependency threshold
+    ``threshold``:
 
     .. math::
 
@@ -130,6 +158,24 @@ def full_cholesky_orth(S, threshold=1.e-7):
       (L^{-1} P^T) S (P L^{-T} = I \equiv X^T S X = I \rightarrow S = X^{-T} X^{-1},
 
     where :math:`X = P L^{-T}`
+
+    .. note::
+        Values of ``pivots`` are ``[1, n]``, not ``[0, n-1]``,
+        so we correct the index before returning ``P``.
+
+    Parameters
+    ----------
+    S : :class:`~numpy.ndarray`
+        Overlap matrix in the non-orthogonal AO basis.
+    threshold : float
+        Linear dependency threshold.
+
+    Return
+    ------
+    L : :class:`~numpy.ndarray`
+        The Cholesky vectors, :math:`L`.
+    P : :class:`~numpy.ndarray`
+        The vector containing the information in :math:`P`.
     """
 
     n = S.shape[0]
@@ -152,10 +198,8 @@ def full_cholesky_orth(S, threshold=1.e-7):
     L[:n_oao, :n_oao] = cholesky_vectors[:n_oao, :n_oao]
     del cholesky_vectors
 
-    # note: values of pivtos is [1, n], not [0, n-1], so we need correct the index
+    # note: values of pivots is [1, n], not [0, n-1], so we need correct the index
     for i in range(n_oao):
         P[pivots[i] - 1, i] = 1.0
 
-    return P, L
-
-
+    return L, P

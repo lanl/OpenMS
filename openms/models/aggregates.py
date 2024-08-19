@@ -14,8 +14,8 @@
 # Author: Yu Zhang <zhy@lanl.gov>
 #
 
-"""
-disordered molecular aggregates
+r"""
+Disordered molecular aggregates.
 """
 
 import openms.lib.backend as bd
@@ -24,7 +24,7 @@ import random
 
 
 def linear_spec(elist, state, evals, dip, gamma):
-    """
+    r"""
     calculate linear spectrum
     state: list of states to be included in the spec
     evals: eigenvalues of 1 exciton states
@@ -40,7 +40,7 @@ def linear_spec(elist, state, evals, dip, gamma):
 
 
 def tdes(elist, state, evals, dip1, nuv, eng2, dip2, gamma):
-    """
+    r"""
     state: list of single-exciton states
     evals: eigenvalues of 1 exciton states
     dip1: dipolemomnet of 1 exciton states
@@ -86,12 +86,15 @@ def matvec(A, x):
     return y
 
 
-# disordered molecular aggregates class
 class DMA(object):
+    r"""
+    Disordered molecular aggregates class.
+    """
+
     def __init__(
-        self, Nsite=1, Nexc=5, epsilon=0.0, hopping=0.1, sigma=0.0, zeta=0.0, **kwargs
-    ):
-        """
+        self, Nsite=1, Nexc=5,
+        epsilon=0.0, hopping=0.1, sigma=0.0, zeta=0.0, **kwargs):
+        r"""
         Hamiltonian:
 
         H = \sum_i (\epsilon_i +\delta) c^\dag_i c_i +
@@ -133,9 +136,10 @@ class DMA(object):
         self.c1 = 0.50
         self.c2 = 0.30
 
+
     def kernel(self):
-        """
-        Compute the low-lying states
+        r"""
+        Compute the low-lying states.
         """
 
         for i in range(self.Nsite):
@@ -151,26 +155,30 @@ class DMA(object):
         self.evals = self.evals[idx]
         self.evecs = self.evecs[:, idx]
 
+
     def energies(self):
-        """
-        return the lowest Nexc states
-        """
+        r"""Return the lowest Nexc states."""
         return self.evals[: self.Nexc]
+
 
     def dipole(self):
         r"""
-        compute the dipole of the lowest Nexc states
+        Compute the dipole of the lowest Nexc states.
+
         dipole of one-exciton state :math:`d_{mu}= \sum_{i} C_{\mu j} |j>`
         """
+
         self.excdipole1 = np.zeros(self.Nsite)
         for u in range(self.Nsite):
             for j in range(self.Nsite):
                 self.excdipole1[u] += self.evecs[j, u]
 
+
     def sortdipole(self):
+        r"""
+        Sort dipole and get the index of states with largest dipole.
         """
-        sort dipole and get the index of states with largest dipole
-        """
+
         if self.excdipole1 is None:
             self.dipole()
 
@@ -195,8 +203,9 @@ class DMA(object):
                 print(i, abs(self.excdipole1[i]))
         print("dipcutoff=", self.dip_cutoff, "\n")
 
+
     def spdfselection(self):
-        """
+        r"""
         1)  check nodes (state type)  of each eigenstates
         2) select dominant exciton transitions
 
@@ -204,8 +213,8 @@ class DMA(object):
         s-like atomic states: they consist of mainly one peak with no node within the localization segment
         p-like atomic states: They have a well defined node within localization segments and occur in pairs \
                 with s-like states. Each pair forms an sp doublet localized on the same chain segment.
-
         """
+
         N = self.Nsite
         selected_dip = 0.0
         local_gs = []
@@ -258,15 +267,16 @@ class DMA(object):
         local_states = local_gs + local_ex
 
         # -------------------------------------------------------------------------------
-        print("state    node    dipolemoment")
+        print("state    node    dipole moment")
         # not done yet
 
-    # compute the linear absorption spectrum of given listed of states
+
     def linearabs(self, elist=None, selected=None, gamma=0.001):
-        """
+        r"""
         compute the linear absorption
         selected: a subset of selected states for spectrum calculations
         """
+        
         if elist is None:
             raise Exception(
                 "elist is None! please specify a list of energies for spectrum!"
@@ -284,11 +294,9 @@ class DMA(object):
 
         return spectrum
 
-    def tdes(self):
-        """
-        compute two-dimensional absorption spectral
-        """
 
+    def tdes(self):
+        """Compute two-dimensional absorption spectra."""
         return None
 
 

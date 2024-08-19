@@ -11,27 +11,31 @@
 # material to reproduce, prepare derivative works, distribute copies to the
 # public, perform publicly and display publicly, and to permit others to do so.
 #
-# Author: Yu Zhang <zhy@lanl.gov>
+# Author:   Yu Zhang    <zhy@lanl.gov>
+#         Ilia Mazin <imazin@lanl.gov>
 #
 
-"""
-low-level libraries, including:
-  - internal FDTD code,
-  - math libs
-  - Backends
-"""
-import sys
+r"""
+Low-level libraries, including:
 
-from openms.lib.misc import *
-from openms.lib import logger
-from openms.lib import backend
-from openms.lib.mathlib import *
+- internal Finite-Difference Time-Domain (FDTD) code,
+- efficient mathematical algorithms
+- backends
+"""
+
+from . import backend
+from . import boson
+from . import constants
+from . import hippynn_es_driver
+from . import jaxlib
+from . import logger
+from . import mathlib
+from . import misc
+from . import scipy_helper
 
 try:
-    from openms.lib.fdtd import fdtdc as FDTD
+    from . import fdtdc as FDTD
 
     FDTD_AVAILABLE = True
 except ImportError:
     FDTD_AVAILABLE = False
-
-

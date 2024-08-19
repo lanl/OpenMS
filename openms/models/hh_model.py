@@ -1,3 +1,19 @@
+#
+# @ 2023. Triad National Security, LLC. All rights reserved.
+#
+# This program was produced under U.S. Government contract 89233218CNA000001
+# for Los Alamos National Laboratory (LANL), which is operated by Triad
+# National Security, LLC for the U.S. Department of Energy/National Nuclear
+# Security Administration. All rights in the program are reserved by Triad
+# National Security, LLC, and the U.S. Department of Energy/National Nuclear
+# Security Administration. The Government is granted for itself and others acting
+# on its behalf a nonexclusive, paid-up, irrevocable worldwide license in this
+# material to reproduce, prepare derivative works, distribute copies to the
+# public, perform publicly and display publicly, and to permit others to do so.
+#
+# Author: Yu Zhang <zhy@lanl.gov>
+#
+
 import numpy
 from cqcpy.ov_blocks import one_e_blocks
 from cqcpy.ov_blocks import two_e_blocks
@@ -96,6 +112,7 @@ class HHModel(object):
             self.const = 0
             self.xi[:] = 0
 
+
     def fci(self, nphonon=20, nroots=1):
         from .fci import kernel
 
@@ -111,6 +128,7 @@ class HHModel(object):
         )
         return e, c
 
+
     def _nn(self, i):
         assert i <= self.L
         L = self.L
@@ -124,8 +142,9 @@ class HHModel(object):
             raise Exception("Unrecognized boundary conditions")
         return (l, r)
 
+
     def tmatS(self):
-        """Return T-matrix in the spatial orbital basis."""
+        r"""Return T-matrix in the spatial orbital basis."""
         L = self.L
         t = numpy.zeros((L, L))
         for i in range(L):
@@ -137,21 +156,24 @@ class HHModel(object):
             t[-1, 0] += -1
         return t
 
+
     def umatS(self):
-        """Return U-matrix (not antisymmetrized) in the spatial orbital basis."""
+        r"""Return U-matrix (not antisymmetrized) in the spatial orbital basis."""
         L = self.L
         umat = numpy.zeros((L, L, L, L))
         for i in range(L):
             umat[i, i, i, i] = self.U
         return umat
 
+
     def tmat(self):
-        """Return T-matrix in the spin orbital basis."""
+        r"""Return T-matrix in the spin orbital basis."""
         t = self.tmatS()
         return utils.block_diag(t, t)
 
+
     def umat(self):
-        """Return U-matrix (not antisymmetrized) in the spin orbital basis."""
+        r"""Return U-matrix (not antisymmetrized) in the spin orbital basis."""
         L = self.L
         umat = numpy.zeros((2 * L, 2 * L, 2 * L, 2 * L))
         for i in range(L):
@@ -160,6 +182,7 @@ class HHModel(object):
             umat[i, i, i, i] = self.U
             umat[L + i, L + i, L + i, L + i] = self.U
         return umat
+
 
     def fock(self):
         if self.pa is None or self.pb is None:
@@ -171,9 +194,11 @@ class HHModel(object):
         JK = numpy.einsum("prqs,rs->pq", Ua, ptot)
         return T + JK
 
+
     def energies(self):
         f = self.g_fock()
         return f.oo.diagonal(), f.vv.diagonal()
+
 
     def hf_energy(self):
         F = self.fock()
@@ -183,17 +208,20 @@ class HHModel(object):
         Ehf += numpy.einsum("ij,ji->", ptot, T)
         return 0.5 * Ehf + self.const
 
+
     def u_hcore_tot(self):
         T = self.tmatS()
         ha = numpy.einsum("ij,ip,jq->pq", T, self.ca, self.ca)
         hb = numpy.einsum("ij,ip,jq->pq", T, self.cb, self.cb)
         return ha, hb
 
+
     def g_hcore_tot(self):
         T = self.tmatS()
         ha = numpy.einsum("ij,ip,jq->pq", T, self.ca, self.ca)
         hb = numpy.einsum("ij,ip,jq->pq", T, self.cb, self.cb)
         return utils.block_diag(ha, hb)
+
 
     def g_fock(self):
         na = self.N // 2
@@ -216,6 +244,7 @@ class HHModel(object):
             "I,pa,Ipq,qb->ab", self.xi, Cv, self.gmat, Cv
         )
         return one_e_blocks(Foo, Fov, Fvo, Fvv)
+
 
     def g_aint(self):
         na = self.N // 2
@@ -256,10 +285,12 @@ class HHModel(object):
             oooo=oooo,
         )
 
+
     def omega(self):
         X = numpy.zeros(self.M)
         X.fill(self.w)
         return X
+
 
     def mfG(self):
         ptot = utils.block_diag(self.pa, self.pb)
@@ -268,6 +299,7 @@ class HHModel(object):
         if self.shift:
             mfG[:] = 0
         return (mfG, mfG)
+
 
     def gint(self):
         n = 2 * self.L
@@ -282,6 +314,7 @@ class HHModel(object):
         vv = numpy.einsum("Ipq,pa,qb->Iab", g, Cv, Cv)
         g = one_e_blocks(oo, ov, vo, vv)
         return (g, g)
+
 
     def gint_tot(self):
         n = 2 * self.L

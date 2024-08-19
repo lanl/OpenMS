@@ -1,7 +1,9 @@
 import unittest
 import numpy
-from pyscf import gto, scf
-from openms.mqed import scqedhf as qedhf
+
+from pyscf import gto
+from openms.lib import boson
+from openms.mqed import scqedhf
 
 class TestSCQEDHF(unittest.TestCase):
     def test_energy_match(self):
@@ -19,19 +21,16 @@ class TestSCQEDHF(unittest.TestCase):
 
         nmode = 1
         cavity_freq = numpy.zeros(nmode)
-        cavity_mode = numpy.zeros((nmode, 3))
         cavity_freq[0] = 0.5
-        cavity_mode[0, :] = 1.e-1 * numpy.asarray([0, 1, 0])
-        mol.verbose = 1
+        cavity_mode = numpy.zeros((nmode, 3))
+        cavity_mode[0, :] = 0.1 * numpy.asarray([0, 1, 0])
 
-        qedmf = qedhf.RHF(mol, xc=None, cavity_mode=cavity_mode, cavity_freq=cavity_freq, add_nuc_dipole=True)
+        qedmf = scqedhf.SCRHF(mol, omega=cavity_freq, vec=cavity_mode)
         qedmf.max_cycle = 500
-        #qedmf.verbose = 1
         qedmf.init_guess = "hcore"
-        qedmf.kernel() #conv_tol=1.e-8)
+        qedmf.kernel()
 
         self.assertAlmostEqual(qedmf.e_tot, ref, places=6, msg="Etot does not match the reference value.")
 
 if __name__ == '__main__':
     unittest.main()
-

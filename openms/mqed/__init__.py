@@ -11,31 +11,55 @@
 # material to reproduce, prepare derivative works, distribute copies to the
 # public, perform publicly and display publicly, and to permit others to do so.
 #
-# Author: Yu Zhang <zhy@lanl.gov>
+# Authors:  Yu Zhang    <zhy@lanl.gov>
+#         Ilia Mazin <imazin@lanl.gov>
 #
 
-
 r"""
-QED solvers:
-   - QED-HF: non-self-consistent HF method for polariton. The converged HF of bare molecules is used to compute the DSE.
-   - scQEDHF: sel-consistent HF method for polariton. The DSE and MO are self-consistent updated.
-   - VT-QEDHF: variational QED-HF method for light-matter interaction at arbitray coupling strength (i.e., can handle cases beyond the polariton regime) by leveraging the variational transformation.
-   - MS-QEDHF: Multiscale QEDHF methods
-   - mQED-TDSCF
-   - mQED-CC
-   - mQED-EOMCC
+This is a collection of solvers, including mean-field and many-body methods,
+for solving the molecular quantum electrodynamics (mQED) Hamiltonian.
+
+:mod:`mqed.qedhf`: **QED-HF**
+  Basic QED Hartree-Fock (HF) method. Converged non-QED/HF calculation
+  is used to compute QED dipole self-energy (DSE) mediated contributions.
+
+:mod:`mqed.scqedhf`: **SC-QED-HF**
+  Strongly-coupled QED-HF method. Polaron transformation is performed for
+  all photon modes, the DSE contributions and molecular orbitals are
+  self-consistently updated.
+
+:mod:`mqed.vtqedhf`: **VT-QED-HF**
+  Variational transformation QED-HF method. The degree of the polaron
+  transformation is variationally-optimized for each photon mode to
+  handle all coupling strengths.
+
+**MS-QED-HF**
+  Multi-scale QED-HF methods.
+
+**QED-TD-SCF**
+  WIP.
+
+**QED-CC**
+  WIP.
+
+**QED-EOM-CC**
+  WIP.
 """
 
-import openms
-from openms import mqed
-from .qedhf import *
+from . import ccsd
+#from . import diis
+#from . import ms_qedhf
+from . import qedcc_equations
+from . import qedhf
+from . import scqedhf
+from . import vtqedhf
 
 
-def HF(mol, xc=None, **kwargs):
+def HF(mol, qed=None, xc=None, **kwargs):
     if mol.nelectron == 1 or mol.spin == 0:
         if xc is None:
-            return mqed.RHF(mol, **kwargs)
+            return qedhf.RHF(mol, qed, **kwargs)
         else:
-            return mqed.RKS(mol, xc, **kwargs)
+            return qedhf.RKS(mol, qed, xc, **kwargs)
     else:
         raise NotImplementedError

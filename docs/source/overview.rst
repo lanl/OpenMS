@@ -4,7 +4,6 @@ An overview of OpenMS
 TBA
 
 
-
 How to cite
 ===========
 Bibtex entry::
@@ -23,8 +22,6 @@ If you use TiledArray for tensor contraction, please cite TiledArray paper:
 
 Features
 ========
-
-.. include:: features.txt
 
 * Quantum Electrodynamics method for molecular polaritons, including QED-HF, QED-TDHF, QED-CC, QED-EOMCC, etc.
 
@@ -45,8 +42,8 @@ Features
 
 Designs
 =======
+
 TBA
 ---
 
 TBA
-

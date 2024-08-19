@@ -17,11 +17,12 @@ from .bomd import BOMD
 
 
 class MQC(BOMD):
-    """Class for nuclear/electronic propagator used in MQC dynamics
+    r"""Class for nuclear/electronic propagator used in MQC dynamics
 
-    Attributes:
-       :param object molecule: Molecule object
-
+    Attributes
+    ----------
+    molecule : object
+        Molecule object
     """
 
     def __init__(

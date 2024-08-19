@@ -1,5 +1,3 @@
-
-
 """
 DIIS
 """
@@ -13,17 +11,22 @@ from pyscf.lib import logger
 
 DEBUG = False
 
-
-
-# General DIIS for optimizing a with funciton f(a) and gradient df/da
-
-# YZ: It's may be better to move the error vector construction into each electronic
-# structure solvers (as they are different in various solvers), and we don't need
-# this class in the end.
-
-# modified from pyscf diis
-
 class CDIIS(lib.diis.DIIS):
+    """
+    General DIIS for optimizing a with function f(a) and gradient df/da.
+    Modified from PySCF CDIIS class:
+        1) adds :param:`err_func` to constructor function.
+        2) :attr:`self.damp` is removed.
+        3) :func:`update` checks for variational parameters and their gradients,
+           :param:`var` and :param:`var_grad`.
+        4) :param:`var_grad` is included in the construction of the error vector
+           in :func:`get_err_vec`, if it is provided.
+
+    YZ: It may be better to move the error vector construction into each electronic
+        structure solver (as they are different in various solvers). Then we don't
+        need this class in the end.
+    """
+
     def __init__(self, mf=None, filename=None, Corth=None, err_func=None):
         lib.diis.DIIS.__init__(self, mf, filename)
         self.rollback = 0
@@ -38,10 +41,10 @@ class CDIIS(lib.diis.DIIS):
             var = kwargs['var']
         if 'var_grad' in kwargs:
             var_grad = kwargs['var_grad']
-        errvec = get_err_qed(s, d, f, self.Corth, var, var_grad)
-        #if var is not None:
-        params = numpy.hstack([f.ravel(), var.ravel()])
+
+        errvec = get_err_vec(s, d, f, self.Corth, var_grad)
         logger.debug1(self, 'diis-norm(errvec)=%g', numpy.linalg.norm(errvec))
+        params = numpy.hstack([f.ravel(), var.ravel()])
         xnew = lib.diis.DIIS.update(self, params, xerr=errvec)
         if self.rollback > 0 and len(self._bookkeep) == self.space:
             self._bookkeep = self._bookkeep[-self.rollback:]
@@ -54,13 +57,6 @@ class CDIIS(lib.diis.DIIS):
             return len(self._bookkeep)
 
 SCFDIIS = SCF_DIIS = DIIS = CDIIS
-
-def get_err_qed(s, d, f, Corth=None, var=None, var_grad=None):
-    """get the error vector of qed variational parameters"""
-    errors = get_err_vec(s, d, f, Corth)
-    if var_grad is not None:
-        errors = numpy.hstack([errors, var_grad.ravel()])
-    return errors
 
 def get_err_vec_orig(s, d, f):
     '''error vector = SDF - FDS'''
@@ -113,9 +109,13 @@ def get_err_vec_orth(s, d, f, Corth):
         raise RuntimeError('Unknown SCF DIIS type')
     return errvec
 
-def get_err_vec(s, d, f, Corth=None):
+def get_err_vec(s, d, f, Corth=None, var_grad=None):
     if Corth is None:
-        return get_err_vec_orig(s, d, f)
+        errors = get_err_vec_orig(s, d, f)
     else:
-        return get_err_vec_orth(s, d, f, Corth)
+        errors = get_err_vec_orth(s, d, f, Corth)
 
+    # Include contribution of QED variational parameter to error vector
+    if var_grad is not None:
+        errors = numpy.hstack([errors, var_grad.ravel()])
+    return errors

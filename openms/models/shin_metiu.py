@@ -13,22 +13,21 @@
 # Author: Yu Zhang <zhy@lanl.gov>
 #
 
+r"""
+Shin-Metiu model:
+    H=
+"""
+
 from openms.qmd import QuantumDriver
 import numpy as np
 from math import erf
 from openms.lib.misc import eps
 import warnings
 
-"""
-Shin-Metiu model:
-    H=
-"""
-
-
 # TO be finished
 class Shin_Metiu(QuantumDriver):
-    """
-    Class for 1D Shin-Metiu model BO calculation in a real-space grid
+    r"""
+    Class for 1D Shin-Metiu model BO calculation in a real-space grid.
 
     object molecule: molecule object
     integer nx: the number of grid points

@@ -9,10 +9,6 @@ This is a quantum dynamics and mixed quantum-classcal module, including:
    :undoc-members:
    :show-inheritance:
 
-.. Program reference
-.. -----------------
-
-
 Basic electronic structure driver
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -37,14 +33,6 @@ Basic Mixed quantum-class module
    :undoc-members:
    :show-inheritance:
 
-Trajectory Surface Hopping (TSH)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-.. automodule:: openms.qmd.tsh
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 Coupled-Trajectory MQC (CTMQC) and Ab initio Multiple Cloning (AIMC)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -53,7 +41,5 @@ Coupled-Trajectory MQC (CTMQC) and Ab initio Multiple Cloning (AIMC)
    :undoc-members:
    :show-inheritance:
 
-
 Exact-Factorization based Coupled-Trajectory MQC (XF-CTMQC)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-

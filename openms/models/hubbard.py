@@ -1,3 +1,19 @@
+#
+# @ 2023. Triad National Security, LLC. All rights reserved.
+#
+# This program was produced under U.S. Government contract 89233218CNA000001
+# for Los Alamos National Laboratory (LANL), which is operated by Triad
+# National Security, LLC for the U.S. Department of Energy/National Nuclear
+# Security Administration. All rights in the program are reserved by Triad
+# National Security, LLC, and the U.S. Department of Energy/National Nuclear
+# Security Administration. The Government is granted for itself and others acting
+# on its behalf a nonexclusive, paid-up, irrevocable worldwide license in this
+# material to reproduce, prepare derivative works, distribute copies to the
+# public, perform publicly and display publicly, and to permit others to do so.
+#
+# Author: Yu Zhang <zhy@lanl.gov>
+#
+
 import numpy
 from cqcpy.ov_blocks import one_e_blocks
 from cqcpy.ov_blocks import two_e_blocks
@@ -20,6 +36,7 @@ class Hubbard1D(object):
         if cb is not None:
             self.pb = numpy.einsum("ai,bi->ab", cb[:, :nb], cb[:, :nb])
 
+
     def _nn(self, i):
         assert i <= self.L
         L = self.L
@@ -33,8 +50,9 @@ class Hubbard1D(object):
             raise Exception("Unrecognized boundary conditions")
         return (l, r)
 
+
     def tmatS(self):
-        """Return T-matrix in the spatial orbital basis."""
+        r"""Return T-matrix in the spatial orbital basis."""
         L = self.L
         t = numpy.zeros((L, L))
         for i in range(L):
@@ -43,13 +61,15 @@ class Hubbard1D(object):
             t[i, nn[1]] = -1.0
         return t
 
+
     def tmat(self):
-        """Return T-matrix in the spin orbital basis."""
+        r"""Return T-matrix in the spin orbital basis."""
         t = self.tmatS()
         return utils.block_diag(t, t)
 
+
     def umat(self):
-        """Return U-matrix (not antisymmetrized) in the spin orbital basis."""
+        r"""Return U-matrix (not antisymmetrized) in the spin orbital basis."""
         L = self.L
         umat = numpy.zeros((2 * L, 2 * L, 2 * L, 2 * L))
         for i in range(L):
@@ -59,13 +79,15 @@ class Hubbard1D(object):
             umat[L + i, L + i, L + i, L + i] = self.U
         return umat
 
+
     def umatS(self):
-        """Return U-matrix (not antisymmetrized) in the spatial orbital basis."""
+        r"""Return U-matrix (not antisymmetrized) in the spatial orbital basis."""
         L = self.L
         umat = numpy.zeros((L, L, L, L))
         for i in range(L):
             umat[i, i, i, i] = self.U
         return umat
+
 
     def fock(self):
         if self.pa is None or self.pb is None:
@@ -77,6 +99,7 @@ class Hubbard1D(object):
         JK = numpy.einsum("prqs,rs->pq", Ua, ptot)
         return T + JK
 
+
     def hf_energy(self):
         F = self.fock()
         T = self.tmat()
@@ -85,17 +108,20 @@ class Hubbard1D(object):
         Ehf += numpy.einsum("ij,ji->", ptot, T)
         return 0.5 * Ehf
 
+
     def u_hcore_tot(self):
         T = self.tmatS()
         ha = numpy.einsum("ij,ip,jq->pq", T, self.ca, self.ca)
         hb = numpy.einsum("ij,ip,jq->pq", T, self.cb, self.cb)
         return ha, hb
 
+
     def g_hcore_tot(self):
         T = self.tmatS()
         ha = numpy.einsum("ij,ip,jq->pq", T, self.ca, self.ca)
         hb = numpy.einsum("ij,ip,jq->pq", T, self.cb, self.cb)
         return utils.block_diag(ha, hb)
+
 
     def g_fock(self):
         na = self.na
@@ -111,6 +137,7 @@ class Hubbard1D(object):
         Fvo = numpy.einsum("pa,pq,qi->ai", Cv, F, Co)
         Fvv = numpy.einsum("pa,pq,qb->ab", Cv, F, Cv)
         return one_e_blocks(Foo, Fov, Fvo, Fvv)
+
 
     def u_fock(self):
         na = self.na
@@ -150,6 +177,7 @@ class Hubbard1D(object):
         Fb_blocks = one_e_blocks(Foob, Fovb, Fvob, Fvvb)
         return Fa_blocks, Fb_blocks
 
+
     def u_aint_tot(self):
         V = self.umatS()
         Va = V - V.transpose((0, 1, 3, 2))
@@ -160,6 +188,7 @@ class Hubbard1D(object):
         Va = numpy.einsum("pqrs,pw,qx,ry,sz->wxyz", Va, ca, ca, ca, ca)
         return Va, Vb, Vabab
 
+
     def u_int_tot(self):
         V = self.umatS()
         ca = self.ca
@@ -168,6 +197,7 @@ class Hubbard1D(object):
         Vb = numpy.einsum("pqrs,pw,qx,ry,sz->wxyz", V, cb, cb, cb, cb)
         Va = numpy.einsum("pqrs,pw,qx,ry,sz->wxyz", V, ca, ca, ca, ca)
         return Va, Vb, Vabab
+
 
     def u_aint(self):
         na = self.na
@@ -260,17 +290,20 @@ class Hubbard1D(object):
         )
         return Va, Vb, Vabab
 
+
     def g_aint_tot(self):
         V = self.umat()
         C = utils.block_diag(self.ca, self.cb)
         V = numpy.einsum("pqrs,pw,qx,ry,sz->wxyz", V, C, C, C, C)
         return V - V.transpose((0, 1, 3, 2))
 
+
     def g_int_tot(self):
         V = self.umat()
         C = utils.block_diag(self.ca, self.cb)
         V = numpy.einsum("pqrs,pw,qx,ry,sz->wxyz", V, C, C, C, C)
         return V
+
 
     def g_aint(self):
         nb = self.nb

@@ -13,7 +13,7 @@ The package allows one to simulate the dynamics of a central spin or multiple ce
 
 Where :math:`\hat H_S` is the Hamiltonian of the central spin(s).
 :math:`\hat H_{SB}=\hat H_{SP} + \hat H_{SN}` denotes interactions between central spin(s) and spin/phonon bath.
-:math:`\hat H_B=\hat H_{P} + \hat H_{N}` are intrinsic spin/phonon bath interactions. 
+:math:`\hat H_B=\hat H_{P} + \hat H_{N}` are intrinsic spin/phonon bath interactions.
 For a single central spin, this corresponds to the following
 Hamiltonian:
 
@@ -21,7 +21,7 @@ Hamiltonian:
 
         &\hat H_S = \mathbf{SDS} + \mathbf{B\gamma}_{S}\mathbf{S} \\
         &\hat H_{SN} = \sum_i \mathbf{S}\mathbf{A}_i\mathbf{I}_i \\
-        &\hat H_{SP} = \sum_{\alpha} \mathbf{B} g^S_\alpha \mathbf{S} Q_\alpha \\ 
+        &\hat H_{SP} = \sum_{\alpha} \mathbf{B} g^S_\alpha \mathbf{S} Q_\alpha \\
         &\hat H_{P} = \sum_{\alpha} \Omega_\alpha b^{+}_\alpha b_\alpha \\
         &\hat H_{N} = \sum_i{\mathbf{I}_i\mathbf{P}_i \mathbf{I}_i +
                       \mathbf{B}\mathbf{\gamma}_i\mathbf{I}_i} +
@@ -77,5 +77,3 @@ Spin system
    :members:
    :undoc-members:
    :show-inheritance:
-
-

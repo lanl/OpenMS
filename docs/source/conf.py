@@ -5,40 +5,109 @@ import os
 import sys
 
 project = 'OpenMS'
-copyright = 'Copyright 2023. Triad National Security, LLC. All rights reserved.'
-author = 'Yu Zhang'
+copyright = '2024, Triad National Security, LLC. All rights reserved.'
+author = 'Yu Zhang, Ilia M. Mazin'
 sys.path.insert(0, os.path.abspath('../../openms'))
 
 # import module seems not working in readthedoc build
 #import openms
-release = '0.1'
-version = "0.1.beta" #openms.__version__
+release = '0.1.beta'
+version = "0.1" #openms.__version__
 
 # -- General configuration
 
 extensions = [
-    'sphinx.ext.autodoc',
+    'sphinx.ext.intersphinx',
+    'sphinx.ext.napoleon',
+    'sphinx.ext.githubpages',
     'sphinx.ext.mathjax',
     'sphinx.ext.viewcode',
+    'sphinx.ext.autodoc',
+    'sphinx.ext.autosummary',
     #'sphinx.ext.duration',
     #'sphinx.ext.doctest',
-    'sphinx.ext.autosummary',
-    #'sphinx.ext.intersphinx',
 ]
 
-intersphinx_mapping = {'http://docs.python.org/': None}
+intersphinx_mapping = {
+    'python': ('https://docs.python.org/3', None),
+    'scipy': ('https://docs.scipy.org/doc/scipy', None),
+    'matplotlib': ('https://matplotlib.org/stable', None),
+    'numpy': ('https://numpy.org/doc/stable', None),
+    'numpy-tutorials': ('https://numpy.org/numpy-tutorials', None),
+    'numpydoc': ('https://numpydoc.readthedocs.io/en/latest', None),
+    'pyscf': ('https://pyscf.org', None),
+}
+intersphinx_disabled_reftypes = ['std']
 
-#intersphinx_mapping = {
-#    'python': ('https://docs.python.org/3/', None),
-#    'sphinx': ('https://www.sphinx-doc.org/en/master/', None),
-#}
-#intersphinx_disabled_domains = ['std']
+napoleon_preprocess_types = True
+
+# MathJax customization
+mathjax3_config = {
+
+    'loader': {'load': ['tex-chtml',
+                        '[tex]/upgreek',
+                        '[tex]/physics',
+                        '[tex]/boldsymbol',
+                        '[tex]/html',
+                        '[tex]/mathtools',
+                        '[tex]/mhchem']
+    },
+
+    'tex': {'packages': {'[+]': ['upgreek',
+                                 'physics',
+                                 'boldsymbol',
+                                 'html',
+                                 'mathtools',
+                                 'mhchem']
+            },
+
+            'macros': {'cf': ["\\hat{a}^{\\dagger}_{{#1}}", 1],
+                       'af': ["\\hat{a}_{{#1}}", 1],
+                       'cb': ["\\hat{b}^{\\dagger}_{{#1}}", 1],
+                       'ab': ["\\hat{b}_{{#1}}", 1],
+                       'al': "{\\alpha}",
+                       'be': "{\\beta}",
+                       'om': "{\\omega}",
+                       'si': "{\\sigma}",
+                       'la': "{\\lambda}",
+                       'ra': "{\\rightarrow}",
+                        'h': ["{h}_{{#1}}^{{#2}}", 2],
+                        'f': ["{f}_{{#1}}^{{#2}}", 2],
+                        'g': ["{g}_{{#1}}^{{#2}}", 2],
+                        'v': ["{v}_{{#1}}^{{#2}}", 2],
+                        't': ["{t}_{{#1}}^{{#2}}", 2],
+                        'd': ["{\\delta}_{{#1}}^{{#2}}", 2],
+                       'bm': ["\\boldsymbol{{#1}}", 1],
+                       'tt': ["\\text{#1}", 1]
+            },
+
+            'mathtools': {'multlinegap': '1em',
+                          'multlined-pos': 'c',
+                          'firstline-afterskip': '',
+                          'lastline-preskip': '',
+                          'smallmatrix-align': 'c',
+                          'shortvdotsadjustabove': '.2em',
+                          'shortvdotsadjustbelow': '.2em',
+                          'centercolon': False,
+                          'centercolon-offset': '.04em',
+                          'thincolon-dx': '-.04em',
+                          'thincolon-dw': '-.08em',
+                          'use-unicode': False,
+                          'prescript-sub-format': '',
+                          'prescript-sup-format': '',
+                          'prescript-arg-format': '',
+                          'allow-mathtoolsset': True,
+                          'pairedDelimiters': {},
+                          'tagforms': {}
+            },
+    }
+}
 
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = 'sphinx'
 
 # The suffix of source filenames.
-source_suffix = '.rst'
+source_suffix = {'.rst': 'restructuredtext'}
 
 # The master toctree document.
 master_doc = 'index'
@@ -48,12 +117,11 @@ templates_path = ['_templates']
 
 # Latex files
 latex_documents = [
-  ('index', 'OpenMS.tex', u'OpenMS Documentation',
-   u'Yu Zhang \\textless{}zhy@lanl.gov\\textgreater{}', 'manual'),
+  ('index', 'OpenMS.tex', u'OpenMS Documentation', 'manual',
+   u'Yu Zhang \\textless{}zhy@lanl.gov\\textgreater{}'),
 ]
 
 # -- Options for HTML output
-
 html_theme = 'sphinx_rtd_theme'
 
 # -- Options for EPUB output

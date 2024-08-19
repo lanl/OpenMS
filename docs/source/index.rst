@@ -1,7 +1,7 @@
 .. OpenMS documentation master file
 
-Welcome to OpenMS' documentation!
-=================================
+Welcome to the OpenMS documentation!
+====================================
 
 **OpenMS** is a multiscale ecosystem for solving coupled Maxwell-Schrödinger equations in Open quantum environments.
 
@@ -27,14 +27,11 @@ Contents
    qdynamics.rst
    spindynamics.rst
 
-   usage
    api
-
-
 
 .. Indices and tables
 .. ==================
-.. 
+..
 .. * :ref:`genindex`
 .. * :ref:`modindex`
 .. * :ref:`search`

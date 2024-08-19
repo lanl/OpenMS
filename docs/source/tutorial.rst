@@ -1,6 +1,5 @@
 .. _getting_started:
 
-
 Tutorial
 ========
 
@@ -16,6 +15,5 @@ FDTD examples
 1. Dispersion
 
 2. Binary grating
-
 
 (TBA).

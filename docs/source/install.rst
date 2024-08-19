@@ -5,8 +5,8 @@ Installation
 
 .. _compile_libraries and c/c++/fortran_extensions:
 
-Manual installation from the Gthub repo
-=======================================
+Manual installation from the Github repo
+========================================
 
 Manual installation requires `cmake <http://www.cmake.org>`_,
 `numpy <http://www.numpy.org/>`_, `scipy <http://www.scipy.org/>`_,
@@ -29,7 +29,7 @@ Alternatively::
   $ cd openms/lib
   $ cd build
   $ cmake -DCMAKEflags ../
-  $ make 
+  $ make
 
 This will automatically download required libs and compile them.
 Finally, to make Python find the :code:`openms` package, add the top-level :code:`openms` directory (not
@@ -58,7 +58,7 @@ List of available options:
 * `ENABLE_MPI` -- Set to `ON` to turn on MPI support [Default OFF]
 
 * `ENABLE_MEEP` -- Set to `ON` to install MEEP FDTD solver for Maxwell's equations [Default OFF]
-  
+
 * `ENABLE_TA` -- Set to `ON` to install TiledArray for tensor contraction[Default OFF]
 
 * `ENABLE_TACUDA` -- Set to `ON` to turn on Cuda GPU support in TA lib [Default OFF]
@@ -69,6 +69,4 @@ List of available options:
 
 * `BUILD_INFDTD` -- Set `ON` to build internal FDTD solver [Default `ON`]
 
-
 more details TBA
-

@@ -20,3 +20,7 @@ QMC solvers:
 
 # TBA
 
+#from . import afqmc
+#from . import propagator
+#from . import qmc
+#from . import trial

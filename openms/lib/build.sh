@@ -18,6 +18,5 @@ cmake -B build \
 	-DCMAKE_TOOLCHAIN_FILE=./cmake/toolchains/gcc-mpi-mkl-tbb.cmak
 
 cd build
-make 
+make
 cd ..
-

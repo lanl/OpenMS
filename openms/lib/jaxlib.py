@@ -23,11 +23,10 @@ import numpy
 
 try:
     import jax
-
     JAX_AVAILABLE = True
+
 except ImportError:
     JAX_AVAILABLE = False
-
 
 if JAX_AVAILABLE:
     import jax
@@ -35,7 +34,4 @@ if JAX_AVAILABLE:
     from openms import __config__
 
 else:
-
     print("JAX is not available!")
-
-

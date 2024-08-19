@@ -4,5 +4,5 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "OpenMS"
-authors = [{name = "Zhang, Yu", email = "zhy@lanl.gov"}]
+authors = [{name = "Zhang, Yu", email = "zhy@lanl.gov"}, {name = "Mazin, Ilia", email = "imazin@lanl.gov"}]
 dynamic = ["version", "description"]

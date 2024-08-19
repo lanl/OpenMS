@@ -50,4 +50,3 @@ ev2J = 1.602176634e-19
 uev2J = 1.602176634e-25
 
 mu_0 = 4.0 * numpy.pi * 1e-7  # Magnetic permeability of free space (T m/A)
-

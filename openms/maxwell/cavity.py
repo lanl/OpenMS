@@ -14,7 +14,9 @@
 # Author: Yu Zhang <zhy@lanl.gov>
 #
 
-# Basic cavity class
+r"""
+Cavity base class definition.
+"""
 
 class CavityBase(object):
 
@@ -24,34 +26,30 @@ class CavityBase(object):
         self.dip_ov = None
 
     def cavity_frequency(self):
-        '''
-        return the cavity frequencies
-        '''
+        """
+        Return frequencies of the cavity modes.
+        """
         raise NotImplementedError
 
     def build_cavity(self):
-        #implemented in subclass
-        raise NotImplementedError
-
-
+        r"""Template method to build cavity object."""
+        raise NotImplementedError("Subclasses must implement this method.")
 
 
 class abinitCavity(CavityBase):
 
     def __init__(self, driver, cavity_struct=None):
-        '''
+        """
         driver: method of computing the cavity
         cavity_struct: geometry of the cavity
-        '''
+        """
+
         super().__init__()
         
         self.structure = cavity_struct
 
 
     def build_cavity(self, dipole=None):
-
-        '''
-        update cavity according to the new dipole 
-        '''
-
-
+        """
+        Update cavity according to the new dipole. 
+        """

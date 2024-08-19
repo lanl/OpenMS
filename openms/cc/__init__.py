@@ -11,5 +11,6 @@
 # material to reproduce, prepare derivative works, distribute copies to the
 # public, perform publicly and display publicly, and to permit others to do so.
 #
-# Author: Yu Zhang <zhyhku@gmail.com>
+# Author:   Yu Zhang    <zhy@lanl.gov>
+#         Ilia Mazin <imazin@lanl.gov>
 #

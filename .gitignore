@@ -1,5 +1,4 @@
 # Byte-compiled / optimized / DLL files
-__pycache__/
 *.py[cod]
 
 # C extensions
@@ -15,6 +14,7 @@ curr*
 
 oldcodes/
 docs/source/generated
+.DS_Store
 
 # Distribution / packaging
 .Python
@@ -47,7 +47,6 @@ var/
 
 # test files
 *.ri*
-*.ri*
 *.Hz
 *.sas*
 *dsz*.dat
@@ -57,7 +56,6 @@ epsilon.y
 epsilon.z
 Real_Space_Param.dat
 source.dat
-
 
 # Local log files
 *~

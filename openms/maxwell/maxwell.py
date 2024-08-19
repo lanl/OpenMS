@@ -14,9 +14,6 @@
 # Author: Yu Zhang <zhy@lanl.gov>
 #
 
-# interface to FDTD code (either built-in or meep)
-
-import os, sys
-import warning
-
-
+"""
+# Interface to FDTD code (either built-in or MEEP).
+"""

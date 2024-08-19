@@ -1,27 +1,47 @@
-Model systems
-=============
-
-Program reference
------------------
+:mod:`models`: Model systems
+****************************
 
 .. automodule:: openms.models
    :members:
    :undoc-members:
    :show-inheritance:
 
-Disordered exciton model
-------------------------
+:mod:`lib.aggregates`: Disordered exciton
+=========================================
 
-.. automodule:: openms.models.aggregates
+.. automodule:: models.aggregates
    :members:
    :undoc-members:
    :show-inheritance:
 
-Shin-Metiu model
-----------------
+:mod:`lib.hh_model`: Hubbard-Holdstein
+======================================
 
-.. automodule:: openms.models.shin_metiu
+.. automodule:: models.hh_model
    :members:
    :undoc-members:
    :show-inheritance:
 
+:mod:`lib.hubbard`: Hubbard
+===========================
+
+.. automodule:: models.hubbard
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+:mod:`lib.shin_metiu`: Shin-Metiu
+=================================
+
+.. automodule:: models.shin_metiu
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+:mod:`lib.ssh`: Su-Schrieffer-Heeger
+====================================
+
+.. automodule:: models.ssh
+   :members:
+   :undoc-members:
+   :show-inheritance:

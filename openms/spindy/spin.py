@@ -1,3 +1,19 @@
+#
+# @ 2023. Triad National Security, LLC. All rights reserved.
+#
+# This program was produced under U.S. Government contract 89233218CNA000001
+# for Los Alamos National Laboratory (LANL), which is operated by Triad
+# National Security, LLC for the U.S. Department of Energy/National Nuclear
+# Security Administration. All rights in the program are reserved by Triad
+# National Security, LLC, and the U.S. Department of Energy/National Nuclear
+# Security Administration. The Government is granted for itself and others acting
+# on its behalf a nonexclusive, paid-up, irrevocable worldwide license in this
+# material to reproduce, prepare derivative works, distribute copies to the
+# public, perform publicly and display publicly, and to permit others to do so.
+#
+# Author: Yu Zhang <zhy@lanl.gov>
+#
+
 import numpy
 
 #jmat(j, #s): Higher-order spin operators. s = "x", "y", "z", "+", or "-"
@@ -66,7 +82,6 @@ def zfs_tensor(D, E=0):
          & -\frac{1}{3}D-E & 0  \\
         0 & 0 & \frac{2}{3}D
         \end{pmatrix}
-
     """
 
     D = numpy.asarray(D)
@@ -84,6 +99,7 @@ def zfs_tensor(D, E=0):
 
 class Spin(object):
     r"""
+    Spin object base class.
 
     Base Class for spin object, which contains the properties of spin, including:
 
@@ -149,13 +165,13 @@ class Spin(object):
         self._zfs = zfs_tensor(D, E)
 
     def set_gfactor(self, gfactor):
-        """
+        r"""
         Set gfactormagnetic ratio of the central spin.
 
         :param float or (3,3) tensor gfactor: : g-factor of central spin **OR**
             Tensor describing central spin interactions with the magnetic field.
-
         """
+
         check = not numpy.asarray(gfactor).shape == (3, 3)
         if check:
             gfactor, check = check_gfactor(gfactor)
@@ -164,37 +180,27 @@ class Spin(object):
         self._gfactor = gfactor
 
     def get_sigma(self):
-        r"""
-        """
+        r"""Template method to get sigma."""
         self.sigma = None # todo
 
     def sigma(self):
-        r"""
-        return sigma
-        """
-        if self.sigma is None:
-            self.get_sigma()
-
+        r"""Template method to return sigma."""
+        if self.sigma is None: self.get_sigma()
         return self.sigma
 
     def __repr__(self):
-        r"""
-        a string that looks like the Python code you would use to recreate the MyClass object.
-        """
+        r"""Return string of Python code that recreate the MyClass object."""
         log = ""
         return log
 
     def __str__(self):
-        r"""
-        Print function for the spin object
-        """
+        r"""Print function for the spin object."""
         log_info=""
-
         return log_info
 
 class SpinSystem(Spin):
     r"""
-    class for containing all the central spins in the system
+    Class for containing all the central spins in the system.
     """
     def __init__(self, 
             coords = None,
@@ -218,5 +224,3 @@ class SpinSystem(Spin):
 if __name__ == '__main__':
     center = Spin(spin=0.5)
     print(center.spin)
-
-

@@ -13,7 +13,7 @@
 #
 # Author: Yu Zhang <zhy@lanl.gov>
 #
-# cmake file for buildig c, c++, fortran libs (TODO)
+# cmake file for building c, c++, fortran libs (TODO)
 #
 
 

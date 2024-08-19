@@ -1,2 +1,2 @@
+sphinx-rtd-theme
 urllib3<2.0
-

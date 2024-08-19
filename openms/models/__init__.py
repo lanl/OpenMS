@@ -23,7 +23,7 @@ This folder implements the models for electronic structure, including:
 
    H0 = \sum_j \epsilon_j c^\dagger_j c_j - t \sum_{j}(c^\dagger_{j+1}c_j + h.c.)
 
-2) Su–Schrieffer–Heeger (SSH):
+2) Su-Schrieffer-Heeger (SSH):
 
 .. math::
    :nowrap:
@@ -71,8 +71,8 @@ where :math:`\Delta_j` and :math:`\Gamma_j` are random variables.
 
 """
 
-from openms.models import hh_model
-from openms.models import hubbard
-from openms.models import aggregates  # disordered molecular aggregates
-
-from .shin_metiu import Shin_Metiu
+from . import aggregates
+from . import hh_model
+from . import hubbard
+from . import shin_metiu
+from . import ssh

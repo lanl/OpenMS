@@ -4,18 +4,19 @@ QED coupled-cluster (CC)-U1/2n-Sn
 """
 
 import numpy
-import sys
-from cqcpy import cc_equations
-from cqcpy import cc_energy
-from . import epcc_equations
-from . import qedcc_equations
 
 from pyscf import lib
 from pyscf.lib import logger
-from pyscf import __config__
 from pyscf.mp.mp2 import get_nocc, get_nmo, get_frozen_mask, get_e_hf, _mo_without_core
 
-from pyscf import lib
+#from openms import mqed
+from openms.mqed import qedcc_equations
+from openms import __config__
+
+from cqcpy import cc_equations
+from cqcpy import cc_energy
+
+
 einsum = lib.einsum
 
 def eph_energy(t1,s1,u11,g,G):
@@ -80,8 +81,8 @@ def kernel(mycc, eris=None, t1=None, t2=None, Sn=None, Un=None,
     nfock1 = order of photon operator (b^\dag) in pure photonic excitaiton (T_p)
     nfock2 = order of photon operator in coupled excitaiton T_ep
     """
-    if isinstance(mycc._qed, list): # mamny molecule case
-        return epcc_nfock_many(mycc, ret, theory)
+    #if isinstance(mycc._qed, list): # mamny molecule case
+    #    return epcc_nfock_many(mycc, ret, theory)
 
     nfock = nfock1 = mycc.nfock1
     nfock2 = mycc.nfock2
@@ -381,7 +382,7 @@ class CCSD(lib.StreamObject):
             self.__class__ == CCSD):
             nocc = self.nocc
             nvir = self.nmo - self.nocc
-            flops = _flops(nocc, nvir)
+            flops = self._flops(nocc, nvir)
             logger.debug1(self, 'total FLOPs %s', flops)
         logger.info(self, '***************end of dumpling flags ****************\n')
         return self
@@ -486,7 +487,6 @@ class CCSD(lib.StreamObject):
         return results
 
 
-
 if __name__ == "__main__":
     from openms.lib.boson import Photon
     # will add a loop
@@ -535,4 +535,3 @@ if __name__ == "__main__":
 
     qedccsd = CCSD(qed, nfock1=1, nfock2=1)
     qedccsd.kernel()
-

@@ -8,9 +8,30 @@
 *.o
 *.a
 *.out
+
+# other extensions
 tmp*
 out.*
 curr*
+*xx
+*.bin
+*.ch
+*.out
+*.dat
+*.cfg
+*.md
+*.h5
+*.pdf
+*log*
+*.txt
+*.bak
+*.tmp
+*.png
+*.i
+
+# output files
+*.chk
+
 
 oldcodes/
 docs/source/generated

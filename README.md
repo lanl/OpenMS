@@ -2,6 +2,14 @@
 
 Open Source Multiscale solvers for coupled Maxwell-Schrödinger equations in Open quantum environments. Open means open source and open quantum system
 
+-----------------------------------------------
+[![Documentation Status](https://readthedocs.org/projects/openms-lmi/badge/?version=latest)](https://openms-lmi.readthedocs.io/en/latest/?badge=latest)
+[![GitHub release](https://img.shields.io/github/release/lanl/openms/all.svg)](https://github.com/lanl/OpenMS/releases)
+
+[![Build Status](https://github.com/lanl/openms/actions/workflows/ci.yml/badge.svg)](https://github.com/lanl/OpenMS/actions?query=workflow%3ACI)
+[![codecov](https://codecov.io/gh/lanl/OpenMS/graph/badge.svg?token=2CBUTFR93Y)](https://codecov.io/gh/lanl/OpenMS)
+
+
 ## LANL-C23019
 
 Copyright 2023. Triad National Security, LLC. All rights reserved.

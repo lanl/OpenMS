@@ -1,0 +1,8 @@
+pyscf
+h5py
+numpy
+scipy
+sphinx
+sphinx-rtd-theme
+
+

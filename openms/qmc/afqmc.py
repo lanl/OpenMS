@@ -90,14 +90,15 @@ Program overview
 import sys, os
 from pyscf import tools, lo, scf, fci, ao2mo
 from pyscf.lib import logger
-import numpy
+import numpy as backend
 import scipy
 import itertools
 import h5py
+import time
+import warnings
 
 from openms.mqed.qedhf import RHF as QEDRHF
 from openms.lib.boson import Photon
-
 from openms.qmc import qmc
 
 
@@ -130,22 +131,29 @@ class AFQMC(qmc.QMCbase):
     def build_propagator(self, h1e, eri, ltensor):
         r"""Pre-compute the propagators
         """
+        warnings.warn(
+            "\nThis 'build_propagator' function in afqmc is deprecated" +
+            "\nand will be removed in a future version. "
+            "Please use the 'propagators.build()' function instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
         # shifted h1e
-        self.shifted_h1e = numpy.zeros(h1e.shape)
+        shifted_h1e = backend.zeros(h1e.shape)
         rho_mf = self.trial.psi.dot(self.trial.psi.T.conj())
-        self.mf_shift = 1j * numpy.einsum("npq,pq->n", ltensor, rho_mf)
+        self.mf_shift = 1j * backend.einsum("npq,pq->n", ltensor, rho_mf)
         for p, q in itertools.product(range(h1e.shape[0]), repeat=2):
-            self.shifted_h1e[p, q] = h1e[p, q] - 0.5 * numpy.trace(eri[p, :, :, q])
-        self.shifted_h1e = self.shifted_h1e - numpy.einsum("n, npq->pq", self.mf_shift, 1j*ltensor)
+            shifted_h1e[p, q] = h1e[p, q] - 0.5 * backend.trace(eri[p, :, :, q])
+        shifted_h1e = shifted_h1e - backend.einsum("n, npq->pq", self.mf_shift, 1j*ltensor)
 
-        self.TL_tensor = numpy.einsum("pr, npq->nrq", self.trial.psi.conj(), ltensor)
-        self.exp_h1e = scipy.linalg.expm(-self.dt/2 * self.shifted_h1e)
+        self.TL_tensor = backend.einsum("pr, npq->nrq", self.trial.psi.conj(), ltensor)
+        self.exp_h1e = scipy.linalg.expm(-self.dt/2 * shifted_h1e)
 
     def propagation_onebody(self, phi_w):
         r"""Propgate one-body term
         """
-        return numpy.einsum('pq, zqr->zpr', self.exp_h1e, phi_w)
+        return backend.einsum('pq, zqr->zpr', self.exp_h1e, phi_w)
 
     def propagation_twobody(self, vbias, phi_w):
         r"""Propgate two-body term
@@ -176,32 +184,99 @@ class AFQMC(qmc.QMCbase):
             = \sum_n \frac{1}{n!} [x\sqrt{-\Delta\tau}L_\gamma]^n
         """
 
+        ovlp = self.trial.overlap_with_walkers(walkers)
+
         # a) 1-body propagator propagation :math:`e^{-dt/2*H1e}`
         walkers.phiw = self.propagation_onebody(walkers.phiw)
 
         # b): 2-body propagator propagation :math:`\exp[(x-\bar{x}) * L]`
         # normally distributed AF
-        xi = numpy.random.normal(0.0, 1.0, self.nfields * self.num_walkers)
-        xi = xi.reshape(self.num_walkers, self.nfields)
+        xi = backend.random.normal(0.0, 1.0, self.nfields * walkers.nwalkers)
+        xi = xi.reshape(walkers.nwalkers, self.nfields)
 
         xshift = xi - xbar
         # TODO: further improve the efficiency of this part
-        two_body_op_power = 1j * numpy.sqrt(self.dt) * numpy.einsum('zn, npq->zpq', xshift, ltensor)
+        two_body_op_power = 1j * backend.sqrt(self.dt) * backend.einsum('zn, npq->zpq', xshift, ltensor)
 
         # \sum_n 1/n! (j\sqrt{\Delta\tau) xL)^n
         temp = walkers.phiw.copy()
         for order_i in range(self.taylor_order):
-            temp = numpy.einsum('zpq, zqr->zpr', two_body_op_power, temp) / (order_i + 1.0)
+            temp = backend.einsum('zpq, zqr->zpr', two_body_op_power, temp) / (order_i + 1.0)
             walkers.phiw += temp
 
         # c):  1-body propagator propagation e^{-dt/2*H1e}
         walkers.phiw = self.propagation_onebody(walkers.phiw)
-        # walkers.phiw = numpy.exp(-self.dt * nuc) * walkers.phiw
+        # walkers.phiw = backend.exp(-self.dt * nuc) * walkers.phiw
 
         # (x*\bar{x} - \bar{x}^2/2)
-        cfb = numpy.einsum("zn, zn->z", xi, xbar) - 0.5*numpy.einsum("zn, zn->z", xbar, xbar)
-        cmf = -numpy.sqrt(self.dt) * numpy.einsum('zn, n->z', xshift, self.mf_shift)
-        return cfb, cmf
+        cfb = backend.einsum("zn, zn->z", xi, xbar) - 0.5*backend.einsum("zn, zn->z", xbar, xbar)
+        cmf = -backend.sqrt(self.dt) * backend.einsum('zn, n->z', xshift, self.mf_shift)
+
+        # updaet_weight and apply phaseless approximation
+        self.update_weight(ovlp, cfb, cmf)
+
+
+    def update_weight(self, overlap, cfb, cmf):
+        r"""
+        Update the walker coefficients using two different schemes.
+
+        a). Hybrid scheme:
+
+        .. math::
+
+              W^{(n+1)} =
+
+        b). Local scheme:
+
+        .. math::
+
+              W^{(n+1)} =
+        """
+        newoverlap = self.trial.overlap_with_walkers(self.walkers)
+        #newoverlap = self.walker_trial_overlap()
+        # be cautious! power of 2 was neglected before.
+        overlap_ratio = (
+            backend.linalg.det(newoverlap) / backend.linalg.det(overlap)
+        ) ** 2
+
+        # the hybrid energy scheme
+        if self.energy_scheme == "hybrid":
+            self.ebound = (2.0 / self.dt) ** 0.5
+            hybrid_energy = -(backend.log(overlap_ratio) + cfb + cmf) / self.dt
+            hybrid_energy = backend.clip(
+                hybrid_energy.real,
+                a_min=-self.ebound,
+                a_max=self.ebound,
+                out=hybrid_energy.real,
+            )
+            self.hybrid_energy = (
+                hybrid_energy if self.hybrid_energy is None else self.hybrid_energy
+            )
+
+            importance_func = backend.exp(
+                -self.dt * 0.5 * (hybrid_energy + self.hybrid_energy)
+            )
+            self.hybrid_energy = hybrid_energy
+            phase = (-self.dt * self.hybrid_energy - cfb).imag
+            phase_factor = backend.array(
+                [max(0, backend.cos(iphase)) for iphase in phase]
+            )
+            importance_func = backend.abs(importance_func) * phase_factor
+
+        elif self.energy_scheme == "local":
+            # The local energy formalism
+            overlap_ratio = overlap_ratio * backend.exp(cmf)
+            phase_factor = backend.array(
+                [max(0, backend.cos(backend.angle(iovlp))) for iovlp in overlap_ratio]
+            )
+            importance_func = (
+                backend.exp(-self.dt * backend.real(self.walkers.eloc)) * phase_factor
+            )
+
+        else:
+            raise ValueError(f"scheme {self.energy_scheme} is not available!!!")
+
+        self.walkers.weights *= importance_func
 
 
 class QEDAFQMC(AFQMC):
@@ -229,6 +304,8 @@ class QEDAFQMC(AFQMC):
 
 if __name__ == "__main__":
     from pyscf import gto, scf, fci
+    import time
+
     bond = 1.6
     natoms = 2
     atoms = [("H", i * bond, 0, 0) for i in range(natoms)]
@@ -239,7 +316,9 @@ if __name__ == "__main__":
                  num_walkers=num_walkers, energy_scheme="hybrid",
                  verbose=3)
 
+    time1 = time.time()
     times, energies = afqmc.kernel()
+    print("\n wall time is ", time.time() - time1, ' s\n')
 
     # HF energy
     mf = scf.RHF(mol)
@@ -253,7 +332,7 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots()
 
-    # time = numpy.arange(0, 5, 0.)
+    # time = backend.arange(0, 5, 0.)
     ax.plot(times, energies, '--', label='afqmc (my code)')
     ax.plot(times, [hf_energy] * len(times), '--')
     ax.plot(times, [fci_energy] * len(times), '--')

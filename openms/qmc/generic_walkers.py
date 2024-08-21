@@ -53,12 +53,14 @@ class BaseWalkers(object):
         self.weights = backend.ones(self.nwalkers)
         self.overlap = backend.ones(self.nwalkers)
         self.eloc = backend.zeros(self.nwalkers)
+        self.ehybrid = None
 
         self.spin_restricted = False
-        #print("nwalkers in walkerfunciton is", self.nwalkers)
+        # print("nwalkers in walkerfunciton is", self.nwalkers)
+
 
 # walker in so orbital (akin ghf walker)
-class  Walkers_so(BaseWalkers):
+class Walkers_so(BaseWalkers):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 

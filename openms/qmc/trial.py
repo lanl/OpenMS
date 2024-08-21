@@ -66,7 +66,7 @@ import sys
 from abc import abstractmethod
 from pyscf import tools, lo, scf, fci
 from pyscf.lib import logger
-import numpy as np
+import numpy as backend
 import h5py
 
 
@@ -146,6 +146,7 @@ class TrialWFBase(object):
         r"""Compute the force bias"""
         pass
 
+
 # single determinant HF trial wavefunction
 class TrialHF(TrialWFBase):
     def __init__(self, *args, **kwargs):
@@ -155,10 +156,82 @@ class TrialHF(TrialWFBase):
         overlap = self.mol.intor("int1e_ovlp")
         Xmat = lo.orth.lowdin(overlap)
 
-        xinv = np.linalg.inv(Xmat)
+        xinv = backend.linalg.inv(Xmat)
 
         self.psi = self.mf.mo_coeff
         self.psi = xinv.dot(self.mf.mo_coeff[:, : self.mol.nelec[0]])
+
+    def ovlp_with_walkers(self, walkers):
+        r"""Compute the overlap between trial and walkers:
+
+        .. math::
+
+            \langle \Psi_T \ket{\Psi_w} = det[S]
+
+        where
+
+        .. math::
+
+            S = C^*_{\psi_T} C_{\psi_w}
+
+        and :math:`C_{\psi_T}` and :math:`C_{\psi_w}` are the coefficient matrices
+        of Trial and Walkers, respectively.
+        """
+        return backend.einsum("pr, zpq->zrq", self.psi.conj(), walkers.phiw)
+
+    def force_bias(self, walkers, TL_tensor, verbose=False):
+        r"""Update the force bias
+
+        precisely, we compute vbias here.
+
+        Green's function is:
+
+        .. math::
+
+            G_{pq} = [\psi_w (\Psi^\dagger_T \psi_w)^{-1} \Psi^\dagger_T]_{qp}
+
+        TL_tensor (precomputed) is:
+
+        .. math::
+
+            TL_{pq} = (\Psi^\dagger_T L_\gamma)_{pq}
+
+        And :math:`\Theta_w` is:
+
+        .. math::
+
+            \Theta_w = \psi_w (\Psi^\dagger_T\psi_w)^{-1} = \psi_w S^{-1}_w
+
+        where :math:`S_w` is the walker-trial overlap.
+
+        Then :math:`(TL)\Theta_w` determines the force bias:
+
+        .. math::
+
+           F_\gamma = \sqrt{-\Delta\tau} \sum_\sigma [(TL)\Theta_w]
+
+        """
+        overlap = self.ovlp_with_walkers(walkers)
+        inv_overlap = backend.linalg.inv(overlap)
+
+        if verbose:
+            logger.debug(
+                self,
+                "\nnorm of walker overlap: %15.8f",
+                backend.linalg.norm(overlap),
+            )
+
+        theta = backend.einsum("zqp, zpr->zqr", walkers.phiw, inv_overlap)
+        gf = backend.einsum("zqr, pr->zpq", theta, self.psi.conj())
+        # :math:`(\Psi_T L_{\gamma}) \psi_w (\Psi_T \psi_w)^{-1}`
+        TL_theta = backend.einsum("npq, zqr->znpr", TL_tensor, theta)
+
+        # trace[TL_theta] give the force_bias
+        # vbias = backend.einsum("znpp->zn", TL_theta)
+        return gf, TL_theta
+
+
+from openms.qmc import estimators
 
 
 # single determinant unrestricted HF trial wavefunction
@@ -169,7 +242,7 @@ class TrialUHF(TrialWFBase):
     def build(self):
         overlap = self.mol.intor("int1e_ovlp")  # AO Overlap Matrix, S
         Xmat = lo.orth.lowdin(overlap)  # Eigenvectors of S**(1/2) = X
-        xinv = np.linalg.inv(Xmat)  # S**(-1/2)
+        xinv = backend.linalg.inv(Xmat)  # S**(-1/2)
 
         # TODO: name change MO_ALPHA/beta -> psia/b
         MO_ALPHA = self.mf.mo_coeff[
@@ -177,12 +250,12 @@ class TrialUHF(TrialWFBase):
         ]  # Occupied ALPHA MO Coeffs
         MO_BETA = self.mf.mo_coeff[1, :, : self.mol.nelec[1]]  # Occupied BETA MO Coeffs
         self.psi = [
-            np.dot(xinv, MO_ALPHA)
+            backend.dot(xinv, MO_ALPHA)
         ]  # ALPHA ORBITALS AFTER LOWDIN ORTHOGONALIZATION
         self.psi.append(
-            np.dot(xinv, MO_BETA)
+            backend.dot(xinv, MO_BETA)
         )  # BETA ORBITALS AFTER LOWDIN ORTHOGONALIZATION
-        self.psi = np.array(
+        self.psi = backend.array(
             self.psi
         )  # self.psi.shape = (spin, nocc mos per spin, nAOs)
 
@@ -190,7 +263,7 @@ class TrialUHF(TrialWFBase):
             self.pwsi, self.psi, self.nalpha, self.nbeta
         )
 
-    def overlap_with_walkers(self, walkers):
+    def ovlp_with_walkers(self, walkers):
         r"""Compute the overlap with walkers"""
         pass
 
@@ -235,10 +308,10 @@ def get_ci(mol, cas):
     logger.debug(mol, f"casscf total energy: {e_tot}")
     logger.debug(mol, f"correlation energy:  {e_tot - e_hf}")
 
-    # logger.debug(mol, f"hf.mo_occ ?= cassc.mo_occ = {np.allclose(mf.mo_occ, mc.mo_occ, rtol=1e-05)} \n")
+    # logger.debug(mol, f"hf.mo_occ ?= cassc.mo_occ = {backend.allclose(mf.mo_occ, mc.mo_occ, rtol=1e-05)} \n")
     logger.debug(
         mol,
-        f"hf.mo_coeff ?= cassc.mo_coeff = {np.allclose(mf.mo_coeff, mc.mo_coeff, rtol=1e-05)} \n",
+        f"hf.mo_coeff ?= cassc.mo_coeff = {backend.allclose(mf.mo_coeff, mc.mo_coeff, rtol=1e-05)} \n",
     )
     logger.debug(mol, f"cassc.mo_occ   = {mc.mo_occ}")
     logger.debug(mol, f"cassc.mo_coeff = {mc.mo_coeff}")

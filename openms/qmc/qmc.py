@@ -20,10 +20,17 @@ import numpy as backend
 import scipy
 import itertools
 import logging
+import time
+import warnings
 
 from openms.qmc.trial import TrialHF
 from . import generic_walkers as gwalker
 from pyscf.lib import logger
+from openms.lib.logger import task_title
+from openms.lib.boson import Boson
+from openms.qmc.estimators import local_eng_elec_chol
+from openms.qmc.propagators import Phaseless, PhaselessElecBoson
+
 
 def read_fcidump(fname, norb):
     """
@@ -109,7 +116,8 @@ class QMCbase(object):
         self.verbose = 1
         self.stdout = sys.stdout
 
-        self.trial = None
+        self.trial = kwargs.get("trial", None)
+        self.mf = mf
 
         # walker parameters
         # TODO: move these variables into walker object
@@ -119,11 +127,11 @@ class QMCbase(object):
         self.renorm_freq = renorm_freq
         self.random_seed = random_seed
 
-        # waker_tensors/coeff are moved into walkers class (phiw, weights) respectively
+        # walker_tensors/coeff are moved into walkers class (phiw, weights) respectively
         # self.walker_coeff = None
         # self.walker_tensors = None
 
-        self.mf_shift = None
+        #self.mf_shift = None
         self.print_freq = 10
 
         self.hybrid_energy = None
@@ -137,17 +145,63 @@ class QMCbase(object):
         Build up the afqmc calculations
         """
         # set up trial wavefunction
-        logger.info(self, "\n========  Initialize Trial WF and Walker  ======== \n")
+        logger.info(self, task_title("Initialize Trial WF and Walker"))
+        self.spin_fac = 1.0
         if self.trial is None:
-            self.trial = TrialHF(self.mol)
-            self.spin_fac = 1.0
+            if self.mf is not None:
+                logger.info(self, f"Mean-field reference is {self.mf.__class__}")
+                self.trial = TrialHF(self.mol, mf=self.mf)
+            else:
+                logger.info(self, f"Mean-field reference is None, we will build from RHF")
+                self.trial = TrialHF(self.mol)
 
         # set up walkers
         # moved this into walker class
         # temp = self.trial.wf.copy()
         # self.walker_tensors = backend.array([temp] * self.num_walkers, dtype=backend.complex128)
         # self.walker_coeff = backend.array([1.] * self.num_walkers)
+        logger.info(self, task_title("Set up walkers"))
         self.walkers = gwalker.Walkers_so(nwalkers=self.num_walkers, trial=self.trial)
+        logger.info(self, "Done!")
+
+        logger.info(self, task_title("Get integrals"))
+        self.h1e, self.eri, self.ltensor = self.get_integrals()
+        logger.info(self, "Done!")
+
+        # prepare the propagator
+        logger.info(self, task_title("preparing  propagator"))
+        if isinstance(self.system, Boson):
+            logger.info(
+                self,
+                "\nsystem is a electron-boson coupled system!"
+                + "\nPhaselessElecBoson propagator is to be used!\n",
+            )
+            self.propagator = PhaselessElecBoson(
+                dt=self.dt,
+                taylor_order=self.taylor_order,
+                energy_scheme=self.energy_scheme,
+                quantization="first",
+            )
+        else:
+            logger.info(
+                self,
+                "\nsystem is a bare electronic system!"
+                + "\nPhaseless propagator is to be used!\n",
+            )
+            self.propagator = Phaseless(
+                dt=self.dt,
+                taylor_order=self.taylor_order,
+                energy_scheme=self.energy_scheme,
+            )
+        logger.info(self, "Done!")
+
+        self.propagator.dump_flags()
+
+
+    def dump_flags(self):
+        r"""dump flags (TBA)
+        """
+        pass
 
     def get_integrals(self):
         r"""return oei and eri in MO"""
@@ -196,9 +250,17 @@ class QMCbase(object):
         and :math:`C_{\psi_T}` and :math:`C_{\psi_w}` are the coefficient matrices
         of Trial and Walkers, respectively.
         """
+
+        warnings.warn(
+            "The 'walker_trial_overlap' function is deprecated and will be removed in a future version. "
+            "Please use the 'trial.ovlp_with_walkers' function instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
         return backend.einsum("pr, zpq->zrq", self.trial.psi.conj(), self.walkers.phiw)
 
-    def renormalization(self):
+    def orthogonalization(self):
         r"""
         Renormalizaiton and orthogonaization of walkers
         """
@@ -207,6 +269,9 @@ class QMCbase(object):
         for idx in range(self.walkers.phiw.shape[0]):
             ortho_walkers[idx] = backend.linalg.qr(self.walkers.phiw[idx])[0]
         self.walkers.phiw = ortho_walkers
+
+    # renormalization is to be deprecated
+    renormalization = orthogonalization
 
     def local_energy_spin(self, h1e, eri, G1p):
         r"""Compute local energy
@@ -225,7 +290,7 @@ class QMCbase(object):
         exx = backend.einsum("zSqs,zSqs->z", tmp, G1p)
         e2 = (ecoul - exx) * self.spin_fac
 
-        e1 = 2 * backend.einsum("zSpq,pq->z", G1p, h1e) * self.spin_fac
+        e1 = 2.0 * backend.einsum("zSpq,pq->z", G1p, h1e) * self.spin_fac
 
         energy = e1 + e2 + self.nuc_energy
         return energy
@@ -257,6 +322,13 @@ class QMCbase(object):
         i.e. the Ecoul is :math:`\left[\frac{\bra{\Psi_T}L\ket{\Psi_w}{\bra{\Psi_T}\Psi_w\rangle}\right]^2`,
         which is the TL_Theta tensor in the code
         """
+
+        warnings.warn(
+            "The qmc.local_energy function is deprecated and will be removed in a future version. "
+            "Please use 'estimators.local_eng_elec or local_eng_elec_chol' function instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         # approach 0) : most efficient way to compute the energy: use Ltensors instead of eri
         vbias2 = vbias * vbias
         ej = 2.0 * backend.einsum("zn->z", vbias2)
@@ -272,172 +344,82 @@ class QMCbase(object):
         # vjk -= backend.einsum("prqs, zps->zqr", eri, gf)  # exchange
         # e2 = backend.einsum("zqs, zqs->z", vjk, gf)
 
-        e1 = 2 * backend.einsum("zpq, pq->z", gf, h1e)
+        e1 = 2.0 * backend.einsum("zpq, pq->z", gf, h1e)
         energy = e1 + e2 + self.nuc_energy
         return energy
-
-    def update_weight(self, overlap, cfb, cmf, local_energy, time):
-        r"""
-        Update the walker coefficients using two different schemes.
-
-        a). Hybrid scheme:
-
-        .. math::
-
-              W^{(n+1)} =
-
-        b). Local scheme:
-
-        .. math::
-
-              W^{(n+1)} =
-        """
-        newoverlap = self.walker_trial_overlap()
-        # be cautious! power of 2 was neglected before.
-        overlap_ratio = (
-            backend.linalg.det(newoverlap) / backend.linalg.det(overlap)
-        ) ** 2
-
-        # the hybrid energy scheme
-        if self.energy_scheme == "hybrid":
-            self.ebound = (2.0 / self.dt) ** 0.5
-            hybrid_energy = -(backend.log(overlap_ratio) + cfb + cmf) / self.dt
-            hybrid_energy = backend.clip(
-                hybrid_energy.real,
-                a_min=-self.ebound,
-                a_max=self.ebound,
-                out=hybrid_energy.real,
-            )
-            self.hybrid_energy = (
-                hybrid_energy if self.hybrid_energy is None else self.hybrid_energy
-            )
-
-            importance_func = backend.exp(
-                -self.dt * 0.5 * (hybrid_energy + self.hybrid_energy)
-            )
-            self.hybrid_energy = hybrid_energy
-            phase = (-self.dt * self.hybrid_energy - cfb).imag
-            phase_factor = backend.array(
-                [max(0, backend.cos(iphase)) for iphase in phase]
-            )
-            importance_func = backend.abs(importance_func) * phase_factor
-
-        elif self.energy_scheme == "local":
-            # The local energy formalism
-            overlap_ratio = overlap_ratio * backend.exp(cmf)
-            phase_factor = backend.array(
-                [max(0, backend.cos(backend.angle(iovlp))) for iovlp in overlap_ratio]
-            )
-            importance_func = (
-                backend.exp(-self.dt * backend.real(local_energy)) * phase_factor
-            )
-
-        else:
-            raise ValueError(f"scheme {self.energy_scheme} is not available!!!")
-
-        self.walkers.weights *= importance_func
 
     def kernel(self, trial_wf=None):
         r"""main function for QMC time-stepping
 
         trial_wf: trial wavefunction
+        walkers: walker function
 
-        TODO: move the force_bias calculation into separate function
-
-        Green's function is:
-
-        .. math::
-
-            G_{pq} = [\psi_w (\Psi^\dagger_T \psi_w)^{-1} \Psi^\dagger_T]_{qp}
-
-        TL_tensor (precomputed) is:
-
-        .. math::
-
-            TL_{pq} = (\Psi^\dagger_T L_\gamma)_{pq}
-
-        And :math:`\Theta_w` is:
-
-        .. math::
-
-            \Theta_w = \psi_w (\Psi^\dagger_T\psi_w)^{-1} = \psi_w S^{-1}_w
-
-        where :math:`S_w` is the walker-trial overlap.
-
-        Then :math:`(TL)\Theta_k` determines the force bias:
-
-        .. math::
-
-           F_\gamma = \sqrt{-\Delta\tau} \sum_\sigma [(TL)\Theta_w]
         """
 
         backend.random.seed(self.random_seed)
 
-        logger.info(self, "\n======== get integrals ========")
-        h1e, eri, ltensor = self.get_integrals()
 
-        # moved scipy.linalg.expm(-self.dt/2 * h1e) into build propagator and re-used it in propagation
-        self.build_propagator(h1e, eri, ltensor)
+        h1e = self.h1e
+        eri = self.eri
+        ltensor = self.ltensor
+        propagator = self.propagator
 
-        time = 0.0
+        trial = self.trial if trial_wf is None else trial_wf
+        walkers = self.walkers
+
+        # setup propagator
+        # self.build_propagator(h1e, eri, ltensor)
+        propagator.build(h1e, eri, ltensor, self.trial)
+
+        # start the propagation
+        tt = 0.0
         energy_list = []
         time_list = []
-        while time <= self.total_time:
-            dump_result = int(time / self.dt) % self.print_freq == 0
+        wall_t0 = time.time()
+        while tt <= self.total_time:
+            dump_result = int(tt / self.dt) % self.print_freq == 0
 
-            # compute the force_bias (TODO: re-arrange the following code into separate function for force_bias)
-            # pre-processing: prepare walker tensor
-            overlap = self.walker_trial_overlap()
-            inv_overlap = backend.linalg.inv(overlap)
-
-            theta = backend.einsum("zqp, zpr->zqr", self.walkers.phiw, inv_overlap)
-            if dump_result:
-                logger.debug(
-                    self,
-                    "\nnorm of walker overlap: %15.8f",
-                    backend.linalg.norm(overlap),
-                )
-
-            gf = backend.einsum("zqr, pr->zpq", theta, self.trial.psi.conj())
-            # :math:`(\Psi_T L_{\gamma}) \psi_w (\Psi_T \psi_w)^{-1}`
-            TL_theta = backend.einsum("npq, zqr->znpr", self.TL_tensor, theta)
-
+            # step 1): get force bias (note: TL_tensor and mf_shift moved into propagator.atrributes)
+            gf, TL_theta = trial.force_bias(
+                walkers, propagator.TL_tensor, verbose=dump_result
+            )
             # trace[TL_theta] is the force_bias
             vbias = backend.einsum("znpp->zn", TL_theta)
-            if dump_result:
-                logger.debug(
-                    self, "norm of vbias:   %15.8f", backend.linalg.norm(vbias)
-                )
 
+            # step 2): property calculations
             # compute local energy for each walker
-            local_energy = self.local_energy(TL_theta, h1e, eri, vbias, gf)
-            energy = backend.sum(
-                [
-                    self.walkers.weights[i] * local_energy[i]
-                    for i in range(len(local_energy))
-                ]
-            )
-            energy = energy / backend.sum(self.walkers.weights)
+            # local_energy = self.local_energy(TL_theta, h1e, eri, vbias, gf)
+
+            walkers.eloc = local_eng_elec_chol(TL_theta, h1e, eri, vbias, gf)
+            walkers.eloc += self.nuc_energy
+
+            energy = backend.dot(walkers.weights, walkers.eloc)
+            energy = energy / backend.sum(walkers.weights)
 
             # imaginary time propagation
-            xbar = -backend.sqrt(self.dt) * (1j * 2 * vbias - self.mf_shift)
             # TODO: may apply bias bounding
+            xbar = -backend.sqrt(self.dt) * (1j * 2 * vbias - propagator.mf_shift)
 
-            cfb, cmf = self.propagation(self.walkers, xbar, ltensor)
+            # step 3): propagate walkers and update weights
+            # self.propagation(walkers, xbar, ltensor)
+            propagator.propagate_walkers(trial, walkers, vbias, ltensor)
 
-            #  phaseless approximation
-            self.update_weight(overlap, cfb, cmf, local_energy, time)
+            # moved phaseless approximation to propagation
+            # since it is associated with propagation type
+            # self.update_weight(overlap, cfb, cmf)
+            if dump_result:
+                logger.debug(self, f"local_energy:   {walkers.eloc}")
 
-            # periodic re-orthogonalization
-            if int(time / self.dt) == self.renorm_freq:
-                self.renormalization()
+            # step 4): periodic re-orthogonalization
+            if int(tt / self.dt) == self.renorm_freq:
+                self.orthogonalization()
 
             # print energy and time
             if dump_result:
-                time_list.append(time)
+                time_list.append(tt)
                 energy_list.append(energy)
-                logger.info(self, f" Time: {time:9.3f}    Energy: {energy:15.8f}")
+                logger.info(self, f" Time: {tt:9.3f}    Energy: {energy:15.8f}")
 
-            time += self.dt
+            tt += self.dt
 
         return time_list, energy_list

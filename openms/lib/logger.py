@@ -25,7 +25,6 @@ import os
 import time
 import datetime
 
-
 if sys.version_info < (3, 0):
     process_clock = time.clock
     perf_counter = time.time
@@ -36,6 +35,12 @@ else:
 
 import openms.__config__
 
+
+def task_title(msg):
+    length = 80
+    len1 = (length - len(msg) ) // 2
+    len2 = length - len(msg) - len1
+    return f"\n{'-' * len1} {msg} {'-' * len2}"
 
 class Logger(object):
 
@@ -52,7 +57,6 @@ class Logger(object):
                 "DEBUG": 25,
                 "DEBUGALL": 30
                 }
-
 
     def log_basic(self, level, message):
         if level not in self.log_levels and level !="":

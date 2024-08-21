@@ -94,4 +94,3 @@ setup(
         "all": ["mpi4py"]  # TBA
     },
 )
-

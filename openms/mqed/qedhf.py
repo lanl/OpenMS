@@ -366,7 +366,7 @@ class RHF(scf.hf.RHF):
             qed_req_args = ["omega", "vec"]
             if not all(i in kwargs for i in qed_req_args):
                 err_msg = f"Must provide either Boson object in 'qed' " + \
-                          f"parameter, OR 'omega', 'vec', parameters." + \
+                          f"parameter, OR 'omega', 'vec', parameters."
                 logger.error(self, err_msg)
                 raise ValueError(err_msg)
 

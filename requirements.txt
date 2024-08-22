@@ -4,5 +4,3 @@ numpy
 scipy
 sphinx
 sphinx-rtd-theme
-
-

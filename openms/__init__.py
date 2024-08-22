@@ -19,7 +19,7 @@ import os
 import sys
 import textwrap
 
-__version__ = "0.1_beta"
+__version__ = "0.2.0"
 __author__ = "Yu Zhang (zhy@lanl.gov), Ilia Mazin (imazin@lanl.gov)"
 __copyright__ = f"""
 {" " * 3}
@@ -144,7 +144,7 @@ else:
             "OPENMS_PATH\n" % "\n".join(__path__[1:])
         )
 
-from distutils.version import LooseVersion
+# from distutils.version import LooseVersion
 
 from . import __config__
 from . import cc

@@ -81,7 +81,7 @@ class CMakeBuild(build_ext):
 
 setup(
     name="openms",
-    version="0.1.0",
+    version="0.2.0",
     description="An open-source multiscale solver for coupled Maxwell-Schrödinger equations.",
     packages=find_packages(),
     install_requires=install_requires,

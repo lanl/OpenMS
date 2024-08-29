@@ -2,10 +2,10 @@ import unittest
 import numpy
 
 from pyscf import gto
-from openms.lib import boson
 from openms.mqed import vtqedhf
 
 class TestVTQEDHF_f(unittest.TestCase):
+
     def test_energy_match(self):
       refs = [-174.9935188527, -175.016224162572]
       etots = []
@@ -19,8 +19,7 @@ class TestVTQEDHF_f(unittest.TestCase):
                    O          0.00000       -0.07579        {5.00000+zshift};\
                    He         0.00000        0.00000        {7.50000+zshift}"
 
-          mol = gto.M(atom=atom, basis="sto3g", unit="Angstrom", symmetry=True, verbose=3)
-          mol.verbose = 1
+          mol = gto.M(atom=atom, basis="sto3g", unit="Angstrom", symmetry=True, verbose=1)
 
           nmode = 1
           cavity_freq = numpy.zeros(nmode)
@@ -28,15 +27,14 @@ class TestVTQEDHF_f(unittest.TestCase):
           cavity_mode = numpy.zeros((nmode, 3))
           cavity_mode[0, :] = 0.1 * numpy.asarray([0, 1, 0])
 
-          qed = boson.Photon(mol, omega=cavity_freq, vec=cavity_mode)
-          qedmf = vtqedhf.VTRHF(mol, qed, couplings_var=[falpha], optimize_varf=False)
-
+          qedmf = vtqedhf.RHF(mol, omega=cavity_freq, vec=cavity_mode, couplings_var=[falpha], optimize_varf=False)
           qedmf.max_cycle = 500
           qedmf.init_guess = "hcore"
           qedmf.kernel()
 
           etots.append(qedmf.e_tot)
           self.assertAlmostEqual(qedmf.e_tot, refs[j], places=6, msg="Etot does not match the reference value.")
+
 
     def test_vtqed_min(self):
       ref = -175.0168599150538
@@ -48,8 +46,7 @@ class TestVTQEDHF_f(unittest.TestCase):
                O          0.00000       -0.07579        {5.00000+zshift};\
                He         0.00000        0.00000        {7.50000+zshift}"
 
-      mol = gto.M(atom=atom, basis="sto3g", unit="Angstrom", symmetry=True, verbose=3)
-      mol.verbose = 1
+      mol = gto.M(atom=atom, basis="sto3g", unit="Angstrom", symmetry=True, verbose=1)
 
       nmode = 1
       cavity_freq = numpy.zeros(nmode)
@@ -57,9 +54,7 @@ class TestVTQEDHF_f(unittest.TestCase):
       cavity_mode = numpy.zeros((nmode, 3))
       cavity_mode[0, :] = 0.1 * numpy.asarray([0, 1, 0])
 
-      qed = boson.Photon(mol, omega=cavity_freq, vec=cavity_mode)
-      qedmf = vtqedhf.VTRHF(mol, qed)
-
+      qedmf = vtqedhf.RHF(mol, omega=cavity_freq, vec=cavity_mode)
       qedmf.max_cycle = 500
       qedmf.init_guess = "hcore"
       qedmf.kernel()

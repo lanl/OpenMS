@@ -2,10 +2,10 @@ import unittest
 import numpy
 
 from pyscf import gto
-from openms.lib import boson
 from openms.mqed import scqedhf
 
 class TestSCQEDHF(unittest.TestCase):
+
     def test_energy_match(self):
         ref = -175.016224162572
 
@@ -17,7 +17,7 @@ class TestSCQEDHF(unittest.TestCase):
                  O          0.00000       -0.07579        {5.00000+zshift};\
                  He         0.00000        0.00000        {7.50000+zshift}"
 
-        mol = gto.M(atom=atom, basis="sto3g", unit="Angstrom", symmetry=True, verbose=3)
+        mol = gto.M(atom=atom, basis="sto3g", unit="Angstrom", symmetry=True, verbose=1)
 
         nmode = 1
         cavity_freq = numpy.zeros(nmode)
@@ -25,7 +25,7 @@ class TestSCQEDHF(unittest.TestCase):
         cavity_mode = numpy.zeros((nmode, 3))
         cavity_mode[0, :] = 0.1 * numpy.asarray([0, 1, 0])
 
-        qedmf = scqedhf.SCRHF(mol, omega=cavity_freq, vec=cavity_mode)
+        qedmf = scqedhf.RHF(mol, omega=cavity_freq, vec=cavity_mode)
         qedmf.max_cycle = 500
         qedmf.init_guess = "hcore"
         qedmf.kernel()

@@ -18,7 +18,7 @@
 import numpy
 from scipy import linalg
 
-#from openms import mqed
+from openms.mqed import qedhf, scqedhf, vtqedhf
 
 from pyscf import lib
 from pyscf import gto
@@ -516,12 +516,12 @@ class Boson(object):
         if "couplings_var" in kwargs and kwargs["couplings_var"] is not None:
 
             # QED-HF
-            if self._mf.__class__.__name__ == "RHF":
+            if type(self._mf) == qedhf.RHF:
                 warn_msg = f"QED-HF does not require variational parameters."
                 logger.warn(self, warn_msg)
 
             # SC/VT-QED-HF
-            elif self._mf.__class__.__name__ in ("SCRHF", "VTRHF"):
+            elif type(self._mf) in (scqedhf.RHF, vtqedhf.RHF):
 
                 if isinstance(kwargs["couplings_var"], list):
                     kwargs["couplings_var"] = numpy.asarray(kwargs["couplings_var"],
@@ -535,7 +535,7 @@ class Boson(object):
                     raise ValueError(err_msg)
 
                 # SC-QED-HF
-                if self._mf.__class__.__name__ == "SCRHF":
+                if type(self._mf) == scqedhf.RHF:
 
                     if not all(i == 1.0 for i in kwargs["couplings_var"]):
                         err_msg = f"Value of 'f' parameter must be 1.0 for " + \
@@ -553,7 +553,7 @@ class Boson(object):
                     self.optimize_varf = False
 
                 # VT-QEDHF
-                elif self._mf.__class__.__name__ == "VTRHF":
+                if type(self._mf) == vtqedhf.RHF:
 
                     self.couplings_var = kwargs["couplings_var"].copy()
                     self.update_couplings()
@@ -570,13 +570,13 @@ class Boson(object):
 
         # Ensure SC/VT-QEDHF coupling is correct
         else:
-            if self._mf.__class__.__name__ == "SCRHF":
+            if type(self._mf) == scqedhf.RHF:
                 self.couplings_var = numpy.ones(self.nmodes,
                                                 dtype=float)
                 self.update_couplings()
                 self.optimize_varf = False
 
-            elif self._mf.__class__.__name__ == "VTRHF":
+            elif type(self._mf) == vtqedhf.RHF:
                 self.couplings_var = 0.5 * numpy.ones(self.nmodes,
                                                       dtype=float)
                 self.update_couplings()

@@ -81,20 +81,14 @@ class RHF(scqedhf.RHF):
 
     def gaussian_derivative_f_vector(self, eta, imode, onebody=True):
 
-        nao = self.qed.gmat[imode].shape[0]
-
         if onebody:
-            p, q = numpy.ogrid[:nao, :nao]
+            p, q = numpy.ogrid[:self.nao, :self.nao]
             diff_eta = eta[imode, q] - eta[imode, p]
         else:
-            p, q, r, s = numpy.ogrid[:nao, :nao, :nao, :nao]
+            p, q, r, s = numpy.ogrid[:self.nao, :self.nao, :self.nao, :self.nao]
             diff_eta = eta[imode, q] - eta[imode, p] +  eta[imode, s] - eta[imode, r]
 
-        tmp = 1.0 #self.qed.couplings_var[imode]
-        if False: # depending on wether eta has sqrt(w/2) factors:
-            tmp = tmp / numpy.sqrt(2.0 * self.qed.omega[imode])
-        else:
-            tmp = tmp / self.qed.omega[imode]
+        tmp = 1.0 / self.qed.omega[imode]
 
         derivative = - numpy.exp(-0.5*(tmp * diff_eta)**2) * (tmp * diff_eta) ** 2
 
@@ -105,9 +99,9 @@ class RHF(scqedhf.RHF):
         derivative /= self.qed.couplings_var[imode]
 
         if onebody:
-            return derivative.reshape(nao, nao)
+            return derivative.reshape(self.nao, self.nao)
         else:
-            return  derivative.reshape(nao, nao, nao, nao)
+            return  derivative.reshape(self.nao, self.nao, self.nao, self.nao)
 
 
     def get_var_gradient(self, dm_do, g_DO, dm=None):
@@ -201,42 +195,30 @@ class RHF(scqedhf.RHF):
         return f
 
 
-
 if __name__ == "__main__":
     import numpy
-    from pyscf import gto, scf
+    from pyscf import gto
 
-    itest = -2
-    zshift = itest * 2.5
-    print(f"zshift={zshift}")
+    atom = """
+           H          0.86681        0.60144       0.00000
+           F         -0.86681        0.60144       0.00000
+           O          0.00000       -0.07579       0.00000
+           He         0.00000        0.00000       2.50000
+           """
 
-    atom = f"H          0.86681        0.60144        {5.00000+zshift};\
-             F         -0.86681        0.60144        {5.00000+zshift};\
-             O          0.00000       -0.07579        {5.00000+zshift};\
-             He         0.00000        0.00000        {7.50000+zshift}"
-
-    mol = gto.M( atom=atom,
-        basis="sto3g",
-        #basis="cc-pvdz",
-        unit="Angstrom",
-        symmetry=True,
-        verbose=3)
-
-    print("mol coordinates=\n", mol.atom_coords())
-    print("\n=========== self-consistent SC-QED-HF calculation  ======================\n")
-
-    from openms.mqed import vtqedhf
+    mol = gto.M(atom=atom,
+                basis="sto-3g",
+                unit="Angstrom",
+                symmetry=True,
+                verbose=3)
 
     nmode = 1
     cavity_freq = numpy.zeros(nmode)
     cavity_mode = numpy.zeros((nmode, 3))
     cavity_freq[0] = 0.5
-    cavity_mode[0, :] = 1.e-1 * numpy.asarray([0, 0, 1])
+    cavity_mode[0, :] = 0.1 * numpy.asarray([0, 0, 1])
 
-    mol.verbose = 4
-
-    qedmf = vtqedhf.RHF(mol, xc=None, cavity_mode=cavity_mode, cavity_freq=cavity_freq, add_nuc_dipole=True)
+    qedmf = RHF(mol, xc=None, cavity_mode=cavity_mode, cavity_freq=cavity_freq)
     qedmf.max_cycle = 500
-    qedmf.verbose = 5
     qedmf.init_guess ="hcore"
     qedmf.kernel()

@@ -146,7 +146,6 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
     # construct h1e, gmat in DO representation (used in SC/VT-QEDHF)
     mf.get_h1e_DO(mol, dm=dm)
 
-
     h1e = mf.get_hcore(mol, dm, dress=True)
     vhf = mf.get_veff(mol, dm)
     e_tot = mf.energy_tot(dm, h1e, vhf)
@@ -381,8 +380,6 @@ def get_fock(
     """
     # copied from hf get_fock, the only difference is that we update h1 in eacy iteration
 
-    mf.initialize_var_param(dm)
-
     h1e = mf.get_hcore(dm=dm, dress=True)
     if vhf is None:
         vhf = mf.get_veff(mf.mol, dm)
@@ -423,9 +420,6 @@ class RHF(qedhf.RHF):
 
         if "scqedhf" not in openms.runtime_refs:
             openms.runtime_refs.append("scqedhf")
-
-        self.eta = numpy.zeros((self.qed.nmodes, self.nao))
-        self.eta_grad = numpy.zeros((self.qed.nmodes, self.nao))
 
         self.mo2dipole = numpy.zeros_like(self.qed.gmat)
         self.ao2dipole = numpy.zeros_like(self.qed.gmat)
@@ -661,36 +655,6 @@ class RHF(qedhf.RHF):
     get_fock = get_fock
 
 
-    def get_jk(self, mol=None, dm=None, hermi=1, with_j=True, with_k=True, omega=None):
-        """get jk matrix in the presence of electron_photon coupling in the coherent state
-        representation:
-
-        I_{ijkl} = I^e_{ijkl} + g_{ij}g_{kl}
-        where I^e is the pure electronci two-body integral.
-        the latter term counts for the photon-mediated correlations
-
-        J_{uv} = \sum_{ls} D_{ls}(uv|ls)
-        K_{uv} = \sum_{ls} D_{ls}(us|lv)
-
-        Hence, the photon-mediated part of JK is
-        J^p_{uv} = \sum_{ls} D_{ls}(uv|ls) = sum_{ls} D_{ls} g_{uv} g_{ls}
-        K^p_{uv} = \sum_{ls} D_{ls} g_{us} g_{lv}
-        """
-
-        # Note the incore version, which initializes an _eri array in memory.
-        if mol is None:
-            mol = self.mol
-
-        # add dressing factor to two-body integrals (todo)
-        for imode in range(self.qed.nmodes):
-            factor = self.FC_factor(self.eta, imode, onebody=False)
-            eri_tmp = self.eri_DO * factor
-            vj, vk = scf.hf.dot_eri_dm(eri_tmp, dm, hermi, with_j, with_k)
-            del eri_tmp
-
-        return vj, vk
-
-
     def FC_factor(self, eta, imode, onebody=True):
         r"""Compute Franck-Condon (or renormalization) factor
 
@@ -702,21 +666,19 @@ class RHF(qedhf.RHF):
 
         """
         nao = self.qed.gmat[imode].shape[0]
+
         if onebody:
             p, q = numpy.ogrid[:nao, :nao]
             diff_eta = eta[imode, p] - eta[imode, q]
-            tmp = self.qed.couplings_var[imode]
         else:
             p, q, r, s = numpy.ogrid[:nao, :nao, :nao, :nao]
             diff_eta = eta[imode, p] - eta[imode, q] +  eta[imode, r] - eta[imode, s]
-            tmp = 1.0
 
-        tmp = 1.0
-        if False: # depending on wether eta has sqrt(w/2) factors:
-            tmp = tmp / numpy.sqrt(2.0 * self.qed.omega[imode])
-        else:
-            tmp = tmp / self.qed.omega[imode]
-        factor = numpy.exp(-0.5 * (tmp * diff_eta) ** 2)
+        tmp = 1 / self.qed.omega[imode]
+        ph_exp_val = self.qed.get_bdag_plus_b_sq_expval(imode)
+
+        factor = numpy.exp((-0.5 * (tmp * diff_eta) ** 2) * (ph_exp_val + 1))
+
         if onebody:
             return factor.reshape(nao, nao)
         else:
@@ -724,27 +686,26 @@ class RHF(qedhf.RHF):
 
 
     def gaussian_derivative_vectorized(self, eta, imode, onebody=True):
-        nao = eta.shape[1]
-        # Calculate diff_eta considering broadcasting
+
         if onebody:
-            p, q = numpy.ogrid[:nao, :nao]
+            p, q = numpy.ogrid[:self.nao, :self.nao]
             diff_eta = eta[imode, q] - eta[imode, p]
+
         else:
-            p, q, r, s = numpy.ogrid[:nao, :nao, :nao, :nao]
+            p, q, r, s = numpy.ogrid[:self.nao, :self.nao, :self.nao, :self.nao]
             diff_eta = eta[imode, q] - eta[imode, p] +  eta[imode, s] - eta[imode, r]
 
-        tmp = 1.0 # self.qed.couplings_var[imode]
-        if False:  # Adjust this condition as needed
-            tmp /= numpy.sqrt(2.0 * self.qed.omega[imode])
-        else:
-            tmp /= self.qed.omega[imode]
+        tmp = 1 / self.qed.omega[imode]
+        ph_exp_val = self.qed.get_bdag_plus_b_sq_expval(imode)
 
         # Apply the derivative formula
-        derivative = numpy.exp(-0.5 * (tmp * diff_eta) ** 2) * (tmp ** 2) * diff_eta
+        derivative = numpy.exp((-0.5 * (tmp * diff_eta) ** 2) * (ph_exp_val + 1)) \
+                     * (tmp ** 2) * diff_eta
+
         if onebody:
-            return derivative.reshape(nao, nao)
+            return derivative.reshape(self.nao, self.nao)
         else:
-            return  derivative.reshape(nao, nao, nao, nao)
+            return  derivative.reshape(self.nao, self.nao, self.nao, self.nao)
 
 
     def get_h1e_DO(self, mol=None, dm=None):
@@ -770,12 +731,13 @@ class RHF(qedhf.RHF):
             mol = self.mol
         if self.bare_h1e is None:
             self.bare_h1e = scf.hf.get_hcore(mol)
+
         h1e = self.bare_h1e.copy()
 
-        nmode, nao, nao = self.qed.gmat.shape
-        self.dm_do = numpy.zeros((nmode, nao, nao))
+        self.dm_do = numpy.zeros((self.qed.nmodes, self.nao, self.nao))
+
         if self.g_dipole is None:
-            self.g_dipole = numpy.zeros((nmode,nao))
+            self.g_dipole = numpy.zeros((self.qed.nmodes, self.nao))
 
         # FIXME: generalized it to multiple modes
         for imode in range(self.qed.nmodes):
@@ -787,7 +749,7 @@ class RHF(qedhf.RHF):
             gtmp = unitary_transform(U, gtmp)
 
             # one-body operator h1e_pq = h1e_pq + g_pq(p, l) * g_pq(l, p)
-            for p in range(nao):
+            for p in range(self.nao):
                 self.g_dipole[imode, p] = gtmp[p, p] - self.eta[imode, p]
                 self.h1e_DO[p, p] += self.g_dipole[imode, p] ** 2 / self.qed.omega[imode]
             del gtmp
@@ -858,23 +820,21 @@ class RHF(qedhf.RHF):
         if dm is None:
             dm = self.make_rdm1()
 
-        nao = self.mol.nao_nr()
-
         imode = 0
         U = self.ao2dipole[imode]
         dm_do = self.get_dm_do(dm, U)
 
         g_dot_D = numpy.diagonal(dm_do) @ self.g_dipole[imode, :]
-        vhf_do = numpy.zeros((nao,nao))
+        vhf_do = numpy.zeros((self.nao, self.nao))
 
         # vectorized code
-        p_indices = numpy.arange(nao)
+        p_indices = numpy.arange(self.nao)
         vhf_do[p_indices, p_indices] += (2.0 * self.g_dipole[imode, p_indices] * g_dot_D -
                                          numpy.square(self.g_dipole[imode, p_indices]) * dm_do[p_indices, p_indices]) / self.qed.omega[0]
 
         vhf_do_offdiag = numpy.zeros_like(vhf_do)
         # Calculate off-diagonal elements
-        p, q = numpy.triu_indices(nao, k=1)
+        p, q = numpy.triu_indices(self.nao, k=1)
         vhf_do_offdiag[p, q] -= self.g_dipole[imode, p] * self.g_dipole[imode, q] * dm_do[q, p] / self.qed.omega[0]
         vhf_do_offdiag[q, p] = vhf_do_offdiag[p, q]  # Exploit symmetry
         vhf_do += vhf_do_offdiag
@@ -901,7 +861,6 @@ class RHF(qedhf.RHF):
     def initialize_var_param(self, dm = None):
         r"""Initialize additional variational parameters"""
         if self.eta is None:
-            self.initialize_bare_fock(dm)
             self.initialize_eta(dm)
 
 
@@ -954,53 +913,31 @@ class RHF(qedhf.RHF):
         return self.e_tot
     kernel = lib.alias(scf, alias_name='kernel')
 
-# end of scqedhf RHF class
 
 if __name__ == "__main__":
-    # will add a loop
     import numpy
-    from pyscf import gto, scf
+    from pyscf import gto
 
-    itest = -2
-    zshift = itest * 2.5
-    print(f"zshift={zshift}")
+    atom = """
+           H          0.86681        0.60144       0.00000
+           F         -0.86681        0.60144       0.00000
+           O          0.00000       -0.07579       0.00000
+           He         0.00000        0.00000       2.50000
+           """
 
-    atom = """H 0 0 0; F 0 0 1.75202"""
-    atom = f"H          0.86681        0.60144        {5.00000+zshift};\
-             F         -0.86681        0.60144        {5.00000+zshift};\
-             O          0.00000       -0.07579        {5.00000+zshift};\
-             He         0.00000        0.00000        {7.50000+zshift}"
-
-    mol = gto.M(
-        atom=atom,
-        basis="sto3g",
-        #basis="cc-pvdz",
-        unit="Angstrom",
-        symmetry=True,
-        verbose=3,
-    )
-    print("mol coordinates=\n", mol.atom_coords())
-
-    print(
-        "\n=========== self-consistent SC-QED-HF calculation  ======================\n"
-    )
-
-    from openms.mqed import scqedhf
+    mol = gto.M(atom=atom,
+                basis="sto-3g",
+                unit="Angstrom",
+                symmetry=True,
+                verbose=3)
 
     nmode = 1
     cavity_freq = numpy.zeros(nmode)
     cavity_mode = numpy.zeros((nmode, 3))
     cavity_freq[0] = 0.5
-    cavity_mode[0, :] = 0.1 * numpy.asarray([1, 1, 1])
-    cavity_mode[0, :] = 0.05 * numpy.asarray([0, 0, 1])  # * .1534237789543689328 #* 0.15163914700516712830
-    cavity_mode[0, :] = 1.e-1 * numpy.asarray([0, 0, 1])  # * .1534237789543689328 #* 0.15163914700516712830
+    cavity_mode[0, :] = 0.1 * numpy.asarray([0, 0, 1])
 
-    mol.verbose = 4
-
-    qedmf = scqedhf.RHF(mol, xc=None, cavity_mode=cavity_mode, cavity_freq=cavity_freq, add_nuc_dipole=True)
+    qedmf = RHF(mol, xc=None, cavity_mode=cavity_mode, cavity_freq=cavity_freq)
     qedmf.max_cycle = 500
-    qedmf.verbose = 5
     qedmf.init_guess ="hcore"
-    qedmf.kernel() #dm0=dm)
-
-    print(f"\n Etot is: {qedmf.e_tot}; ref = ")
+    qedmf.kernel()

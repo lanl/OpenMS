@@ -468,6 +468,24 @@ class Boson(object):
     # General boson methods
     # ---------------------
 
+    def get_boson_dm(self, mode):
+        r"""Return photon ``mode`` density matrix.
+
+        Parameters
+        ----------
+        mode : int
+            Index for ``mode`` stored in the object.
+
+        Returns
+        -------
+        :class:`~numpy.ndarray`
+            photon mode density matrix
+        """
+
+        bc = self.boson_coeff[mode][:, 0].copy()
+        return numpy.outer(numpy.conj(bc), bc)
+
+
     def update_mean_field(self, mf, **kwargs):
         r"""
         Update with attributes from mean-field object, parameter ``mf``.
@@ -926,20 +944,15 @@ class Photon(Boson):
         ep_term = numpy.zeros((self.nao, self.nao))
         for a in range(self.nmodes):
 
-            m_coeff = self.boson_coeff[a].copy()
-            mdim = self.nboson[a] + 1
-
             shift = s1e * self.z_alpha[a]
             gtmp = (self.gmat[a] - shift) * numpy.sqrt(0.5 * self.omega[a])
             gtmp *= g_ep[a]
-            for n in range(mdim):
-                if n > 0:
-                    ep_term += numpy.conj(m_coeff[n, 0]) * m_coeff[n - 1, 0] * gtmp * numpy.sqrt(n)
-                if n < self.nboson[a]:
-                    ep_term += numpy.conj(m_coeff[n, 0]) * m_coeff[n + 1, 0] * gtmp * numpy.sqrt(n+1)
+
+            ph_exp_val = self.get_bdag_minus_b_expval(a)
+            ep_term += (gtmp * ph_exp_val)
 
         dse_oei -= ep_term
-        del (g_ep, m_coeff, mdim, shift, gtmp, ep_term)
+        del (g_ep, shift, gtmp, ph_exp_val, ep_term)
 
         return dse_oei
 
@@ -1136,6 +1149,26 @@ class Photon(Boson):
             Interaction matrix of mode scaled by frequency term.
         """
         return (numpy.sqrt(0.5 * self.omega[mode]) * self.gmat[mode])
+
+
+    def get_bdag_plus_b_sq_expval(self, mode):
+
+        mdim = self.nboson[mode] + 1
+
+        h_diag = numpy.diag(2 * numpy.arange(mdim))
+        pdm = self.get_boson_dm(mode)
+        return numpy.sum(h_diag * pdm)
+
+
+    def get_bdag_minus_b_expval(self, mode):
+
+        mdim = self.nboson[mode] + 1
+
+        h_od = numpy.diag(numpy.sqrt(numpy.arange(1, mdim)), k = 1) \
+               + numpy.diag(numpy.sqrt(numpy.arange(1, mdim)), k = -1)
+        pdm = self.get_boson_dm(mode)
+        return numpy.sum(h_od * pdm)
+
 
     # -----------------------------------
     # Post-HF integrals (coupled-cluster)

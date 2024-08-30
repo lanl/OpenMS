@@ -599,10 +599,6 @@ class RHF(scf.hf.RHF):
     # SC/VT-QED-RHF method definitions
     # --------------------------------
 
-    def get_h1e_DO(self, mol=None, dm=None):
-        r"""Template method to return core Hamiltonian in dipole operator basis."""
-        pass
-
     def set_params(self, params, fock_shape=None):
         r"""Reshape Fock after DIIS."""
         fsize = numpy.prod(fock_shape)

@@ -44,10 +44,13 @@ class RHF(scqedhf.RHF):
             openms.runtime_refs.append("vtqedhf")
 
         self.var_grad = numpy.zeros(self.qed.nmodes)
-        self.vhf_dse = None
+        self.dse_tot = numpy.zeros(self.qed.nmodes)
+
+        self.oei = numpy.zeros((self.nao, self.nao))
+        self.vhf_dse = numpy.zeros((self.nao, self.nao))
 
 
-    def get_hcore(self, mol=None, dm=None, dress=False):
+    def get_hcore(self, mol=None, dm=None, dress=True):
 
         h1e = super().get_hcore(mol, dm, dress)
 
@@ -89,8 +92,9 @@ class RHF(scqedhf.RHF):
             diff_eta = eta[imode, q] - eta[imode, p] +  eta[imode, s] - eta[imode, r]
 
         tmp = 1.0 / self.qed.omega[imode]
+        ph_exp_val = self.qed.get_bdag_plus_b_sq_expval(imode)
 
-        derivative = - numpy.exp(-0.5*(tmp * diff_eta)**2) * (tmp * diff_eta) ** 2
+        derivative = - numpy.exp(-0.5*(tmp * diff_eta) ** 2) * (ph_exp_val + 1)  * (tmp * diff_eta) ** 2
 
         # in principle, the couplings_var should be > 0.0
         if self.qed.couplings_var[imode] < -0.05 or self.qed.couplings_var[imode] > 1.05:
@@ -104,7 +108,7 @@ class RHF(scqedhf.RHF):
             return  derivative.reshape(self.nao, self.nao, self.nao, self.nao)
 
 
-    def get_var_gradient(self, dm_do, g_DO, dm=None):
+    def grad_var_params(self, dm_do, g_DO, dm=None):
         r"""Compute dE/df where f is the variational transformation parameters."""
 
         # gradient w.r.t eta
@@ -114,47 +118,44 @@ class RHF(scqedhf.RHF):
             return
 
         # gradient w.r.t f_\alpha
-        nmodes = self.qed.nmodes
+        onebody_dvar = numpy.zeros(self.qed.nmodes)
+        twobody_dvar = numpy.zeros(self.qed.nmodes)
 
-        onebody_dvar = numpy.zeros(nmodes)
-        twobody_dvar = numpy.zeros(nmodes)
+        for a in range(self.qed.nmodes):
 
-        for imode in range(nmodes):
-            if abs(self.qed.couplings_var[0]) > 1.e-5:
-                g2_dot_D = 2.0 * numpy.einsum("pp, p->", dm_do[imode], g_DO[imode]**2)
-                onebody_dvar[imode] += g2_dot_D / self.qed.omega[imode] / self.qed.couplings_var[imode]
-
-        # will be replaced with c++ code
-        for imode in range(nmodes):
+            if abs(self.qed.couplings_var[a]) > 1.e-5:
+                g2_dot_D = 2.0 * numpy.einsum("pp, p->", dm_do[a], g_DO[a]**2)
+                onebody_dvar[a] += g2_dot_D / self.qed.omega[a] / self.qed.couplings_var[a]
 
             # one-electron part
-            derivative = self.gaussian_derivative_f_vector(self.eta, imode)
-            h_dot_g = self.h1e_DO * derivative # element_wise
-            oei_derivative = numpy.einsum("pq, pq->", h_dot_g, dm_do[imode])
-            tmp = numpy.einsum("pp, p->p", dm_do[imode], g_DO[imode])
+            derivative = self.gaussian_derivative_f_vector(self.eta, a)
+            h_dot_g = self.h1e_DO[a] * derivative # element_wise
+            oei_derivative = numpy.einsum("pq, pq->", h_dot_g, dm_do[a])
+            tmp = numpy.einsum("pp, p->p", dm_do[a], g_DO[a])
             tmp = 2.0 * numpy.einsum("p,q->", tmp, tmp)
-            tmp -= numpy.einsum("pq, pq, p, q->", dm_do[imode], dm_do[imode], g_DO[imode], g_DO[imode])
-            oei_derivative += tmp / self.qed.omega[imode] / self.qed.couplings_var[imode]
+            tmp -= numpy.einsum("pq, pq, p, q->", dm_do[a], dm_do[a], g_DO[a], g_DO[a])
+            oei_derivative += tmp / self.qed.omega[a] / self.qed.couplings_var[a]
 
-            onebody_dvar[imode] += oei_derivative
+            onebody_dvar[a] += oei_derivative
 
             # two-electron part
-            derivative = self.gaussian_derivative_f_vector(self.eta, imode, onebody=False)
-            derivative *= (2.0 * self.eri_DO - self.eri_DO.transpose(0, 3, 2, 1))
-            tmp = lib.einsum('pqrs, rs-> pq', derivative, dm_do[imode], optimize=True)
-            tmp = lib.einsum('pq, pq->', tmp, dm_do[imode], optimize=True)
-            twobody_dvar[imode] = tmp/4.0
+            derivative = self.gaussian_derivative_f_vector(self.eta, a, onebody=False)
+            derivative *= (2.0 * self.eri_DO[a] - self.eri_DO[a].transpose(0, 3, 2, 1))
 
-        self.var_grad = onebody_dvar + twobody_dvar
+            tmp = lib.einsum('pqrs, rs-> pq', derivative, dm_do[a])
+            tmp = lib.einsum('pq, pq->', tmp, dm_do[a])
+            twobody_dvar[a] = tmp / 4.0
 
-        if abs(1.0 - self.qed.couplings_var[0]) > 1.e-4 and self.vhf_dse is not None:
-            self.dse_tot = self.energy_elec(dm, self.oei, self.vhf_dse)[0]
-            self.var_grad[0] -= self.dse_tot * 2.0 / (1.0 - self.qed.couplings_var[0])
+            self.var_grad[a] = onebody_dvar[a] + twobody_dvar[a]
+
+            if abs(1.0 - self.qed.couplings_var[a]) > 1.e-4 and self.vhf_dse[a] is not None:
+                self.dse_tot[a] = self.energy_elec(dm, self.oei, self.vhf_dse)[0]
+                self.var_grad[a] -= self.dse_tot[a] * 2.0 / (1.0 - self.qed.couplings_var[a])
 
         return self
 
 
-    def get_var_norm(self):
+    def norm_var_params(self):
         var_norm = linalg.norm(self.eta_grad) / numpy.sqrt(self.eta.size)
         var_norm += linalg.norm(self.var_grad) / numpy.sqrt(self.var_grad.size)
         return var_norm
@@ -169,7 +170,7 @@ class RHF(scqedhf.RHF):
             self.qed.update_couplings()
 
 
-    def pre_update_params(self):
+    def pre_update_var_params(self):
         variables = self.eta
         gradients = self.eta_grad
 
@@ -220,5 +221,4 @@ if __name__ == "__main__":
 
     qedmf = RHF(mol, omega = cavity_freq, vec = cavity_mode)
     qedmf.max_cycle = 500
-    qedmf.init_guess = "hcore"
     qedmf.kernel()

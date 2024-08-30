@@ -160,7 +160,7 @@ class RHF(scqedhf.RHF):
         return var_norm
 
 
-    def update_variational_params(self):
+    def update_var_params(self):
         self.eta -= self.precond * self.eta_grad
 
         if self.qed.optimize_varf:
@@ -206,11 +206,11 @@ if __name__ == "__main__":
            He         0.00000        0.00000       2.50000
            """
 
-    mol = gto.M(atom=atom,
-                basis="sto-3g",
-                unit="Angstrom",
-                symmetry=True,
-                verbose=3)
+    mol = gto.M(atom = atom,
+                basis = "sto-3g",
+                unit = "Angstrom",
+                symmetry = True,
+                verbose = 3)
 
     nmode = 1
     cavity_freq = numpy.zeros(nmode)
@@ -218,7 +218,7 @@ if __name__ == "__main__":
     cavity_freq[0] = 0.5
     cavity_mode[0, :] = 0.1 * numpy.asarray([0, 0, 1])
 
-    qedmf = RHF(mol, xc=None, cavity_mode=cavity_mode, cavity_freq=cavity_freq)
+    qedmf = RHF(mol, omega = cavity_freq, vec = cavity_mode)
     qedmf.max_cycle = 500
-    qedmf.init_guess ="hcore"
+    qedmf.init_guess = "hcore"
     qedmf.kernel()

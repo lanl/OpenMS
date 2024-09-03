@@ -605,6 +605,10 @@ class RHF(scf.hf.RHF):
         f = params[:fsize].reshape(fock_shape)
         return f
 
+    def get_h1e_DO(self, mol=None, dm=None):
+        r"""Template method to get one-body terms in dipole operator basis."""
+        pass
+
     def init_var_params(self, dm=None):
         r"""Template method to initialize SC/VT-QED-HF variational parameters."""
         pass

@@ -22,11 +22,9 @@ from pyscf import dft
 from pyscf import lib
 from pyscf import scf
 from pyscf.lib import logger
-#from pyscf.scf import diis
 
 import openms
 from openms.lib import boson
-#from openms.mqed import diis
 from openms import __config__
 
 TIGHT_GRAD_CONV_TOL = getattr(__config__, "TIGHT_GRAD_CONV_TOL", True)
@@ -319,7 +317,6 @@ def get_fock(
     if cycle > -1:
         mf.update_var_params()
 
-    if dm is None: dm = mf.make_rdm1()
     if h1e is None: h1e = mf.get_hcore(mf.mol, dm)
     if vhf is None: vhf = mf.get_veff(mf.mol, dm)
 
@@ -334,6 +331,8 @@ def get_fock(
         level_shift_factor = mf.level_shift
     if damp_factor is None:
         damp_factor = mf.damp
+
+    if dm is None: dm = mf.make_rdm1()
     if s1e is None: s1e = mf.get_ovlp()
 
     if diis is not None and cycle >= diis_start_cycle:
@@ -600,34 +599,34 @@ class RHF(scf.hf.RHF):
     # SC/VT-QED-RHF method definitions
     # --------------------------------
 
-    def get_h1e_DO(self, mol=None, dm=None):
-        r"""Template method to return core Hamiltonian in dipole operator basis."""
-        pass
-
     def set_params(self, params, fock_shape=None):
         r"""Reshape Fock after DIIS."""
         fsize = numpy.prod(fock_shape)
         f = params[:fsize].reshape(fock_shape)
         return f
 
+    def get_h1e_DO(self, mol=None, dm=None):
+        r"""Template method to get one-body terms in dipole operator basis."""
+        pass
+
     def init_var_params(self, dm=None):
-        r"""Template method to initialize VT-QED-RHF variational parameters."""
+        r"""Template method to initialize SC/VT-QED-HF variational parameters."""
         pass
 
     def grad_var_params(self, dm=None):
-        r"""Template method to compute gradient of VT-QED-RHF variational parameters."""
+        r"""Template method to compute SC/VT-QED-HF energy gradients w.r.t. variational parameters."""
         pass
 
     def norm_var_params(self):
-        r"""Template method to return the norm of VT-QED-RHF variational parameters."""
+        r"""Template method to return the norm of SC/VT-QED-HF variational parameters."""
         return 0.0
 
     def pre_update_var_params(self):
-        r"""Template method to prepare VT-QED-RHF variational parameters for update."""
+        r"""Template method to prepare SC/VT-QED-HF variational parameters for DIIS update."""
         return None, None
 
     def update_var_params(self):
-        r"""Template method to update VT-QED-RHF variational parameters."""
+        r"""Template method to update SC/VT-QED-HF variational parameters."""
         pass
 
 
@@ -648,26 +647,23 @@ if __name__ == "__main__":
     import numpy
     from pyscf import gto
 
-    itest = 0
-    zshift = itest * 2.0
+    atom = """
+           C    0.00000000    0.00000000    0.00000000
+           O    0.00000000    1.23456800    0.00000000
+           H    0.97075033   -0.54577032    0.00000000
+           C   -1.21509881   -0.80991169    0.00000000
+           H   -1.15288176   -1.89931439    0.00000000
+           C   -2.43440063   -0.19144555    0.00000000
+           H   -3.37262777   -0.75937214    0.00000000
+           O   -2.62194056    1.12501165    0.00000000
+           H   -1.71446384    1.51627790    0.00000000
+           """
 
-    atom = f"C    0.00000000    0.00000000    {zshift};\
-             O    0.00000000    1.23456800    {zshift};\
-             H    0.97075033   -0.54577032    {zshift};\
-             C   -1.21509881   -0.80991169    {zshift};\
-             H   -1.15288176   -1.89931439    {zshift};\
-             C   -2.43440063   -0.19144555    {zshift};\
-             H   -3.37262777   -0.75937214    {zshift};\
-             O   -2.62194056    1.12501165    {zshift};\
-             H   -1.71446384    1.51627790    {zshift}"
-
-    mol = gto.M(
-        atom = atom,
-        basis="sto3g",
-        #basis="cc-pvdz",
-        unit="Angstrom",
-        symmetry=True,
-        verbose=1)
+    mol = gto.M(atom = atom,
+                basis = "sto-3g",
+                unit = "Angstrom",
+                symmetry = True,
+                verbose = 3)
 
     nmode = 2
     cavity_freq = numpy.zeros(nmode)
@@ -675,7 +671,6 @@ if __name__ == "__main__":
     cavity_mode = numpy.zeros((nmode, 3))
     cavity_mode[0, :] = 0.1 * numpy.asarray([0, 0, 1])
 
-    qedmf = RHF(mol, omega=cavity_freq, vec=cavity_mode)
+    qedmf = RHF(mol, omega = cavity_freq, vec = cavity_mode)
     qedmf.max_cycle = 500
     qedmf.kernel()
-    print(f"Electronic energy = {qedmf.e_tot}")

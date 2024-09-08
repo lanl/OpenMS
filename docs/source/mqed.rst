@@ -181,15 +181,15 @@ Polaron Transformation
 
 WIP
 
-:class:`RHF <mqed.scqedhf.SCRHF>` class definition
-==================================================
+:class:`RHF <mqed.scqedhf.RHF>` class definition
+================================================
 
 .. autofunction:: mqed.scqedhf.kernel
 .. autofunction:: mqed.scqedhf.get_orbitals_from_rao
 .. autofunction:: mqed.scqedhf.cholesky_diag_fock_rao
 .. autofunction:: mqed.scqedhf.get_reduced_overlap
 
-.. autoclass:: mqed.scqedhf.SCRHF
+.. autoclass:: mqed.scqedhf.RHF
    :members:
    :undoc-members:
    :show-inheritance:
@@ -209,10 +209,10 @@ Variational Transformation
 
 WIP
 
-:class:`RHF <mqed.scqedhf.VTRHF>` class definition
-==================================================
+:class:`RHF <mqed.scqedhf.RHF>` class definition
+================================================
 
-.. autoclass:: mqed.vtqedhf.VTRHF
+.. autoclass:: mqed.vtqedhf.RHF
    :members:
    :undoc-members:
    :show-inheritance:

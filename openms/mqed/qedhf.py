@@ -29,6 +29,40 @@ from openms import __config__
 
 TIGHT_GRAD_CONV_TOL = getattr(__config__, "TIGHT_GRAD_CONV_TOL", True)
 
+r"""
+Theoretical background of QEDHF
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Within the Coherent State (CS) representation (for photonic DOF), the
+QEDHF wavefunction ansatz is
+
+.. math::
+
+   \ket{\Psi} = &\sum_n c_n \prod_\alpha e^{z_\alpha b^\dagger_\alpha - z^*_\alpha b_\alpha } \ket{HF}\otimes{n_\alpha} \\
+              = &\sum_n c_n U(\mathbf{z}) \ket{HF}\otimes{n_\alhpa}.
+
+where :math:`z_\alpha=-\frac{\lambda_\alpha\cdot\langle\boldsymbol{D}\rangle}{\sqrt{2\omega_\alpha}}` denotes
+the photon displacement due to the coupling with electrons.
+
+Consequently, we can use :math:`U(\mathbf{z})` to transform the original PF Hamiltonian
+into CS representation
+
+.. math::
+
+    H_{CS} = & U^\dagger(\mathbf{z}) H U(\mathbf{z}) \\
+           = & H_e+\sum_\alpha\Big\{\omega_\alpha b^\dagger_\alpha b_\alpha
+               +\frac{1}{2}[\lambda_\alpha\cdot(\boldsymbol{D}-\langle\boldsymbol{D}\rangle)]^2  \\
+             & -\sqrt{\frac{\omega_\alpha}{2}}[\lambda_\alpha\cdot(\boldsymbol{D} -
+             \langle\boldsymbol{D}\rangle)](b^\dagger_\alpha+ b_\alpha)\Big\}.
+
+
+With the ansatz, the QEDHF energy is
+
+.. math::
+
+  E_{QEDHF}= E_{HF} + \frac{1}{2}\langle \boldsymbol{lambda}\cdot [\boldsymbol{D}-\langle \boldsymbol{D}\rangle)]^2\rangle,
+
+"""
 
 def kernel(
     mf, conv_tol=1e-10, conv_tol_grad=None,
@@ -117,8 +151,7 @@ def kernel(
     logger.info(mf, 'init E (non-QED)= %.15g', e_tot)
 
     # Create initial photonic eigenvector guess for each mode
-    for a in range(mf.qed.nmodes):
-        mf.qed.boson_coeff[a] = mf.qed.update_boson_coeff(e_tot, dm, a)
+    mf.qed.update_boson_coeff(e_tot, dm)
 
     # Initialize additional variational parameters,
     # construct 'h1e' in dipole (DO) basis
@@ -180,8 +213,7 @@ def kernel(
         # Update photonic coefficients and compute photonic energy
         mf.qed.update_cs(dm) # Update coherent state values
         if mf.qed.use_cs == False:
-            for a in range(mf.qed.nmodes):
-                mf.qed.boson_coeff[a] = mf.qed.update_boson_coeff(e_tot, dm, a)
+            mf.qed.update_boson_coeff(e_tot, dm)
 
         # Update h1e, vhf, and e_tot
         h1e = mf.get_hcore(mol, dm)
@@ -225,8 +257,7 @@ def kernel(
         # Final update of photonic coefficients and energy
         mf.qed.update_cs(dm) # Update coherent state values
         if mf.qed.use_cs == False:
-            for a in range(mf.qed.nmodes):
-                mf.qed.boson_coeff[a] = mf.qed.update_boson_coeff(e_tot, dm, a)
+            mf.qed.update_boson_coeff(e_tot, dm)
 
         # Final update of h1e, vhf, e_tot, fock
         h1e = mf.get_hcore(mol, dm)
@@ -317,8 +348,10 @@ def get_fock(
     if cycle > -1:
         mf.update_var_params()
 
-    if h1e is None: h1e = mf.get_hcore(mf.mol, dm)
-    if vhf is None: vhf = mf.get_veff(mf.mol, dm)
+    if h1e is None:
+        h1e = mf.get_hcore(mf.mol, dm)
+    if vhf is None:
+        vhf = mf.get_veff(mf.mol, dm)
 
     f = h1e + vhf
 

@@ -32,6 +32,64 @@ FORCE_PIVOTED_CHOLESKY = getattr(__config__, "FORCE_PIVOTED_CHOLESKY", False)
 LINEAR_DEP_TRIGGER = getattr(__config__, "LINEAR_DEP_TRIGGER", 1e-10)
 
 
+
+r"""
+Theoretical background of VT-QEDHF methods
+
+
+Transformation is:
+
+.. math::
+
+   U(f) = \exp\left[-\frac{f_\alpha\boldsymbol{\lambda}_\alpha\cdot\boldsymbol{D}}{\sqrt{2\omega}}(b-b^\dagger)\right].
+
+where :math:`f_\alpha\in [0, 1]`. With :math:`U`, the transformed QED Hamiltonian
+becomes
+
+.. math::
+
+    \mathcal{H} = & \mathcal{H}_e + (1-f_\alpha)\sqrt{\frac{\omega_\alpha}{2}}\boldsymbol{\lambda}_\alpha\cdot\boldsymbol{D} (b+b^\dagger) \\
+                  & + \frac{1}{2} (1-f_\alpha)^2 \left(\boldsymbol{\lambda}_\alpha\cdot\boldsymbol{D}\right)^2.
+
+Where the dressed electronic Hamiltonian is
+
+.. math::
+
+    \mathcal{H}_e =  \tilde{h}_{\mu\nu}\hat{E}_{\mu\nu} + \tilde{I}_{\mu\nu\lambda\sigma}\hat{e}_{\mu\nu\lambda\sigma}.
+
+and
+
+.. math::
+
+    \tilde{h}_{\mu\nu}&=\sum_{\mu'\nu} h_{\mu'\nu'}X^\dagger_{\mu\mu'}X_{\nu\nu'} \\
+    \tilde{I}_{\mu\nu\lambda\sigma}&= \sum_{\mu'\nu'\lambda'\sigma'}X^\dagger_{\mu\mu'}X^\dagger_{\nu\nu'}I_{\mu'\nu'\lambda'\sigma'} X_{\lambda\lambda'}X_{\sigma\sigma'}.
+
+And
+
+.. math::
+
+    X_{\mu\nu} = \exp\left[-\sum_{\alpha}\frac{f_\alpha}{\sqrt{2\omega_\alpha}} \boldsymbol{\lambda}_\alpha\cdot\boldsymbol{D} (\hat{a}^\dagger_\alpha - \hat{a}_\alpha) \right]|_{\mu\nu}.
+
+Then we derive the QEDHF functional and Fock matrix accordingly based on the HF ansatz.
+
+
+"""
+
+
+def entropy(rho):
+    r"""Compute lentropy for given density matrix
+
+    .. math::
+
+        S = - K_B Tr[\rho\ln(\rho)]
+    """
+    e, _ = linalg.eigh(rho)
+    e = e[e > 0]
+    tmp = e * numpy.log(e)
+    return -1.0 * numpy.sum(tmp)
+
+
+
 class RHF(scqedhf.RHF):
     r"""Non-relativistic VT-QED-HF subclass."""
 
@@ -81,17 +139,51 @@ class RHF(scqedhf.RHF):
 
         return vhf
 
+    def gaussian_derivative_sq_vector(self, eta, imode, onebody=True):
+        r"""
+        Compute derivative of FC factor with respect to f
+
+        .. math::
+
+            \frac{d G}{\partial f_\alpha} =
+        """
+        nao = self.gmat[imode].shape[0]
+        if onebody:
+            p, q = numpy.ogrid[:nao, :nao]
+            diff_eta = eta[imode, q] - eta[imode, p]
+        else:
+            p, q, r, s = numpy.ogrid[:nao, :nao, :nao, :nao]
+            diff_eta = eta[imode, q] - eta[imode, p] + eta[imode, s] - eta[imode, r]
+
+        tau = numpy.exp(self.qed.squeezed_var[imode])
+        tmp = tau / self.qed.omega[imode]
+        derivative = -numpy.exp(-0.5 * (tmp * diff_eta) ** 2) * (tmp * diff_eta) ** 2
+
+        if onebody:
+            return derivative.reshape(nao, nao)
+        else:
+            return derivative.reshape(nao, nao, nao, nao)
+
+
 
     def gaussian_derivative_f_vector(self, eta, imode, onebody=True):
+        r"""
+        Compute derivative of FC factor with respect to f
+
+        .. math::
+
+            \frac{d G}{\partial f_\alpha} =
+        """
 
         if onebody:
             p, q = numpy.ogrid[:self.nao, :self.nao]
             diff_eta = eta[imode, q] - eta[imode, p]
         else:
             p, q, r, s = numpy.ogrid[:self.nao, :self.nao, :self.nao, :self.nao]
-            diff_eta = eta[imode, q] - eta[imode, p] +  eta[imode, s] - eta[imode, r]
+            diff_eta = eta[imode, q] - eta[imode, p] + eta[imode, s] - eta[imode, r]
 
-        tmp = 1.0 / self.qed.omega[imode]
+        tau = numpy.exp(self.qed.squeezed_var[imode])
+        tmp = tau / self.qed.omega[imode]
         ph_exp_val = self.qed.get_bdag_plus_b_sq_expval(imode)
 
         derivative = - numpy.exp(-0.5*(tmp * diff_eta) ** 2) * (ph_exp_val + 1)  * (tmp * diff_eta) ** 2
@@ -107,12 +199,82 @@ class RHF(scqedhf.RHF):
         else:
             return  derivative.reshape(self.nao, self.nao, self.nao, self.nao)
 
+    def get_vsq_gradient(self, dm_do, g_DO, dm=None):
+        r"""
+        Compute dE/dF where F is the variational squeezed parameters
+        """
+
+        # gradient w.r.t f_\alpha
+        nao = self.mol.nao_nr()
+        nmodes = self.qed.nmodes
+
+        onebody_dvsq = numpy.zeros(nmodes)
+        twobody_dvsq = numpy.zeros(nmodes)
+
+        # will be replaced with c++ code
+        for imode in range(nmodes):
+            tau = numpy.exp(self.qed.squeezed_var[imode])
+            # one-electron part
+            derivative = self.gaussian_derivative_sq_vector(self.eta, imode)
+            h_dot_g = self.h1e_DO * derivative # element_wise
+            oei_derivative = numpy.einsum("pq, pq->", h_dot_g, dm_do[imode])
+
+            tmp = numpy.einsum("pp, p->p", dm_do[imode], g_DO[imode])
+            tmp = 2.0 * numpy.einsum("p,q->", tmp, tmp)
+            tmp -= numpy.einsum("pq, pq, p, q->", dm_do[imode], dm_do[imode], g_DO[imode], g_DO[imode])
+
+            # oei_derivative += tmp / self.qed.omega[imode] * (2.0 * tau * tau)
+            onebody_dvsq[imode] += oei_derivative
+
+            # two-electron part
+            derivative = self.gaussian_derivative_sq_vector(self.eta, imode, onebody=False)
+            derivative *= (2.0 * self.eri_DO - self.eri_DO.transpose(0, 3, 2, 1))
+            tmp = lib.einsum('pqrs, rs-> pq', derivative, dm_do[imode], optimize=True)
+            tmp = lib.einsum('pq, pq->', tmp, dm_do[imode], optimize=True)
+            twobody_dvsq[imode] = tmp / 4.0
+
+        self.vsq_grad = onebody_dvsq + twobody_dvsq
+
+        # photon energy part:
+        for imode in range(nmodes):
+            # FIXME for multiple photon basis set
+            # FIXME: include ZPE or not
+            sinhr = numpy.sinh(self.qed.squeezed_var[imode])
+            coshr = numpy.cosh(self.qed.squeezed_var[imode])
+            tmp = self.qed.omega[imode] * 2.0 * sinhr * coshr
+            self.vsq_grad[imode] += tmp
+
 
     def grad_var_params(self, dm_do, g_DO, dm=None):
-        r"""Compute dE/df where f is the variational transformation parameters."""
+        r"""Compute dE/df where f is the variational transformation parameters.
+        
+        Compute dE/df where f is the variational transformation parameters
+
+        :math:`\eta` here is the eigenvalue of :math:`\lambda \sqrt{\omega_\alpha/2} (\boldsymbol{d}\cdot \boldsymbol{e}_\alpha)`,
+        not just the eigenvalue of :math:`\boldsymbol{d}\cdot \boldsymbol{e}_\alpha`.
+
+        Define :math:`\eta_p` as eigenvalue of :math:`\boldsymbol{d}\cdot \boldsymbol{e}_\alpha'
+        and :math:`\tilde{\eta}_p` as eigenvalue of :math:`\lambda \sqrt{\omega_\alpha/2} (\boldsymbol{d}\cdot \boldsymbol{e}_\alpha)`,
+        then:
+
+        .. math::
+
+            \tilde{\eta}_p = \eta_p  \sqrt{\omega_\alpha/2}.
+
+        And the Gaussian factor is:
+
+        .. math::
+
+            \exp(-\lambda^2(\eta_p - \eta_q)^2/4\omega) =
+            \exp[ -1/(2\omega^2_\alpha) (\tilde{\eta}_p - \tilde{\eta}_q)^2 ].
+
+        """
 
         # gradient w.r.t eta
         self.get_eta_gradient(dm_do, g_DO, dm)
+
+        if self.qed.optimize_vsq:
+            self.get_vsq_gradient(dm_do, g_DO, dm)
 
         if not self.qed.optimize_varf:
             return
@@ -129,6 +291,7 @@ class RHF(scqedhf.RHF):
 
             # one-electron part
             derivative = self.gaussian_derivative_f_vector(self.eta, a)
+
             h_dot_g = self.h1e_DO[a] * derivative # element_wise
             oei_derivative = numpy.einsum("pq, pq->", h_dot_g, dm_do[a])
             tmp = numpy.einsum("pp, p->p", dm_do[a], g_DO[a])
@@ -182,6 +345,8 @@ class RHF(scqedhf.RHF):
 
 
     def set_params(self, params, fock_shape=None):
+        r""" get size of the variational parameters
+        """
 
         fsize = numpy.prod(fock_shape)
         f = params[:fsize].reshape(fock_shape)
@@ -194,6 +359,56 @@ class RHF(scqedhf.RHF):
             self.qed.update_couplings()
 
         return f
+
+    def make_rdm1_org(self, mo_coeff, mo_occ, nfock=2, **kwargs):
+        r"""One-particle density matrix in original AO-Fock representation
+
+        .. math::
+
+            \ket{\Phi} = & \hat{U}(\hat{f}, F)\ket{HF}\otimes \ket{0}
+                 = \exp[-\frac{f_\alpha \lambda\cdot D}{\sqrt{2\omega}}]
+                 \sum_\mu c_\mu \ket{\mu, 0} \\
+                 = & \sum_\mu c_\mu \exp[-g(b-b^\dagger)] \ket{\mu} \otimes \ket{0} \\
+                 = & \sum_\mu c_\mu U^\dagger\exp[-\tilde{g}(b-b^\dagger)]U \ket{\mu}\otimes\ket{0}
+
+        where :math:`\tilde{g}` is the diagonal matrix.
+        It is obvious that the VT-QEDHF WF is no longer the single produc state
+
+        """
+        import math
+
+        mocc = mo_coeff[:,mo_occ>0]
+        rho = (mocc*mo_occ[mo_occ>0]).dot(mocc.conj().T)
+
+        nao = rho.shape[0]
+        imode = 0
+
+        U = self.ao2dipole[imode]
+        Uinv = linalg.inv(U)
+        # transform into Dipole
+        rho_DO = scqedhf.unitary_transform(U, rho)
+
+        tau = numpy.exp(self.qed.squeezed_var[imode])
+        rho_tot = numpy.zeros((nfock, nao, nfock, nao))
+        for m in range(nfock):
+            for n in range(nfock):
+                # <m | D(z_alpha) |0>
+                zalpha = tau * self.qed.couplings_var[imode] * self.eta[imode]
+                zalpha /= self.qed.omega[imode]
+
+                z0 = numpy.exp(-0.5 * zalpha ** 2)
+                zm = z0 * zalpha ** m * numpy.sqrt(math.factorial(m))
+                zn = z0 * (-zalpha) ** n * numpy.sqrt(math.factorial(n))
+
+                rho_tmp = rho_DO * numpy.outer(zm, zn)
+                # back to AO
+                rho_tmp = scqedhf.unitary_transform(Uinv, rho_tmp)
+                rho_tot[m, :, n, :] = rho_tmp
+
+        rho_e = numpy.einsum("mpmq->pq", rho_tot)
+        rho_b = numpy.einsum("mpnp->mn", rho_tot) / numpy.trace(rho)
+
+        return rho_tot, rho_e, rho_b
 
 
 if __name__ == "__main__":

@@ -27,6 +27,69 @@ from cqcpy import utils
 from cqcpy.ov_blocks import one_e_blocks
 from cqcpy.ov_blocks import two_e_blocks, two_e_blocks_full
 
+def get_bosonic_Ham(nmodes, nboson_states, omega, za, Fa):
+    r"""Construct Bosonic Hamiltonian in different representation
+    after integrating out the electronic DOF.
+
+    TODO: Finish constructing the Hb matrix in different representation:
+
+        - Fock/CS representation.
+        - FIXME: squeezed coherent state :math:`S(F)D(z)\ket{0}`
+        - FIXME: Displaced squeezed state :math:`D(z)S(F)\ket{0}`
+        - FIXME: Squeezed LF :math:`S(F) D(\hat{f})\ket{0}`
+        - FIXME: LF squeezed :math:`D(\hat{f})S(F) \ket{0}`
+
+    Bosonic Hamiltonain after integrating out the electronic DOF:
+
+    .. math::
+
+        H_b = \omega_\alpha b^\dagger_\alpha b_\alpha +
+              \sqrt{\frac{\omega_\alpha}{2}}\langle\lambda_\alpha\cdot\boldsymbol{D}
+              \rangle (b^\dagger_\alpha + b_\alpha)
+
+    It becomes diagonal in the CS representation:
+
+    .. math::
+
+        H_{cs} = \omega_\alpha b^\dagger_\alpha b_\alpha
+
+    In the SC representation, it is
+
+    .. math::
+
+        H_{sc} = \omega_\alpha b^\dagger_\alpha b_\alpha + TBA.
+
+    In the VSQ + VLF representation:
+
+    .. math::
+
+       H_{VSQ} = &\omega (\cosh(2r)\omega_\alpha b^\dagger_\alpha b_\alpha + \sinh^2(r)
+                 -\frac{1}{2}\sinh(2r)[b^2_\alpha + b^{\dagger 2}_\alpha]
+                 \\
+                 & + e^{-r} \sqrt{\frac{\omega_\alpha}{2}}\langle\Delta\lambda_\alpha\cdot\boldsymbol{D}
+                  \rangle (b^\dagger_\alpha + b_\alpha)
+                 + TBA.
+    """
+    boson_size = sum(nboson_states)
+    Hb = numpy.zeros((boson_size, boson_size))
+    idx = 0
+    for imode in range(nmodes):
+        jmode = imode
+        cosh2r = numpy.cosh(2.0 * Fa[imode])
+        sinhr = numpy.sinh(Fa[imode])
+        mdim = nboson_states[imode]
+        # diaognal term, didn't include ZPE
+        H0 = numpy.diag(numpy.arange(mdim) * cosh2r + sinhr * sinhr) * omega[imode]
+
+        # off-diaognal term
+        h_od = numpy.diag(numpy.sqrt(numpy.arange(1, mdim)), k = 1) \
+            + numpy.diag(numpy.sqrt(numpy.arange(1, mdim)), k = -1)
+        H0 += h_od * za[imode]
+
+        Hb[idx:idx+mdim, idx:idx+mdim] = H0
+        idx += mdim
+    return Hb
+
 
 def get_dipole_ao(mol, add_nuc_dipole=True, origin_shift=None):
     r"""Return dipole moment matrix in atomic orbital (AO) basis.
@@ -77,6 +140,11 @@ def get_dipole_ao(mol, add_nuc_dipole=True, origin_shift=None):
 
 def get_quadrupole_ao(mol, add_nuc_dipole=True, origin_shift=None):
     r"""Return quadrupole moment matrix in AO basis.
+
+    .. math::
+
+        Q_{uv} = & \bra{u} (\mu_{tot} e)^2 \ket{v} \\
+             = & \bra{u} (e^T  Q  e) \ket{v} + 2 \bra{u} \mu  e \ket{v} (\mu_{nuc} e) + (\mu_{nuc} e)^2
 
     The first dimension specifies the vector direction:
 
@@ -413,12 +481,9 @@ class Boson(object):
             raise ValueError(err_msg)
 
         # Photon wavefunction (default : coherent-state (CS))
-        self.use_cs = True
-        self.z_alpha = numpy.zeros(self.nmodes, dtype=float)
-
         # Fock state representation if CS flag set to False
-        if "use_cs" in kwargs and kwargs["use_cs"] == False:
-            self.use_cs = False
+        self.use_cs = kwargs.get('use_cs', True)
+        self.z_alpha = numpy.zeros(self.nmodes, dtype=float)
 
         # Providing CS "z_alpha" values also sets CS flag to False
         if "z_alpha" in kwargs and kwargs["z_alpha"] is not None:
@@ -451,6 +516,8 @@ class Boson(object):
         self.optimize_varf = False
         self.couplings_var = numpy.zeros(self.nmodes, dtype=float)
         self.couplings_res = numpy.ones(self.nmodes, dtype=float)
+        self.squeezed_var = numpy.zeros(self.nmodes)
+        self.optimize_vsq = kwargs.get("optimize_vsq", False)
 
         # Boson info
         self.boson_type = self.__class__.__name__
@@ -482,7 +549,12 @@ class Boson(object):
             photon mode density matrix
         """
 
-        bc = self.boson_coeff[mode][:, 0].copy()
+        mdim = self.nboson[mode] + 1
+        idx = 0
+        if mode > 0:
+            idx = sum(self.nboson[:mode])  + mode
+
+        bc = self.boson_coeff[idx:idx+mdim, 0].copy()
         return numpy.outer(numpy.conj(bc), bc)
 
 
@@ -654,6 +726,10 @@ class Boson(object):
         r"""Template method to update :math:`z_\al` values in CS representation."""
         raise NotImplementedError("Subclasses must implement this method.")
 
+    def get_gmat_so(self):
+        """Template method to get coupling matrix in SO."""
+        raise NotImplementedError("Subclasses must implement this method.")
+
     def update_boson_coeff(self):
         r"""Template method to construct and diagonalize photonic Hamiltonian."""
         raise NotImplementedError("Subclasses must implement this method.")
@@ -746,7 +822,7 @@ class Photon(Boson):
         return self
 
 
-    def update_boson_coeff(self, eref, dm, mode):
+    def update_boson_coeff(self, eref, dm):
         r"""Update eigenvectors for ``mode`` in :class:`Boson`.
 
         Construct and diagonalize photonic component of the
@@ -802,35 +878,30 @@ class Photon(Boson):
             Eigenvalues and eigenvectors of the photonic Hamiltonian.
         """
 
-        mdim = self.nboson[mode] + 1
+        # we assume noninteracting bosons
+        za = lib.einsum("pq, Xpq ->X", dm, self.gmat) - self.z_alpha
+        za *= self.couplings_res * numpy.sqrt(self.omega/2.0) # only consider the residual part
 
-        # Diagonal terms
-        hmat = numpy.diag(eref + self.omega[mode] * numpy.arange(mdim))
-
-        # Off diagonal terms, scaled by bilinear-coupling term and residual
-        # coupling values, if the cavity mode has non-zero photon occupation
-        # Also, photonic Hamiltonian is diagonal in CS representation
-        if mdim > 1 and self.use_cs == False:
-
-            h_od = numpy.diag(numpy.sqrt(numpy.arange(1, mdim)), k = 1) \
-                    + numpy.diag(numpy.sqrt(numpy.arange(1, mdim)), k = -1)
-
-            za = lib.einsum("pq, qp-> ", self.get_geb_ao(mode), dm)
-            za *= self.couplings_res[mode]
-
-            hmat -= (h_od * za)
+        Fa = self.squeezed_var
+        nboson_states = [n + 1 for n in self.nboson]
+        hmat = get_bosonic_Ham(self.nmodes, nboson_states, self.omega, za, Fa)
 
         # Photon cavity mode eigenvectors
-        h_evec = self._mf.eig(hmat, numpy.eye(mdim))[1]
+        h_evec = self._mf.eig(hmat, numpy.eye(sum(self.nboson+1)))[1]
 
         # Photon ground state energy
         mode_e_tot = 0.0
-        for a in range(mdim):
-            coeff_term = numpy.conj(h_evec[a, 0]) * h_evec[a, 0]
-            mode_e_tot += self.omega[mode] * a * coeff_term
+        idx = 0
+        for imode in range(self.nmodes):
+            mdim = self.nboson[imode] + 1
+            sinhr = numpy.sinh(Fa[imode])
+            cosh2r = numpy.cosh(2.0 * Fa[imode])
+            for a in range(mdim):
+                coeff_term = numpy.conj(h_evec[idx, 0]) * h_evec[idx, 0]
+                mode_e_tot += self.omega[imode] * (a * cosh2r + sinhr * sinhr) * coeff_term
+                idx += 1
         self.e_boson = mode_e_tot
-
-        return h_evec
+        self.boson_coeff = h_evec
 
 
     def get_dse_hcore(self, dm=None, s1e=None, residue=False):

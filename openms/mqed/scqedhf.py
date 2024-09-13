@@ -177,8 +177,7 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
     logger.info(mf, 'init E= %.15g', e_tot)
 
     # Create initial photonic eigenvector guess for each mode
-    for a in range(mf.qed.nmodes):
-        mf.qed.boson_coeff[a] = mf.qed.update_boson_coeff(e_tot, dm, a)
+    mf.qed.update_boson_coeff(e_tot, dm)
 
     mo_energy, mo_coeff = cholesky_diag_fock_rao(mf, h1e + vhf)
     mo_occ = mf.get_occ(mo_energy, mo_coeff)

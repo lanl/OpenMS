@@ -71,6 +71,7 @@ def get_bosonic_Ham(nmodes, nboson_states, omega, za, Fa):
                   \rangle (b^\dagger_\alpha + b_\alpha)
                  + TBA.
     """
+
     boson_size = sum(nboson_states)
     Hb = numpy.zeros((boson_size, boson_size))
     idx = 0
@@ -531,6 +532,26 @@ class Boson(object):
         self.nao = None
         self.dipole_ao = None
         self.quadrupole_ao = None
+
+        # ------------------------------------
+        # TODO: reorganize the following
+        # get molecular attributes
+        self.spin = mol.spin
+        self.intor = mol.intor
+        self.symmetry = mol.symmetry
+        self.intor_symmetric = mol.intor_symmetric
+        self._pseudo = mol._pseudo
+        self._ecpbas = mol._ecpbas
+        self._add_suffix = mol._add_suffix
+        self.nao_nr = mol.nao_nr
+        self.ao_loc_nr = mol.ao_loc_nr
+
+        self._atm = mol._atm
+        self._bas = mol._bas
+        self._env = mol._env
+        self.energy_nuc = mol.energy_nuc
+        self.nelec = mol.nelec
+        # ------------------------------------
 
     # ---------------------
     # General boson methods

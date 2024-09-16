@@ -103,10 +103,7 @@ from openms.qmc import qmc
 
 
 class AFQMC(qmc.QMCbase):
-
-
     def __init__(self, system, *args, **kwargs):
-
         super().__init__(system, *args, **kwargs)
         self.exp_h1e = None
 
@@ -129,11 +126,10 @@ class AFQMC(qmc.QMCbase):
         return hs_fields
 
     def build_propagator(self, h1e, eri, ltensor):
-        r"""Pre-compute the propagators
-        """
+        r"""Pre-compute the propagators"""
         warnings.warn(
-            "\nThis 'build_propagator' function in afqmc is deprecated" +
-            "\nand will be removed in a future version. "
+            "\nThis 'build_propagator' function in afqmc is deprecated"
+            + "\nand will be removed in a future version. "
             "Please use the 'propagators.build()' function instead.",
             DeprecationWarning,
             stacklevel=2,
@@ -143,17 +139,19 @@ class AFQMC(qmc.QMCbase):
         shifted_h1e = backend.zeros(h1e.shape)
         rho_mf = self.trial.psi.dot(self.trial.psi.T.conj())
         self.mf_shift = 1j * backend.einsum("npq,pq->n", ltensor, rho_mf)
-        for p, q in itertools.product(range(h1e.shape[0]), repeat=2):
-            shifted_h1e[p, q] = h1e[p, q] - 0.5 * backend.trace(eri[p, :, :, q])
-        shifted_h1e = shifted_h1e - backend.einsum("n, npq->pq", self.mf_shift, 1j*ltensor)
+
+        trace_eri = backend.einsum("npr,nrq->pq", ltensor.conj(), ltensor)
+        shifted_h1e = h1e - 0.5 * trace_eri
+        shifted_h1e = shifted_h1e - backend.einsum(
+            "n, npq->pq", self.mf_shift, 1j * ltensor
+        )
 
         self.TL_tensor = backend.einsum("pr, npq->nrq", self.trial.psi.conj(), ltensor)
-        self.exp_h1e = scipy.linalg.expm(-self.dt/2 * shifted_h1e)
+        self.exp_h1e = scipy.linalg.expm(-self.dt / 2.0 * shifted_h1e)
 
     def propagation_onebody(self, phi_w):
-        r"""Propgate one-body term
-        """
-        return backend.einsum('pq, zqr->zpr', self.exp_h1e, phi_w)
+        r"""Propgate one-body term"""
+        return backend.einsum("pq, zqr->zpr", self.exp_h1e, phi_w)
 
     def propagation_twobody(self, vbias, phi_w):
         r"""Propgate two-body term
@@ -166,9 +164,9 @@ class AFQMC(qmc.QMCbase):
         """
         pass
 
-    def propagation(self, walkers, xbar, ltensor):
+    def propagate_walkers(self, walkers, xbar, ltensor):
         r"""
-        Eqs 50 - 51 of Ref: https://www.cond-mat.de/events/correl13/manuscripts/zhang.pdf
+        Eqs 50 - 51 of Ref :cite:`zhang2021jcp`.
 
         Trotter decomposition of the imaginary time propagator:
 
@@ -196,12 +194,16 @@ class AFQMC(qmc.QMCbase):
 
         xshift = xi - xbar
         # TODO: further improve the efficiency of this part
-        two_body_op_power = 1j * backend.sqrt(self.dt) * backend.einsum('zn, npq->zpq', xshift, ltensor)
+        two_body_op_power = (
+            1j * backend.sqrt(self.dt) * backend.einsum("zn, npq->zpq", xshift, ltensor)
+        )
 
         # \sum_n 1/n! (j\sqrt{\Delta\tau) xL)^n
         temp = walkers.phiw.copy()
         for order_i in range(self.taylor_order):
-            temp = backend.einsum('zpq, zqr->zpr', two_body_op_power, temp) / (order_i + 1.0)
+            temp = backend.einsum("zpq, zqr->zpr", two_body_op_power, temp) / (
+                order_i + 1.0
+            )
             walkers.phiw += temp
 
         # c):  1-body propagator propagation e^{-dt/2*H1e}
@@ -209,12 +211,13 @@ class AFQMC(qmc.QMCbase):
         # walkers.phiw = backend.exp(-self.dt * nuc) * walkers.phiw
 
         # (x*\bar{x} - \bar{x}^2/2)
-        cfb = backend.einsum("zn, zn->z", xi, xbar) - 0.5*backend.einsum("zn, zn->z", xbar, xbar)
-        cmf = -backend.sqrt(self.dt) * backend.einsum('zn, n->z', xshift, self.mf_shift)
+        cfb = backend.einsum("zn, zn->z", xi, xbar) - 0.5 * backend.einsum(
+            "zn, zn->z", xbar, xbar
+        )
+        cmf = -backend.sqrt(self.dt) * backend.einsum("zn, n->z", xshift, self.mf_shift)
 
         # updaet_weight and apply phaseless approximation
         self.update_weight(ovlp, cfb, cmf)
-
 
     def update_weight(self, overlap, cfb, cmf):
         r"""
@@ -224,16 +227,24 @@ class AFQMC(qmc.QMCbase):
 
         .. math::
 
-              W^{(n+1)} =
+            W^{(n+1)}_k = W^{(n)}_k \frac{\langle \Psi_T\ket{\psi^{(n+1)}_w}}
+                            {\langle \Psi_T\ket{\psi^{(n)}_w}}N_I(\boldsymbol(x)_w)
+
+        We use :math:`R` denotes the overlap ration, and :math:`N_I=\exp[xF - F^2]`. Hence
+
+        .. math::
+
+            R\times N_I = \exp[\log(R) + xF - F^2]
 
         b). Local scheme:
 
         .. math::
 
-              W^{(n+1)} =
+            W^{(n+1)} = W^{(n)}_w e^{-\Delta\tau E_{loc}}.
+
         """
         newoverlap = self.trial.overlap_with_walkers(self.walkers)
-        #newoverlap = self.walker_trial_overlap()
+        # newoverlap = self.walker_trial_overlap()
         # be cautious! power of 2 was neglected before.
         overlap_ratio = (
             backend.linalg.det(newoverlap) / backend.linalg.det(overlap)
@@ -280,26 +291,215 @@ class AFQMC(qmc.QMCbase):
 
 
 class QEDAFQMC(AFQMC):
-
-    def __init__(self, system, mf, *args, **kwargs):
-
-        super().__init__(system, *args, **kwargs)
+    def __init__(
+        self,
+        mol,
+        cavity_freq=None,
+        cavity_coupling=None,
+        cavity_vec=None,
+        photon_basis=None,
+        NFock=None,
+        **kwargs,
+    ):
+        super().__init__(mol, **kwargs)
 
         # create qed object
+        cavity = {}
+        cavity["cavity_freq"] = cavity_freq
+        cavity["cavity_coupling"] = cavity_coupling
+        cavity["cavity_vec"] = cavity_vec
+        cavity["photon_basis"] = photon_basis.lower()
+        cavity["NFock"] = NFock
 
-    def get_integral(self):
+        # Cavity Parameters
+        if cavity_freq is not None:
+            self.cavity_freq = cavity_freq
+            self.cavity_coupling = cavity_coupling
+            self.cavity_vec = cavity_vec / backend.linalg.norm(cavity_vec)
+            self.cavity_mode = (
+                cavity_coupling * cavity_vec
+            )  # To match with definition in qedhf.py -- I think coupling and vector should be separated.
+            self.NMODE = len(cavity_freq)
+            self.qedmf = QEDRHF(
+                self.mol, cavity_mode=self.cavity_mode, cavity_freq=self.cavity_freq
+            )
+            self.qedmf.kernel()
+            self.photon = Photon(
+                self.mol,
+                self.qedmf,
+                omega=self.cavity_freq,
+                vec=self.cavity_vec,
+                gfac=self.cavity_coupling,
+            )
+
+            self.dipole_ao_polarized = []
+            for mode in range(self.NMODE):
+                self.dipole_ao_polarized.append(
+                    self.photon.get_polarized_dipole_ao(mode)
+                )
+            self.dipole_ao_polarized = backend.array(self.dipole_ao_polarized)
+            self.NAO = self.dipole_ao_polarized.shape[-1]
+            self.quadrupole_ao = get_quadrupole_ao(mol, add_nuc_dipole=True).reshape(
+                (3, 3, self.NAO, self.NAO)
+            )
+            self.quadrupole_ao_polarized = backend.einsum(
+                "mx,xyab,my->mab", self.cavity_vec, self.quadrupole_ao, self.cavity_vec
+            )
+
+            # Define photon parameters
+            self.photon_basis = photon_basis
+            self.NFock = NFock
+            self.a = backend.diag(
+                backend.sqrt(backend.arange(1, self.NFock)), k=1
+            )  # Define photon operator
+            self.aTa = self.a.T + self.a
+            self.bilinear_factor = (
+                backend.sqrt(self.cavity_freq / 2) * self.cavity_coupling
+            )
+            # FIXME: no 1/2 !
+            self.DSE_factor = self.cavity_coupling**2 / 2
+            self.MuQc = backend.einsum(
+                "m,FG,mab->FGab",
+                self.bilinear_factor,
+                self.aTa,
+                self.dipole_ao_polarized,
+            )
+
+            # For use later in integral calculations
+            # YZ: here we indeed need 1/2
+            self.h1e_DSE = backend.einsum(
+                "m,mab->ab", self.DSE_factor, -1 * self.quadrupole_ao_polarized
+            )
+
+            # FIXME: this is in correct
+            # DSE = d_{pq} d_{rs} c^\dag_p c_q c^\dag_r c_s =
+            #     = d_{pq} d_{rs} c^\dag_p c^\dag_r c_s c_q - Q_{pq} c^\dag_p c_q
+            # => eri_{pqrs} =  d_{ps} d_{qr}
+            self.eri_DSE = backend.einsum(
+                "m,mab,mcd->abcd",
+                self.DSE_factor,  # YZ: no 1/2
+                self.dipole_ao_polarized,
+                self.dipole_ao_polarized,
+            )
+
+    def get_integrals(self):
         r"""
-        TODO: 1) add DSE-mediated eri and oei
-              2) bilinear coupling term (gmat)
+        1) add DSE-mediated eri and oei
+        2) bilinear coupling term (gmat)
         """
-        pass
+        ao_overlap = self.mol.intor("int1e_ovlp")
+        self.ao_coeff = lo.orth.lowdin(ao_overlap)
 
+        # This is the fcidump way of doing things. Everything here is in AO basis
+        h1e, eri = self.make_read_fcidump(self.NAO)
+        h1e += self.h1e_DSE
+        eri += self.eri_DSE
+
+        # For use later in the QED propagation
+        self.exp_h1e = scipy.linalg.expm(-self.dt / 2 * h1e)
+
+        ltensor = self.make_ltensor(eri, self.NAO)
+        return h1e, eri, ltensor
+
+    def local_energy(self, h1e, eri, G1p):
+        r"""Compute local energy
+
+        .. math::
+
+             E = \sum_{pq\sigma} T_{pq} G_{pq\sigma}
+                 + \frac{1}{2}\sum_{pqrs\sigma\sigma'} I_{prqs} G_{pr\sigma} G_{qs\sigma'}
+                 - \frac{1}{2}\sum_{pqrs\sigma} I_{pqrs} G_{ps\sigma} G_{qr\sigma}
+
+        """
+        # E_coul
+        tmp = 2.0 * backend.einsum("prqs,zFFSpr->zqs", eri, G1p) * self.spin_fac
+        ecoul = backend.einsum("zqs,zFFSqs->z", tmp, G1p)
+        # E_xx
+        tmp = backend.einsum("prqs,zFFSps->zSqr", eri, G1p)
+        exx = backend.einsum("zSqs,zFFSqs->z", tmp, G1p)
+        e2 = (ecoul - exx) * self.spin_fac
+
+        e1 = 2 * backend.einsum("pq,zFFSpq->z", h1e, G1p) * self.spin_fac
+
+        bilinear = 2 * backend.einsum("FGab,zFGSab->z", self.MuQc, G1p) * self.spin_fac
+
+        ZPE = 0.5 * backend.sum(
+            self.cavity_freq
+        )  # Zero-point energy of the cavity mode
+        energy = e1 + e2 + self.energy_nuc + ZPE + bilinear
+
+        return energy
+
+    def propagate_bilinear_coupling(self):
+        # Full-step Bilinear propagation
+
+        # BMW:
+        # I put Taylor expansion here to keep the four-index matrix notation for einsum.
+        # We could reshape, then use expm(MuQc) if done properly
+
+        # FIXME: trace over the photonic DOF to reduce the size
+
+        temp = self.walker_tensors.copy()
+        for order_i in range(self.taylor_order):
+            temp = backend.einsum("FGab,zGSbj->zFSaj", -self.dt * self.MuQc, temp) / (
+                order_i + 1.0
+            )
+            self.walker_tensors += temp
+
+    def propagation(self, h1e, F, ltensor):
+        r"""
+        Ref: https://www.cond-mat.de/events/correl13/manuscripts/zhang.pdf
+        Eqs 50 - 51
+        """
+        # FIXME: MF-shift is not used here! But F contains MF shift!
+        # FIXME: So one-body and two-body propagators are not consistent!
+
+        # 1-body propagator propagation
+        # e^{-dt/2*H1e}
+        # one_body_op_power   = scipy.linalg.expm(-self.dt/2 * h1e)
+        # self.walker_tensors = backend.einsum('ab,zFSbk->zFSak', one_body_op_power, self.walker_tensors)
+        self.walker_tensors = backend.einsum(
+            "ab,zFSbk->zFSak", self.exp_h1e, self.walker_tensors
+        )
+
+        # 2-body propagator propagation
+        # exp[(x-F) * L], F = sqrt(-dt) <L_n>
+        xi = backend.random.normal(0, 1.0, size=(self.num_walkers, self.nfields))
+        two_body_op_power = (
+            1j * backend.sqrt(self.dt) * backend.einsum("zn,nab->zab", xi - F, ltensor)
+        )
+        temp = self.walker_tensors.copy()
+        for order_i in range(self.taylor_order):
+            temp = backend.einsum("zab,zFSbj->zFSaj", two_body_op_power, temp) / (
+                order_i + 1.0
+            )
+            self.walker_tensors += temp
+
+        #### PROPAGATE QED TERMS ####
+        # FIXME: split into  two -1/2 \Delta\tau propagation, like the one-body term
+        self.propagate_bilinear_coupling()
+        #############################
+
+        # 1-body propagator propagation
+        # e^{-dt/2*H1e}
+        # self.walker_tensors = backend.einsum('ab,zFSbk->zFSak', one_body_op_power, self.walker_tensors)
+        self.walker_tensors = backend.einsum(
+            "ab,zFSbk->zFSak", self.exp_h1e, self.walker_tensors
+        )
+
+        # (x*\bar{x} - \bar{x}^2/2)
+        N_I = backend.einsum("zn, zn->z", xi, F) - 0.5 * backend.einsum(
+            "zn, zn->z", F, F
+        )
+        cmf = -backend.sqrt(self.dt) * backend.einsum("zn,n->z", xi - F, self.mf_shift)
+
+        return N_I, cmf
 
     def dump_flags(self):
         r"""
         Dump flags
         """
-        print(f"\n========  QED-AFQMC simulation using OpenMS package ========\n")
+        logger.note(f"\n========  QED-AFQMC simulation using OpenMS package ========\n")
 
 
 if __name__ == "__main__":
@@ -309,16 +509,21 @@ if __name__ == "__main__":
     bond = 1.6
     natoms = 2
     atoms = [("H", i * bond, 0, 0) for i in range(natoms)]
-    mol = gto.M(atom=atoms, basis='sto-6g', unit='Bohr', verbose=3)
+    mol = gto.M(atom=atoms, basis="sto-6g", unit="Bohr", verbose=3)
 
     num_walkers = 500
-    afqmc = AFQMC(mol, dt=0.005, total_time=2.0,
-                 num_walkers=num_walkers, energy_scheme="hybrid",
-                 verbose=3)
+    afqmc = AFQMC(
+        mol,
+        dt=0.005,
+        total_time=2.0,
+        num_walkers=num_walkers,
+        energy_scheme="hybrid",
+        verbose=4,
+    )
 
     time1 = time.time()
     times, energies = afqmc.kernel()
-    print("\n wall time is ", time.time() - time1, ' s\n')
+    print("\n wall time is ", time.time() - time1, " s\n")
 
     # HF energy
     mf = scf.RHF(mol)
@@ -330,13 +535,14 @@ if __name__ == "__main__":
 
     print(fci_energy)
     import matplotlib.pyplot as plt
+
     fig, ax = plt.subplots()
 
     # time = backend.arange(0, 5, 0.)
-    ax.plot(times, energies, '--', label='afqmc (my code)')
-    ax.plot(times, [hf_energy] * len(times), '--')
-    ax.plot(times, [fci_energy] * len(times), '--')
+    ax.plot(times, energies, "--", label="afqmc (my code)")
+    ax.plot(times, [hf_energy] * len(times), "--")
+    ax.plot(times, [fci_energy] * len(times), "--")
     ax.set_ylabel("Ground state energy")
     ax.set_xlabel("Imaginary time")
     plt.savefig("afqmc_gs_h2_sto6g.pdf")
-    #plt.show()
+    # plt.show()

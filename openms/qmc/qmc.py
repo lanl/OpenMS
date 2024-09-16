@@ -16,6 +16,7 @@
 
 import sys
 from pyscf import tools, lo, scf, fci
+from pyscf.gto import mole
 import numpy as backend
 import scipy
 import itertools
@@ -23,13 +24,40 @@ import logging
 import time
 import warnings
 
-from openms.qmc.trial import TrialHF
+from openms.qmc.trial import TrialHF, TrialUHF
+from openms import runtime_refs, _citations
 from . import generic_walkers as gwalker
 from pyscf.lib import logger
 from openms.lib.logger import task_title
 from openms.lib.boson import Boson
 from openms.qmc.estimators import local_eng_elec_chol
+from openms.qmc.estimators import local_eng_elec_chol_new
+
 from openms.qmc.propagators import Phaseless, PhaselessElecBoson
+
+r"""
+QMC method
+----------
+
+DF or Cholesky decomposition:
+
+.. math::
+
+    I_{pqrs} \simeq = L_{\lambda, pq} L_{\lambda, rs}
+
+Tensor hypercontraction:
+
+.. math::
+
+    I_{pqrs} \simeq X_{\mu p} X_{\mu q} Z_{\mu\nu} X_{\nu r} X_{\nu s}
+
+it means that the :math:`L` is effectively decomposed into :math:`X`
+
+.. math::
+
+    L_{\lambda pq} = X_{\lambda p} X_{\lambda q}
+
+"""
 
 
 def read_fcidump(fname, norb):
@@ -96,6 +124,8 @@ class QMCbase(object):
            nblocks:     Number of blocks
            nsteps:      Number of steps per block
         """
+        if ( _citations["pra2024"] not in runtime_refs ):
+            runtime_refs.append(_citations["pra2024"])
 
         self.system = self.mol = system
 
@@ -131,13 +161,11 @@ class QMCbase(object):
         # self.walker_coeff = None
         # self.walker_tensors = None
 
-        #self.mf_shift = None
         self.print_freq = 10
-
         self.hybrid_energy = None
-
         self.batched = batched
 
+        self.h1e_b = None  # TODO: optimize the handling of h1e_b
         self.build()  # setup calculations
 
     def build(self):
@@ -152,7 +180,9 @@ class QMCbase(object):
                 logger.info(self, f"Mean-field reference is {self.mf.__class__}")
                 self.trial = TrialHF(self.mol, mf=self.mf)
             else:
-                logger.info(self, f"Mean-field reference is None, we will build from RHF")
+                logger.info(
+                    self, f"Mean-field reference is None, we will build from RHF"
+                )
                 self.trial = TrialHF(self.mol)
 
         # set up walkers
@@ -194,26 +224,28 @@ class QMCbase(object):
                 energy_scheme=self.energy_scheme,
             )
         logger.info(self, "Done!")
+        # FIXME: temporarily assign system to propgator as well
+        # FIXME: need to decide how to handle access system from the propagation
+        self.propagator.system = self.system
 
         self.propagator.dump_flags()
 
 
     def dump_flags(self):
-        r"""dump flags (TBA)
-        """
+        r"""dump flags (TBA)"""
         pass
 
     def get_integrals(self):
         r"""return oei and eri in MO"""
 
         overlap = self.mol.intor("int1e_ovlp")
-        self.ao_coeff = lo.orth.lowdin(overlap)
-        norb = self.ao_coeff.shape[0]
+        Xmat = lo.orth.lowdin(overlap)
+        norb = Xmat.shape[0]
 
         import tempfile
 
         ftmp = tempfile.NamedTemporaryFile()
-        tools.fcidump.from_mo(self.mol, ftmp.name, self.ao_coeff)
+        tools.fcidump.from_mo(self.mol, ftmp.name, Xmat)
         h1e, eri, self.nuc_energy = read_fcidump(ftmp.name, norb)
 
         # Cholesky decomposition of eri
@@ -224,9 +256,33 @@ class QMCbase(object):
         ltensor = ltensor.reshape(ltensor.shape[0], norb, norb)
         self.nfields = ltensor.shape[0]
 
+        if isinstance(self.system, Boson):
+            system = self.system
+            # Add boson-mediated oei and eri:
+            # shape [nm, nao, nao]
+            tmp = (system.omega * 0.5) ** 0.5
+            h1e_b = system.gmat * tmp[:, backend.newaxis, backend.newaxis]
+            # bilinear_gmat = backend.zeros_like(system.gmat)
+            # for im in range(system.nmodes):
+            #    bilinar_gmat[im] = system.gmat[im] * system.couplings_bilinear[im]
+            chol_b = system.gmat.copy()
+            # transform into OAO
+            self.h1e_b = backend.einsum(
+                "ik, mkj,  jl-> mil", Xmat.T, h1e_b, Xmat, optimize=True
+            )
+            chol_b = backend.einsum(
+                "ik, mkj, jl -> mil", Xmat.T, chol_b, Xmat, optimize=True
+            )
+
+            logger.debug(self, f"size of chol before adding DSE: {ltensor.shape[0]}")
+            if backend.linalg.norm(chol_b) > 1.0e-10:
+                ltensor = backend.concatenate((ltensor, chol_b), axis=0)
+            logger.debug(self, f"size of chol after adding DSE:  {ltensor.shape[0]}")
+
+        self.nfields = ltensor.shape[0]
         return h1e, eri, ltensor
 
-    def propagation(self, walkers, xbar, ltensor):
+    def propagate_walkers(self, walkers, xbar, ltensor):
         pass
 
     def measure_observables(self, operator):
@@ -239,7 +295,7 @@ class QMCbase(object):
 
         .. math::
 
-            \langle \Psi_T \ket{\Psi_w} = det[S]
+            \langle \Psi_T \ket{\Psi_w} = \det[S]
 
         where
 
@@ -319,7 +375,7 @@ class QMCbase(object):
                  + \frac{1}{2}\sum_{\gamma,pq\sigma\sigma'} (L_\gamma G_\sigma)_{pq} (L_\gamma G_{\sigma'})_{pq}
                  - \frac{1}{2}\sum_{\gamma,\sigma} [\sum_{pq} L_{\gamma,pq} G_{pq\sigma}]^2
 
-        i.e. the Ecoul is :math:`\left[\frac{\bra{\Psi_T}L\ket{\Psi_w}{\bra{\Psi_T}\Psi_w\rangle}\right]^2`,
+        i.e. the Ecoul is :math:`\left[\frac{\bra{\Psi_T}L\ket{\Psi_w}}{\bra{\Psi_T}\Psi_w\rangle}\right]^2`,
         which is the TL_Theta tensor in the code
         """
 
@@ -369,7 +425,7 @@ class QMCbase(object):
 
         # setup propagator
         # self.build_propagator(h1e, eri, ltensor)
-        propagator.build(h1e, eri, ltensor, self.trial)
+        propagator.build(h1e, eri, ltensor, self.trial, self.h1e_b)
 
         # start the propagation
         tt = 0.0
@@ -391,6 +447,7 @@ class QMCbase(object):
             # local_energy = self.local_energy(TL_theta, h1e, eri, vbias, gf)
 
             walkers.eloc = local_eng_elec_chol(TL_theta, h1e, eri, vbias, gf)
+
             walkers.eloc += self.nuc_energy
 
             energy = backend.dot(walkers.weights, walkers.eloc)
@@ -401,7 +458,7 @@ class QMCbase(object):
             xbar = -backend.sqrt(self.dt) * (1j * 2 * vbias - propagator.mf_shift)
 
             # step 3): propagate walkers and update weights
-            # self.propagation(walkers, xbar, ltensor)
+            # self.propagate_walkers(walkers, xbar, ltensor)
             propagator.propagate_walkers(trial, walkers, vbias, ltensor)
 
             # moved phaseless approximation to propagation

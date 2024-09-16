@@ -24,7 +24,7 @@ Both SD and MSD can be written as the generalized formalism
 
 .. math::
 
-    \ket{\Psi_T} = \sum^{N_d}_{\mu} c_\mu\ket{\psi_mu} = \sum_\mu c_\mu \hat{\mu} \ket{\psi_0}
+    \ket{\Psi_T} = \sum^{N_d}_{\mu} c_\mu\ket{\psi_\mu} = \sum_\mu c_\mu \hat{\mu} \ket{\psi_0}
 
 Where :math:`\ket{\psi_0}` is the mean-field reference (like HF) and
 :math:`\hat{\mu}` is the excitation operator that generate the configuration
@@ -65,9 +65,11 @@ The summation over determinants in the second term can be performed via the aid 
 import sys
 from abc import abstractmethod
 from pyscf import tools, lo, scf, fci
+from openms.mqed.qedhf import RHF as QEDRHF
 from pyscf.lib import logger
 import numpy as backend
 import h5py
+
 
 
 class TrialWFBase(object):
@@ -90,6 +92,7 @@ class TrialWFBase(object):
         if mf is None:
             mf = scf.RHF(self.mol)
             mf.kernel()
+            logger.info(self, "MF energy is   {mf.e_tot}")
 
         self.mf = mf
 
@@ -153,13 +156,24 @@ class TrialHF(TrialWFBase):
         super().__init__(*args, **kwargs)
 
     def build(self):
+        r"""
+        initialize the Trial WF.
+
+        The trial WF is the tensor product of electron
+        and boson. Boson part is none by default.
+
+        Representation of boson: 1) Fock, 2) CS, 3), VLF, 4) real space.
+        """
         overlap = self.mol.intor("int1e_ovlp")
         Xmat = lo.orth.lowdin(overlap)
 
         xinv = backend.linalg.inv(Xmat)
 
         self.psi = self.mf.mo_coeff
+        # Nao * Na
         self.psi = xinv.dot(self.mf.mo_coeff[:, : self.mol.nelec[0]])
+        self.psi_boson = None
+        # self.boson_basis = "Fock"
 
     def ovlp_with_walkers(self, walkers):
         r"""Compute the overlap between trial and walkers:
@@ -179,6 +193,26 @@ class TrialHF(TrialWFBase):
         """
         return backend.einsum("pr, zpq->zrq", self.psi.conj(), walkers.phiw)
 
+    def get_vbias(self, walkers, ltensor, verbose=False):
+        overlap = self.ovlp_with_walkers(walkers)
+        inv_overlap = backend.linalg.inv(overlap)
+
+        if verbose:
+            logger.debug(
+                self,
+                "\nnorm of walker overlap: %15.8f",
+                backend.linalg.norm(overlap),
+            )
+
+        # theta is the Ghalf
+        theta = backend.einsum("zqp, zpr->zqr", walkers.phiw, inv_overlap)
+        Gf = backend.einsum("zqr, pr->zpq", theta, self.psi.conj())
+        vbias = backend.einsum("npq,zpq->zn", ltensor, Gf)
+
+        return Gf, vbias
+
+
+
     def force_bias(self, walkers, TL_tensor, verbose=False):
         r"""Update the force bias
 
@@ -194,7 +228,7 @@ class TrialHF(TrialWFBase):
 
         .. math::
 
-            TL_{pq} = (\Psi^\dagger_T L_\gamma)_{pq}
+            (TL)_{\gamma,pq} = (\Psi^\dagger_T L_\gamma)_{pq}
 
         And :math:`\Theta_w` is:
 
@@ -210,6 +244,7 @@ class TrialHF(TrialWFBase):
 
            F_\gamma = \sqrt{-\Delta\tau} \sum_\sigma [(TL)\Theta_w]
 
+        TODO: may use L * G contraction to get the vbias, instead of using theta_w???
         """
         overlap = self.ovlp_with_walkers(walkers)
         inv_overlap = backend.linalg.inv(overlap)
@@ -221,14 +256,17 @@ class TrialHF(TrialWFBase):
                 backend.linalg.norm(overlap),
             )
 
+        # theta is the Ghalf
         theta = backend.einsum("zqp, zpr->zqr", walkers.phiw, inv_overlap)
-        gf = backend.einsum("zqr, pr->zpq", theta, self.psi.conj())
+        Gf = backend.einsum("zqr, pr->zpq", theta, self.psi.conj())
         # :math:`(\Psi_T L_{\gamma}) \psi_w (\Psi_T \psi_w)^{-1}`
+
+        # since TL_tehta is too big, we will avoid constructing it in the propagation
         TL_theta = backend.einsum("npq, zqr->znpr", TL_tensor, theta)
 
         # trace[TL_theta] give the force_bias
         # vbias = backend.einsum("znpp->zn", TL_theta)
-        return gf, TL_theta
+        return Gf, TL_theta
 
 
 from openms.qmc import estimators
@@ -267,7 +305,7 @@ class TrialUHF(TrialWFBase):
         r"""Compute the overlap with walkers"""
         pass
 
-    def force_bias(self, ham, walkers):
+    def force_bias(self, walkers, TL_tensor, verbose=False):
         r"""Compute the force bias (Eqns.67-69 of Ref. :cite:`zhang2021jcp`)
 
         .. math::
@@ -283,8 +321,18 @@ class TrialUHF(TrialWFBase):
         :math:`\Theta^\sigma_w` is calculated by solving a linear equation with LU decomposition of
         :math:`\Psi^{\sigma\dagger}_T\psi^\sigma_w`.
         """
-        pass
 
+        overlap = self.ovlp_with_walkers(walkers)
+        inv_overlap = backend.linalg.inv(overlap)
+
+        # theta is also the Ghalf
+        # Ghalfa = backend.einsum("zqp, zpr->zqr", walkers.phiw, inv_overlap)
+        # Ghalfb = backend.einsum("zqp, zpr->zqr", walkers.phiw, inv_overlap)
+        # Gfa = backend.einsum("zqr, pr->zpq", Ghalfa, self.psi.conj())
+        # Gfb = backend.einsum("zqr, pr->zpq", Ghalfb, self.psi.conj())
+
+        # :math:`\sum_\sigma(\Psi_T L_{\gamma}) \psi_w (\Psi_T \psi_w)^{-1}`
+        # vbias = backend.einsum("npq, zqr->znpr", TL_tensor, Ghalfa)
 
 def get_ci(mol, cas):
     from pyscf import mcscf, fci
@@ -346,6 +394,9 @@ class multiCI(TrialWFBase):
         logger.debug(self, f"number of determinents = {self._numdets:8d}")
 
         self.build()
+
+    # def build(self):
+    #    # get chol
     #    pass
 
     def force_bias(self, walkers):
@@ -356,6 +407,14 @@ class multiCI(TrialWFBase):
             F = &\sqrt{-\Delta\tau} \frac{\bra{\Psi_T}L_\gamma\ket{\psi_w}}{\langle\Psi_T\ket{\psi_w}} \\
               = &\sqrt{-\Delta\tau}\sum_\sigma
         """
+
+        # Fix this:
+        # get Ga/b
+        # Ga = xx
+        # Gb = xx
+        # vbias = backend.einsum("npq, zqp->zn", Ltensor, Ga)
+        # vbias += backend.einsum("npq,zqp->zn ", Ltensor, Gb)
+
         raise NotImplementedError("Force bias with MSD is not implemented yet.")
 
 

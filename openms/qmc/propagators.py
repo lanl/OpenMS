@@ -29,7 +29,7 @@ class PropagatorBase(ABC):
         self.mf_shift = None
 
     # @abstractmethod
-    def build(self, h1e, eri, ltensor, trial):
+    def build(self, h1e, eri, ltensor, trial, h1e_b=None):
         r"""Build the propagators and intermediate variables
 
         Note the Hamiltonain in QMC format (with MF shift) is:
@@ -56,37 +56,41 @@ class PropagatorBase(ABC):
                          + \sum_{\gamma} \langle \hat{L}_{\gamma}\rangle L_{\gamma, pq}
 
         """
+        # we don't need eri, which can be removed!
+
         self.nfields = ltensor.shape[0]
 
         shifted_h1e = backend.zeros(h1e.shape)
         rho_mf = trial.psi.dot(trial.psi.T.conj())
         self.mf_shift = 1j * backend.einsum("npq,pq->n", ltensor, rho_mf)
 
-        for p, q in itertools.product(range(h1e.shape[0]), repeat=2):
-            shifted_h1e[p, q] = h1e[p, q] - 0.5 * backend.trace(eri[p, :, :, q])
+        trace_eri = backend.einsum('npr,nrq->pq', ltensor.conj(), ltensor)
+        shifted_h1e = h1e - 0.5 * trace_eri
         shifted_h1e = shifted_h1e - backend.einsum(
             "n, npq->pq", self.mf_shift, 1j * ltensor
         )
 
         self.TL_tensor = backend.einsum("pr, npq->nrq", trial.psi.conj(), ltensor)
         self.exp_h1e = scipy.linalg.expm(-self.dt / 2 * shifted_h1e)
+        self.shifted_h1e = shifted_h1e
+        self.h1e_b = h1e_b
+
         # logger.debug(self, "norm of shifted_h1e: %15.8f", backend.linalg.norm(shifted_h1e))
         # logger.debug(self, "norm of TL_tensor:   %15.8f", backend.linalg.norm(self.TL_tensor))
 
     def dump_flags(self):
-        r"""dump flags (TBA)
-        """
+        r"""dump flags (TBA)"""
         print(task_title("Flags of propagator"))
         print(f"Time step is       :  {self.dt:.4f}")
+        print(f"energy scheme is   :  {self.energy_scheme}")
         print(task_title(""))
 
-
     @abstractmethod
-    def propagate_walkers(self, trial, walkers, vbias, eshift):
+    def propagate_walkers(self, trial, walkers, vbias, ltensor, eshift):
         pass
 
     @abstractmethod
-    def propagate_walkers_onebody(self, hamiltonians, trial, walkers, eshift):
+    def propagate_walkers_onebody(self, phiw):
         pass
 
     # @abstractmethod
@@ -108,7 +112,7 @@ class Phaseless(PropagatorBase):
 
     def propagate_walkers(self, trial, walkers, vbias, ltensor, eshift=0.0):
         r"""
-        Eqs 50 - 51 of Ref: https://www.cond-mat.de/events/correl13/manuscripts/zhang.pdf
+        Eqs 50 - 51 of Ref :cite:`zhang2021jcp`.
 
         Trotter decomposition of the imaginary time propagator:
 
@@ -150,10 +154,17 @@ class Phaseless(PropagatorBase):
         walkers.phiw = self.propagate_walkers_onebody(walkers.phiw)
         # walkers.phiw = backend.exp(-self.dt * nuc) * walkers.phiw
 
-        # (x*\bar{x} - \bar{x}^2/2)
+        # (x*\bar{x} - \bar{x}^2/2), i.e., factors due to the shift in propabalities
+        # functions (it comes from the mf shift in force bias)
+        # F -> F - <F>, where F =\sqrt{-dt} Tr[LG] and <L> = Tr[L\rho_{mf}]
+        # hence xF - 0.5 F^2 = x(F-<F>) - 0.5(F-<F>)^2 + x<F> - F<F> + 0.5<F>^2
+        # so (x-F)<F> --> cmf
+        #    x(F-<F>) - 0.5(F-<F>)^2 -- > cfb
+        #    0.5 <F>^2 propability shift
         cfb = backend.einsum("zn, zn->z", xi, xbar) - 0.5 * backend.einsum(
             "zn, zn->z", xbar, xbar
         )
+        # factors due to MF shift and force bias
         cmf = -backend.sqrt(self.dt) * backend.einsum("zn, n->z", xshift, self.mf_shift)
 
         # update_weight and apply phaseless approximation
@@ -172,13 +183,21 @@ class Phaseless(PropagatorBase):
 
         .. math::
 
-              W^{(n+1)} =
+            W^{(n+1)}_k = W^{(n)}_k \frac{\langle \Psi_T\ket{\psi^{(n+1)}_w}}
+                            {\langle \Psi_T\ket{\psi^{(n)}_w}}N_I(\boldsymbol(x)_w)
+
+        We use :math:`R` denotes the overlap ration, and :math:`N_I=\exp[xF - F^2]`. Hence
+
+        .. math::
+
+            R\times N_I = \exp[\log(R) + xF - F^2]
 
         b). Local scheme:
 
         .. math::
 
-              W^{(n+1)} =
+            W^{(n+1)} = W^{(n)}_w e^{-\Delta\tau E_{loc}}.
+
         """
 
         # TODO: 1) adpat it fully to the propagator class
@@ -240,6 +259,66 @@ class PhaselessBoson(Phaseless):
             "propagate_wakers in PhaselessBoson class is not implemented yet."
         )
 
+    def build(self, h1b, chol_b, trial):
+        r"""Build the propagator and intermediate variables
+
+        Two-body part of bosonic Hamiltonian is:
+
+        .. math::
+
+            V2b = & \frac{1}{2}\sum_{ijkl} V_{ijkl} b^\dagger_i b^\dagger_j b_k b_l \\
+                = & \frac{1}{2}\sum_{ijkl} V_{ijkl} b^\dagger_i [b_k b^\dagger_j - \delta_{jk}] b_l \\
+                = & \frac{1}{2}\sum_{ijkl} V_{ijkl} b^\dagger_i b_k b^\dagger_j b_l - \sum_{ijk} V_{ikkj} b^\dagger_i b_j \\
+
+        Chols of two-body integrals are :math:`V_{ijkl} = \sum_\gamma L^*_{\gamma,il}L_{\gamma,kj}`.
+        Hence, the total bosonic Hamiltonian is:
+
+        .. math::
+
+            H_{ph} = \sum_{ij}(K_{ij} - \frac{1}{2}\sum_{\gamma k} L^*_{\gamma,ij} L_{\gamma, kk})b^\dagger_i b_j
+                     + \frac{1}{2}\sum_{\gamma,ijkl}L^*_{\gamma,il} L_{\gamma,kj}  b^\dagger_i b_k b^\dagger_j b_l
+
+        After introduing the mean-field shift, the corresponding MC Hamiltonian becomes
+
+        .. math::
+
+            \hat{H}_{mc} = \hat{T} + \sum_\gamma \langle L_\gamma\rangle \hat{L}_\gamma +
+                          \frac{1}{2}\sum_\gamma (\hat{L}_\gamma - \langle \hat{L}_\gamma\rangle)^2 +
+                          C - \frac{1}{2}\langle \hat{L}_\gamma \rangle^2.
+
+        where :math:`T_{ij} = K_{ij} - \frac{1}{2}\sum_{\gamma k} L^*_{\gamma,ij} L_{\gamma, kk}`
+        and :math:`\langle L_\gamma\rangle = \sum_{ij}L_{\gamma,ij}\rho^{MF}_{ij}`.
+        It's obvious that bosonic MC Hamiltonain is formally same as the fermionic one (but their
+        statistics are different).
+        """
+
+        self.num_bfields = chol_b.shape[0]
+
+        shifted_h1b = backend.zeros(h1b.shape)
+        brho_mf = trial.psi.dot(trial.psi.T.conj())
+        self.bmf_shift = 1j * backend.einsum("npq,pq->n", chol_b, brho_mf)
+
+        trace_v2b = backend.einsum("nil,njj->il", chol_b.conj(), chol_b)
+        shifted_h1b = h1b - 0.5 * trace_v2b  - backend.einsum(
+            "n, npq->pq", self.bmf_shift, 1j * chol_b
+        )
+
+        self.TL_tensor = backend.einsum("pr, npq->nrq", trial.psi.conj(), chol_b)
+        self.exp_h1b = scipy.linalg.expm(-self.dt / 2 * shifted_h1b)
+        self.h1b = h1b
+
+
+    def propagate_walkers_onebody(self, phiw):
+        r"""Propagate one-body term"""
+
+        return backend.einsum("pq, zqr->zpr", self.exp_h1e, phiw)
+
+    def propagate_walkers_twobody(self, phiw):
+        r"""Propagate Bosonic two-body term"""
+        raise NotImplementedError(
+            "propagate_wakers in PhaselessBoson class is not implemented yet."
+        )
+
 
 class PhaselessElecBoson(Phaseless):
     r"""Phaseless propagator for electron-Boson coupled system
@@ -251,9 +330,9 @@ class PhaselessElecBoson(Phaseless):
 
     def __init__(self, dt, verbose=1, **kwargs):
         super().__init__(dt, verbose=verbose, **kwargs)
-        self.boson_quantization = kwargs.get("quantization", "first")
+        self.boson_quantization = kwargs.get("quantization", "second")
 
-    def build(self, h1e, eri, ltensor, trial):
+    def build(self, h1e, eri, ltensor, trial, h1e_b=None):
         r"""The QMC Hamiltonian of the coupled electron-boson system is
         (We consider DSE in the general form, we can simply set DSE to be
         zero for the cases without DSE terms)
@@ -284,15 +363,26 @@ class PhaselessElecBoson(Phaseless):
         and :math:`Q_\alpha = \sqrt{\frac{1}{2\omega_\alpha}}(b^\dagger_\alpha + b_\alpha)`.
         """
 
-        super().build(h1e, eri, ltensor, trial)
+        super().build(h1e, eri, ltensor, trial, h1e_b=h1e_b)
 
     def propagate_walkers_two_body(self, walkers, trial):
         r"""Propagate by potential term using discrete HS transform."""
+        # Construct random auxilliary field.
         pass
 
-    def propagate_walkers_onebody(self, walker, system, trial, dt):
+    def propagate_walkers_onebody(self, phiw):  # walker, system, trial, dt):
         r"""Propgate one-body term:
         including both h1e and bilinear coupling parts
+
+        Parameters
+        ----------
+        walker :
+            Walker object to be updated. On output we have acted on phi by
+            B_{T/2} and updated the weight appropriately. Updates inplace.
+        system :
+            System object.
+        trial :
+            Trial wavefunction object.
 
         step 1):  compute shifted_h1e with contribution from bilinear coupling:
 
@@ -307,24 +397,82 @@ class PhaselessElecBoson(Phaseless):
 
         # Pseudocode:
 
+        # 1) second quantizaiton
+        # Pseudocode:
         #    nmoade = gmat.shape[0]
         #    Qalpha = walkers.get_Qalpha()
         #    oei = backend.einsum("npq, n->pq", Qalpha, gmat)
         #    shifted_h1e = self.shifted_h1e + oei
         #    self.exp_h1e = scipy.linalg.expm(-self.dt / 2 * shifted_h1e)
         #
-        #    walkers.phiw = super().propagate_walkers_onebody(walkers.phiw
+
+        oei = backend.zeros(self.shifted_h1e.shape)
+
+        if self.h1e_b is not None:
+            # TODO: issue: we don't have access to system here (boson object)
+            # zlambda = backend.zeros(self.h1e_b.shape[0])
+            zlambda = backend.einsum("pq, Xpq ->X", self.DM, self.system.gmat)
+            # print("add bilianr coupling oei")
+            oei = backend.einsum("n, npq->pq", zlambda, self.h1e_b)
+
+        shifted_h1e = self.shifted_h1e + oei
+        self.exp_h1e = scipy.linalg.expm(-self.dt / 2 * shifted_h1e)
+        return backend.einsum("pq, zqr->zpr", self.exp_h1e, phiw)
+
+    def propagate_bosons(self, trial, walkers):
+        r"""
+        boson importance sampling
+        """
+        if "first" in self.boson_quantization:
+            self.propagate_bosons_1st(trial, walkers)
+        else:
+            self.propagate_bosons_2nd(trial, walkers)
+
+    def propagate_bosons_2nd(self, trial, walkers):
+        r"""Boson importance sampling in 2nd quantization
+        Ref. PRE 70, 056702 (2004).
+
+        Bosonic Hamiltonian is:
+
+        .. math::
+
+            H_{ph} =\omega_\alpha b^\dagger_\alpha b_\alpha
+
+        TBA.
+        """
+
         pass
-    def propagate_walkers(self, trial, walkers, vbias, eshift=0.0):
+
+    def propagate_bosons_1st(self, trial, walkers):
+        r"""Boson importance sampling in 1st quantization formalism
+
+        DQMC type of algorithm:
+
+        TBA.
+        """
+        pass
+
+    def propagate_walkers(self, trial, walkers, vbias, ltensor, eshift=0.0):
         r"""Propagate the walkers function for the coupled electron-boson interactions"""
 
         # 1) boson propagator
-        # walkers.phiw = self.propagate_bosons(self, trials, walkers)
+        self.propagate_bosons(trial, walkers)
 
         # Note: since 2-4 are similar to bare case, we may recycle the bare code
         # but with updated ltensors and shifted h1e.
 
-        super().propagate_walkers(trial, walkers, vbias, eshift=eshift)
+        # TODO: decide whether to store Gf in walkers or walkers
+        ovlp = trial.ovlp_with_walkers(walkers)
+        inv_ovlp = backend.linalg.inv(ovlp)
+        theta = backend.einsum("zqp, zpr->zqr", walkers.phiw, inv_ovlp)
+        self.Gf = backend.einsum("zqr, pr->zpq", theta, trial.psi.conj())
+        self.DM = (
+            2.0
+            * backend.einsum("z, zpq->pq", walkers.weights, self.Gf)
+            / backend.sum(walkers.weights)
+        )
+
+        super().propagate_walkers(trial, walkers, vbias, ltensor, eshift=eshift)
 
         # 2) 1-body propagator propagation :math:`e^{-dt/2*H1e}`
         # walkers.phiw = self.propagate_walkers_onebody(walkers.phiw)
@@ -336,8 +484,4 @@ class PhaselessElecBoson(Phaseless):
         # walkers.phiw = self.propagate_walkers_onebody(walkers.phiw)
 
         # 5) boson propagator
-        # walkers.phiw = self.propagate_bosons(self, trials, walkers)
-
-        raise NotImplementedError(
-            "propagate_wakers in PhaselessElecBoson class is not implemented yet."
-        )
+        self.propagate_bosons(trial, walkers)

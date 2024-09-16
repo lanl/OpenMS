@@ -19,8 +19,8 @@ import os
 import sys
 import textwrap
 
-__version__ = "0.1_beta"
-__author__ = "Yu Zhang (zhy@lanl.gov), Ilia Mazin (imazin@lanl.gov)"
+__version__ = "0.2.0"
+__author__ = "Yu Zhang (zhy@lanl.gov)"
 __copyright__ = f"""
 {" " * 3}
 {" " * 3} @ 2023. Triad National Security, LLC. All rights reserved.
@@ -36,7 +36,6 @@ __copyright__ = f"""
 {" " * 3}public, perform publicly and display publicly, and to permit others to do so.
 {" " * 3}
 {" " * 3}Authors:   Yu Zhang    <zhy@lanl.gov>
-{" " * 3}         Ilia Mazin <imazin@lanl.gov>
 """
 
 #__logo__ = f"""
@@ -87,14 +86,21 @@ _citations["pccp2023"] = textwrap.dedent(f"""\
 """)
 
 _citations["scqedhf"] = textwrap.dedent(f"""\
-{" " * 4} R.R. Riso et al., \"Molecular orbital theory in cavity QED environments\",
-{" " * 6} Nat. Commun. 13, 1368 (2022).
+""")
+
+_citations["vsq_qedhf"] = textwrap.dedent(f"""\
+{" " * 4} Y. Zhang, "QEDHF with Squeezed operator. TBA.
 """)
 
 _citations["vtqedhf"] = textwrap.dedent(f"""\
 {" " * 4} X. Li and Y. Zhang, \"First-principles molecular quantum electrodynamics
 {" " * 4} theory at all coupling strengths\",
 {" " * 6} {r'https://arxiv.org/abs/2310.18228'}
+""")
+
+_citations["pra2024"] = textwrap.dedent(f"""\
+{" " * 4} BM Weight, S Tretiak, Y Zhang, Diffusion quantum Monte Carlo approach to the
+{" " * 4}     polaritonic ground state. Phys. Rev. A 109, 032804 (2024).
 """)
 
 # Empty list store the citation info for each job

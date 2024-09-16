@@ -140,12 +140,12 @@ def kernel(
     s1e = mf.get_ovlp(mol)
 
     if dm0 is None:
-        dm = scf.hf.get_init_guess(mol, mf.init_guess)
+        dm = mf.get_init_guess(mol, mf.init_guess)
     else:
         dm = dm0
 
     # Initial (bare) electronic energy
-    h1e = mf.bare_h1e = scf.hf.get_hcore(mol)
+    h1e = mf.bare_h1e = mf.get_bare_hcore(mol)
     vhf = scf.hf.get_veff(mol, dm)
     e_tot = mf.energy_tot(dm, h1e, vhf)
     logger.info(mf, 'init E (non-QED)= %.15g', e_tot)
@@ -154,7 +154,7 @@ def kernel(
     mf.qed.update_boson_coeff(e_tot, dm)
 
     # Initialize additional variational parameters,
-    # construct 'h1e' in dipole (DO) basis
+    # construct 'h1e' 'gmat' in dipole (DO) basis
     # (used by SC-QED-HF/VT-QED-HF subclasses)
     mf.init_var_params(dm)
     mf.get_h1e_DO(mol, dm)
@@ -205,6 +205,9 @@ def kernel(
         mf.get_h1e_DO(mol, dm)
         mf.grad_var_params(dm)
 
+        h1e = mf.get_hcore(mol, dm)
+        fock = mf.get_fock(h1e, s1e, vhf, dm, cycle, mf_diis)
+
         # Diagonalize Fock matrix and update density matrix
         mo_energy, mo_coeff = mf.eig(fock, s1e)
         mo_occ = mf.get_occ(mo_energy, mo_coeff)
@@ -212,23 +215,25 @@ def kernel(
 
         # Update photonic coefficients and compute photonic energy
         mf.qed.update_cs(dm) # Update coherent state values
-        if mf.qed.use_cs == False:
-            mf.qed.update_boson_coeff(e_tot, dm)
 
         # Update h1e, vhf, and e_tot
         h1e = mf.get_hcore(mol, dm)
         vhf = mf.get_veff(mol, dm, dm_last, vhf)
-        fock = mf.get_fock(h1e, s1e, vhf, dm, cycle, mf_diis)
         e_tot = mf.energy_tot(dm, h1e, vhf)
 
+        # construct Hp matrix and diagonalize
+        if mf.qed.use_cs == False:
+            mf.qed.update_boson_coeff(e_tot, dm)
+
         # Check SCF convergence
+        fock = mf.get_fock(h1e, s1e, vhf, dm)  # = h1e + vhf, no DIIS
         norm_eta = mf.norm_var_params()
-        norm_gorb = linalg.norm(mf.get_grad(mo_coeff, mo_occ, fock))
-        norm_gorb = norm_gorb + norm_eta
+        norm_gorb = numpy.linalg.norm(mf.get_grad(mo_coeff, mo_occ, fock))
+        norm_gorb += norm_eta
         if not TIGHT_GRAD_CONV_TOL:
             norm_gorb = norm_gorb / numpy.sqrt(norm_gorb.size)
-        norm_ddm = linalg.norm(dm-dm_last)
-        logger.info(mf, 'cycle= %d  E= %.15g  delta_E= %4.3g  |g|= %4.3g  |ddm|= %4.3g',
+        norm_ddm = numpy.linalg.norm(dm-dm_last)
+        logger.info(mf, 'cycle= %d E= %.15g  delta_E= %4.3g  |g|= %4.3g  |ddm|= %4.3g',
                     cycle+1, e_tot, e_tot-last_hf_e, norm_gorb, norm_ddm)
 
         if callable(mf.check_convergence):
@@ -267,11 +272,11 @@ def kernel(
 
         # Verify SCF convergence
         norm_eta = mf.norm_var_params()
-        norm_gorb = linalg.norm(mf.get_grad(mo_coeff, mo_occ, fock))
+        norm_gorb = numpy.linalg.norm(mf.get_grad(mo_coeff, mo_occ, fock))
         norm_gorb = norm_gorb + norm_eta
         if not TIGHT_GRAD_CONV_TOL:
             norm_gorb = norm_gorb / numpy.sqrt(norm_gorb.size)
-        norm_ddm = linalg.norm(dm-dm_last)
+        norm_ddm = numpy.linalg.norm(dm-dm_last)
 
         conv_tol = conv_tol * 10
         conv_tol_grad = conv_tol_grad * 3
@@ -291,8 +296,17 @@ def kernel(
 
 
 def get_fock(
-    mf, h1e=None, s1e=None, vhf=None, dm=None, cycle=-1, diis=None,
-    diis_start_cycle=None, level_shift_factor=None, damp_factor=None):
+    mf,
+    h1e=None,
+    s1e=None,
+    vhf=None,
+    dm=None,
+    cycle=-1,
+    diis=None,
+    diis_start_cycle=None,
+    level_shift_factor=None,
+    damp_factor=None,
+):
     r"""
     Return Fock matrix in AO basis, :math:`F = h_{core} + V_{HF}`.
 
@@ -368,12 +382,15 @@ def get_fock(
     if dm is None: dm = mf.make_rdm1()
     if s1e is None: s1e = mf.get_ovlp()
 
+    if 0 <= cycle < diis_start_cycle - 1 and abs(damp_factor) > 1e-4:
+        f = damping(s1e, dm * 0.5, f, damp_factor)
     if diis is not None and cycle >= diis_start_cycle:
         variables, gradients = mf.pre_update_var_params()
         params = diis.update(s1e, dm, f, mf, h1e, vhf,
                              var=variables, var_grad=gradients)
         f = mf.set_params(params, fock_shape=f.shape)
-
+    if abs(level_shift_factor) > 1e-4:
+        f = level_shift(s1e, dm * 0.5, f, level_shift_factor)
     return f
 
 
@@ -417,6 +434,21 @@ class RHF(scf.hf.RHF):
         # Update QED object
         self.qed.update_mean_field(self, **kwargs)
 
+
+    def get_oei_AO(self):
+        r"""return the effective oei in AO for usage in QMC
+        """
+        pass
+
+    def get_eri_AO(sefl, Ltensor=True):
+        r"""return the effective eri (or chols) in AO for usage in QMC
+        """
+        pass
+
+    def get_bare_hcore(self, mol=None):
+        r"""return the bare hcore"""
+        if mol is None: mol = self.mol
+        return scf.hf.get_hcore(mol)
 
     def get_hcore(
         self, mol=None, dm=None):

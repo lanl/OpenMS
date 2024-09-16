@@ -23,9 +23,8 @@ from openms.mqed import qedhf, scqedhf, vtqedhf
 from pyscf import lib
 from pyscf import gto
 from pyscf.lib import logger
-from cqcpy import utils
-from cqcpy.ov_blocks import one_e_blocks
-from cqcpy.ov_blocks import two_e_blocks, two_e_blocks_full
+from openms.lib.ov_blocks import one_e_blocks, block_diag
+from openms.lib.ov_blocks import two_e_blocks, two_e_blocks_full
 
 
 def get_bosonic_Ham(nmodes, nboson_states, omega, za, Fa):
@@ -1290,7 +1289,7 @@ class Photon(Boson):
         self.na, self.nb = na, nb
         self.pa = numpy.einsum("ai,bi->ab", ca[:, :na], ca[:, :na])
         self.pb = numpy.einsum("ai,bi->ab", cb[:, :nb], cb[:, :nb])
-        self.ptot = utils.block_diag(self.pa, self.pb)
+        self.ptot = block_diag(self.pa, self.pb)
 
 
     def tmat(self):
@@ -1298,7 +1297,7 @@ class Photon(Boson):
         Returns T-matrix in spin orbital (SO) basis.
         """
         t = self._mf.get_hcore()
-        return utils.block_diag(t, t)
+        return block_diag(t, t)
 
 
     def fock(self):
@@ -1314,8 +1313,8 @@ class Photon(Boson):
         if not self.shift:
             h1 += self.add_dse_hcore(self.pa+self.pb)
 
-        ptot = utils.block_diag(self.pa, self.pb)
-        h1 = utils.block_diag(h1, h1)
+        ptot = block_diag(self.pa, self.pb)
+        h1 = block_diag(h1, h1)
 
         # this only works for bare HF
         #myhf = scf.GHF(self._mol)
@@ -1334,7 +1333,7 @@ class Photon(Boson):
         # this only works with bare HF
         F = self.fock()
         T = self.tmat()
-        ptot = utils.block_diag(self.pa, self.pb)
+        ptot = block_diag(self.pa, self.pb)
 
         Ehf = numpy.einsum("ij,ji->", ptot, F)
         Ehf += numpy.einsum("ij,ji->", ptot, T)
@@ -1350,8 +1349,8 @@ class Photon(Boson):
 
         na, nb = self.na, self.nb
         va, vb = self.nmo // 2 - na, self.nmo // 2 - nb
-        Co = utils.block_diag(self.ca[:, :na], self.cb[:, :nb])
-        Cv = utils.block_diag(self.ca[:, na:], self.cb[:, nb:])
+        Co = block_diag(self.ca[:, :na], self.cb[:, :nb])
+        Cv = block_diag(self.ca[:, na:], self.cb[:, nb:])
 
         F = self.fock()
         logger.debug(self, f" -YZ: F.shape = {F.shape}")
@@ -1438,7 +1437,7 @@ class Photon(Boson):
 
     def mfG(self):
         if self.pa is None: self.get_mos()
-        ptot = utils.block_diag(self.pa, self.pb)
+        ptot = block_diag(self.pa, self.pb)
         g = self.gmatso
         if self.shift:
             mfG = numpy.zeros(self.nmodes)
@@ -1453,8 +1452,8 @@ class Photon(Boson):
         g = self.gmatso.copy()
         na = self.na
         nb = self.nb
-        Co = utils.block_diag(self.ca[:, :na], self.cb[:, :nb])
-        Cv = utils.block_diag(self.ca[:, na:], self.cb[:, nb:])
+        Co = block_diag(self.ca[:, :na], self.cb[:, :nb])
+        Cv = block_diag(self.ca[:, na:], self.cb[:, nb:])
 
         oo = numpy.einsum("Ipq,pi,qj->Iij", g, Co, Co)
         ov = numpy.einsum("Ipq,pi,qa->Iia", g, Co, Cv)
@@ -1480,11 +1479,11 @@ class Photon(Boson):
 
         # gmatso
         #gmatso = [
-        #    utils.block_diag(self.gmat[i], self.gmat[i]) for i in range(len(self.gmat))
+        #    block_diag(self.gmat[i], self.gmat[i]) for i in range(len(self.gmat))
         #]
         # add factor of sqrt(w/2) into the coupling
         gmatso = [
-           utils.block_diag(
+           block_diag(
                self.gmat[i] * numpy.sqrt(self.omega[i] / 2),
                self.gmat[i] * numpy.sqrt(self.omega[i] / 2),
            )

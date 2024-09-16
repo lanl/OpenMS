@@ -15,10 +15,9 @@
 #
 
 import numpy
-from cqcpy.ov_blocks import one_e_blocks
-from cqcpy.ov_blocks import two_e_blocks
-from cqcpy.ov_blocks import two_e_blocks_full
-from cqcpy import utils
+from openms.lib.ov_blocks import block_diag, one_e_blocks
+from openms.lib.ov_blocks import two_e_blocks
+from openms.lib.ov_blocks import two_e_blocks_full
 
 
 class Hubbard1D(object):
@@ -65,7 +64,7 @@ class Hubbard1D(object):
     def tmat(self):
         r"""Return T-matrix in the spin orbital basis."""
         t = self.tmatS()
-        return utils.block_diag(t, t)
+        return block_diag(t, t)
 
 
     def umat(self):
@@ -92,7 +91,7 @@ class Hubbard1D(object):
     def fock(self):
         if self.pa is None or self.pb is None:
             raise Exception("Cannot build Fock without density ")
-        ptot = utils.block_diag(self.pa, self.pb)
+        ptot = block_diag(self.pa, self.pb)
         U = self.umat()
         T = self.tmat()
         Ua = U - U.transpose((0, 1, 3, 2))
@@ -103,7 +102,7 @@ class Hubbard1D(object):
     def hf_energy(self):
         F = self.fock()
         T = self.tmat()
-        ptot = utils.block_diag(self.pa, self.pb)
+        ptot = block_diag(self.pa, self.pb)
         Ehf = numpy.einsum("ij,ji->", ptot, F)
         Ehf += numpy.einsum("ij,ji->", ptot, T)
         return 0.5 * Ehf
@@ -120,7 +119,7 @@ class Hubbard1D(object):
         T = self.tmatS()
         ha = numpy.einsum("ij,ip,jq->pq", T, self.ca, self.ca)
         hb = numpy.einsum("ij,ip,jq->pq", T, self.cb, self.cb)
-        return utils.block_diag(ha, hb)
+        return block_diag(ha, hb)
 
 
     def g_fock(self):
@@ -128,10 +127,10 @@ class Hubbard1D(object):
         nb = self.nb
         va = self.L - na
         vb = self.L - nb
-        Co = utils.block_diag(self.ca[:, :na], self.cb[:, :nb])
-        Cv = utils.block_diag(self.ca[:, na:], self.cb[:, nb:])
+        Co = block_diag(self.ca[:, :na], self.cb[:, :nb])
+        Cv = block_diag(self.ca[:, na:], self.cb[:, nb:])
         F = self.fock()
-        Ctot = utils.block_diag(self.ca, self.cb)
+        Ctot = block_diag(self.ca, self.cb)
         Foo = numpy.einsum("pi,pq,qj->ij", Co, F, Co)
         Fov = numpy.einsum("pi,pq,qa->ia", Co, F, Cv)
         Fvo = numpy.einsum("pa,pq,qi->ai", Cv, F, Co)
@@ -293,14 +292,14 @@ class Hubbard1D(object):
 
     def g_aint_tot(self):
         V = self.umat()
-        C = utils.block_diag(self.ca, self.cb)
+        C = block_diag(self.ca, self.cb)
         V = numpy.einsum("pqrs,pw,qx,ry,sz->wxyz", V, C, C, C, C)
         return V - V.transpose((0, 1, 3, 2))
 
 
     def g_int_tot(self):
         V = self.umat()
-        C = utils.block_diag(self.ca, self.cb)
+        C = block_diag(self.ca, self.cb)
         V = numpy.einsum("pqrs,pw,qx,ry,sz->wxyz", V, C, C, C, C)
         return V
 
@@ -308,7 +307,7 @@ class Hubbard1D(object):
     def g_aint(self):
         nb = self.nb
         na = self.na
-        C = utils.block_diag(self.ca, self.cb)
+        C = block_diag(self.ca, self.cb)
         U = self.umat()
         Ua = U - U.transpose((0, 1, 3, 2))
         Ua_mo = numpy.einsum("pqrs,pw,qx,ry,sz->wxyz", Ua, C, C, C, C)

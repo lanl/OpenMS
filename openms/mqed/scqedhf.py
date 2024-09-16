@@ -352,8 +352,8 @@ class RHF(qedhf.RHF):
 
         super().__init__(mol, qed, xc, **kwargs)
 
-        if "scqedhf" not in openms.runtime_refs:
-            openms.runtime_refs.append("scqedhf")
+        if "vtqedhf" not in openms.runtime_refs:
+            openms.runtime_refs.append("vtqedhf")
 
         self.mo2dipole = numpy.zeros_like(self.qed.gmat)
         self.ao2dipole = numpy.zeros_like(self.qed.gmat)

@@ -479,4 +479,16 @@ class QMCbase(object):
 
             tt += self.dt
 
+        self.post_kernel()
         return time_list, energy_list
+
+
+    def post_kernel(self):
+        r"""Prints relevant citation information for calculation."""
+        breakline = '='*80
+        logger.note(self, f"\n{breakline}")
+        logger.note(self, f"*  Hoollary, the job is done!\n")
+        logger.note(self, f"Citations:")
+        for i, key in enumerate(runtime_refs):
+            logger.note(self, f"[{i+1}]. {_citations[key]}")
+        logger.note(self, f"{breakline}\n")

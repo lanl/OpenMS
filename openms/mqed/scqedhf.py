@@ -556,8 +556,11 @@ class RHF(qedhf.RHF):
         FIXME: check the whether eta has sqrt{\omega/2} or not
 
         .. math::
+
            \chi^\alpha_{pq} = \exp[-\frac{f^2_\alpha(\eta_{\alpha,p}-\eta_{\alpha,q})^2}
                                          {4\omega_\alpha}]
+
+        Here :math:`\tau= exp(F_\alpha)` and :math:`F_\alpha` are the VSQ prameters.
         """
 
         if onebody:
@@ -567,7 +570,8 @@ class RHF(qedhf.RHF):
             p, q, r, s = numpy.ogrid[:self.nao, :self.nao, :self.nao, :self.nao]
             diff_eta = eta[imode, p] - eta[imode, q] +  eta[imode, r] - eta[imode, s]
 
-        tmp = 1 / self.qed.omega[imode]
+        tau = numpy.exp(self.qed.squeezed_var[imode])
+        tmp = tau / self.qed.omega[imode]
         ph_exp_val = self.qed.get_bdag_plus_b_sq_expval(imode)
 
         factor = numpy.exp((-0.5 * (tmp * diff_eta) ** 2) * (ph_exp_val + 1))
@@ -763,6 +767,57 @@ class RHF(qedhf.RHF):
             self.eta = params[fsize:fsize+etasize].reshape(self.eta_grad.shape)
 
         return f
+
+    def make_rdm1_org(self, mo_coeff, mo_occ, nfock=2, **kwargs):
+        r"""One-particle density matrix in original AO-Fock representation
+
+        .. math::
+
+            \ket{\Phi} = & \hat{U}(\hat{f}, F)\ket{HF}\otimes \ket{0}
+                 = \exp[-\frac{f_\alpha \lambda\cdot D}{\sqrt{2\omega}}]
+                 \sum_\mu c_\mu \ket{\mu, 0} \\
+                 = & \sum_\mu c_\mu \exp[-g(b-b^\dagger)] \ket{\mu} \otimes \ket{0} \\
+                 = & \sum_\mu c_\mu U^\dagger\exp[-\tilde{g}(b-b^\dagger)]U \ket{\mu}\otimes\ket{0}
+
+        where :math:`\tilde{g}` is the diagonal matrix.
+        It is obvious that the VT-QEDHF WF is no longer the single produc state
+
+        TODO: extend it to many-photon basis set
+        """
+        import math
+
+        mocc = mo_coeff[:,mo_occ>0]
+        rho = (mocc*mo_occ[mo_occ>0]).dot(mocc.conj().T)
+
+        nao = rho.shape[0]
+        imode = 0
+
+        U = self.ao2dipole[imode]
+        Uinv = linalg.inv(U)
+        # transform into Dipole
+        rho_DO = unitary_transform(U, rho)
+
+        rho_tot = numpy.zeros((nfock, nao, nfock, nao))
+        for m in range(nfock):
+            for n in range(nfock):
+                # <m | D(z_alpha) |0>
+                zalpha = self.qed.couplings_var[imode] * self.eta[imode]
+                zalpha /= self.qed.omega[imode]
+
+                z0 = numpy.exp(-0.5 * zalpha ** 2)
+                zm = z0 * zalpha ** m * numpy.sqrt(math.factorial(m))
+                zn = z0 * (-zalpha) ** n * numpy.sqrt(math.factorial(n))
+
+                rho_tmp = rho_DO * numpy.outer(zm, zn)
+                # back to AO
+                rho_tmp = unitary_transform(Uinv, rho_tmp)
+                rho_tot[m, :, n, :] = rho_tmp
+
+        rho_e = numpy.einsum("mpmq->pq", rho_tot)
+        rho_b = numpy.einsum("mpnp->mn", rho_tot) / numpy.trace(rho)
+
+        return rho_tot, rho_e, rho_b
+
 
 
     def scf(self, dm0=None, **kwargs):

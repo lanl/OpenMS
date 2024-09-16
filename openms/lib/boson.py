@@ -27,6 +27,7 @@ from cqcpy import utils
 from cqcpy.ov_blocks import one_e_blocks
 from cqcpy.ov_blocks import two_e_blocks, two_e_blocks_full
 
+
 def get_bosonic_Ham(nmodes, nboson_states, omega, za, Fa):
     r"""Construct Bosonic Hamiltonian in different representation
     after integrating out the electronic DOF.
@@ -122,7 +123,7 @@ def get_dipole_ao(mol, add_nuc_dipole=True, origin_shift=None):
     origin = numpy.zeros(3, dtype=float)
 
     # Center of nuclear charge
-    if add_nuc_dipole == True:
+    if add_nuc_dipole:
         charge_center = lib.einsum("i,ix->x",
                                    mol.atom_charges(), mol.atom_coords())
         charge_center /= numpy.sum(mol.atom_charges())
@@ -288,7 +289,7 @@ class Boson(object):
         PySCF molecule object.
     nao : int
         Size of electronic basis set.
-    nelec : int
+    nelectron : int
         Number of electrons.
 
     _mf : :class:`RHF <mqed.qedhf.RHF>`
@@ -352,7 +353,7 @@ class Boson(object):
             self._mol = mol
             self.verbose = mol.verbose
             self.stdout = mol.stdout
-            self.nelec = mol.nelectron
+            self.nelectron = mol.nelectron
 
         # Default: Include nuclear component in dipole/quadrupole
         self.add_nuc_dipole = True
@@ -986,7 +987,7 @@ class Photon(Boson):
         if s1e is None: s1e = self._mf.get_ovlp(self._mol)
 
         # Always shift OEI with photon ground state energy
-        dse_oei = self.e_boson * s1e / self.nelec
+        dse_oei = self.e_boson * s1e / self.nelectron
 
         # DSE contribution
         g_dse = numpy.ones(self.nmodes) if not residue else \
@@ -1005,7 +1006,7 @@ class Photon(Boson):
 
         # DSE contributions to OEI and total energy from coherent-state representation
         if self.use_cs == True:
-            dse_oei += 0.5 * numpy.sum(self.z_alpha**2 * g_dse) * s1e / self.nelec
+            dse_oei += 0.5 * numpy.sum(self.z_alpha**2 * g_dse) * s1e / self.nelectron
             dse_oei -= lib.einsum("X, Xpq-> pq", g_dse * self.z_alpha, self.gmat)
 
         # E-P bilinear coupling contribution

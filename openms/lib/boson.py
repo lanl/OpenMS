@@ -356,9 +356,7 @@ class Boson(object):
             self.nelectron = mol.nelectron
 
         # Default: Include nuclear component in dipole/quadrupole
-        self.add_nuc_dipole = True
-        if add_nuc_dipole == False:
-            self.add_nuc_dipole = False
+        self.add_nuc_dipole = add_nuc_dipole
 
         # Additional shift of molecule from dipole/quadrupole origin
         self.origin_shift = None
@@ -381,9 +379,7 @@ class Boson(object):
 
         # Determines if QED-OEI contribution constructed from
         # quadrupole moment matrix or product of dipole moment matrices
-        self.complete_basis = True
-        if "complete_basis" in kwargs and kwargs["complete_basis"] == False:
-            self.complete_basis = False
+        self.complete_basis = kwargs.get("complete_basis", True)
 
         # Cavity modes and frequencies
         self.omega = self.nmodes = None
@@ -411,6 +407,7 @@ class Boson(object):
             if isinstance(gfac, list):
                 gfac = numpy.asarray(gfac, dtype=float)
 
+            # Check if gfac is an array and has the same size as omega
             if (not isinstance(gfac, numpy.ndarray)
                 or gfac.size != self.nmodes):
                 err_msg = f"Parameter 'gfac' does not " + \
@@ -507,6 +504,7 @@ class Boson(object):
         self.couplings = numpy.asarray(self.gfac, dtype=float)
         self.couplings_bilinear = numpy.zeros(self.nmodes, dtype=float)
         self.couplings_self = numpy.zeros(self.nmodes, dtype=float)
+        self.e_boson_grad_r = numpy.zeros(self.nmodes, dtype=float)
 
         for a in range(self.nmodes):
             self.couplings_bilinear[a] = (self.couplings[a]
@@ -531,6 +529,11 @@ class Boson(object):
         self.nao = None
         self.dipole_ao = None
         self.quadrupole_ao = None
+
+        # Values used by 'post-hf integrals' methods
+        # whether to shfit the h1 in post-hf integral with DSE_oei
+        self.shift = shift if isinstance(shift, bool) else False
+        # self.shift = shift
 
         # ------------------------------------
         # TODO: reorganize the following
@@ -801,7 +804,6 @@ class Photon(Boson):
         self.q_lambda_ao = None
 
         # Values used by 'post-hf integrals' methods
-        self.shift = shift if isinstance(shift, bool) else False
         self.ptot = self.pa = self.pb = None
         self.ca = self.cb = None
         self.na = self.nb = None

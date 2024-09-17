@@ -37,6 +37,27 @@ CHOLESKY_THRESHOLD = getattr(__config__, "CHOLESKY_THRESHOLD", 1e-10)
 FORCE_PIVOTED_CHOLESKY = getattr(__config__, "FORCE_PIVOTED_CHOLESKY", False)
 LINEAR_DEP_TRIGGER = getattr(__config__, "LINEAR_DEP_TRIGGER", 1e-10)
 
+r"""
+Theoretical background of SC/VT-QEDHF methods
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+SC-QEDHF module for solving the QED Hamiltonian. The kernel is also used for VT-QEDHF.
+
+The WF ansatz for SC-QEDHF is:
+
+.. math::
+
+   \ket{\Phi} = e^{} \ket{\Phi_0}
+
+The corresponding HF Energy within SC-QEDHF formalism becomes:
+
+.. math::
+
+  E = \sum_{pq} h_{pq} D_{pq} G_{pq} + \cdots
+
+
+
+"""
 
 def unitary_transform(U, A):
     r"U^T A U"
@@ -89,7 +110,9 @@ def get_orbitals_from_rao(c, P):
 
 
 def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
-           dump_chk=True, dm0=None, callback=None, conv_check=True, **kwargs):
+           dump_chk=True, dm0=None,
+           init_params=None,
+           callback=None, conv_check=True, **kwargs):
     r"""
     SCF kernel: the main QED-HF driver.
 
@@ -167,6 +190,7 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
         dm = dm0
 
     # Update initial guess
+    mf.L, mf.P = mathlib.full_cholesky_orth(s1e, threshold=1.e-7)
     mo_energy, mo_coeff = cholesky_diag_fock_rao(mf, dm)
     mo_occ = mf.get_occ(mo_energy, mo_coeff)
     dm = mf.make_rdm1(mo_coeff, mo_occ)
@@ -374,17 +398,20 @@ class RHF(qedhf.RHF):
         self.dipole_degen_thresh = 1.0e-8
         self.dipole_fock_shift = 1.0e-3
 
-        s1e = self.get_ovlp(mol)
-        self.X = scf_addons.partial_cholesky_orth_(s1e, canthr=1.0e-7,
-                                                  cholthr=CHOLESKY_THRESHOLD)
+        # s1e = self.get_ovlp(mol)
+        # self.X = scf_addons.partial_cholesky_orth_(s1e, canthr=1.0e-7,
+        #                                           cholthr=CHOLESKY_THRESHOLD)
 
         # Check condition of overlap and e-p interaction matrices
-        scipy_helper.remove_linear_dep(self, threshold=1.0e-7, lindep=1.0e-7,
-                                       cholesky_threshold=CHOLESKY_THRESHOLD,
-                                       force_pivoted_cholesky=FORCE_PIVOTED_CHOLESKY)
+        # and remove linear dependency
+        # FIXME: this is not compatible with model system
+        # scipy_helper.remove_linear_dep(self, threshold=1.0e-7, lindep=1.0e-7,
+        #                               cholesky_threshold=CHOLESKY_THRESHOLD,
+        #                               force_pivoted_cholesky=FORCE_PIVOTED_CHOLESKY)
 
-        self.L, self.P = mathlib.full_cholesky_orth(s1e, threshold=1.e-7)
-        self.n_oao = self.P.shape[1]
+        # self.L, self.P = mathlib.full_cholesky_orth(s1e, threshold=1.e-7)
+        self.P = self.L = None
+        # self.n_oao = self.P.shape[1]
 
         # will replace it with our general DIIS
         self.diis_space = 20
@@ -394,7 +421,8 @@ class RHF(qedhf.RHF):
     def initialize_bare_fock(self, dm=None):
         r"""Return non-QED Fock matrix from provided or initial guess ``dm``."""
         mol = self.mol
-        if dm is None: dm = scf.hf.get_init_guess(mol, self.init_guess)
+        if dm is None:
+            dm = scf.hf.get_init_guess(mol, self.init_guess)
 
         h1e = scf.hf.get_hcore(mol)
         vhf = scf.hf.get_veff(mol, dm)
@@ -514,14 +542,24 @@ class RHF(qedhf.RHF):
 
 
     def get_eta_gradient(self, dm_do, g_DO, dm=None):
-        r"""Compute the gradient of energy with respect to eta."""
+        r"""Compute the gradient of energy with respect to eta.
+        Only works for one mode currently:
 
-        onebody_deta = numpy.zeros(self.nao)
-        twobody_deta = numpy.zeros(self.nao)
+        .. math::
+
+             \frac{E}{d\eta} = &  \\
+                             = &
+
+        """
+        nao = self.nao
 
         for a in range(self.qed.nmodes):
+            onebody_deta = numpy.zeros(nao)
+            twobody_deta = numpy.zeros(nao)
 
-            for p in range(self.nao):
+            tau = numpy.exp(self.qed.squeezed_var[a])
+            # 1) diaognal part due to [(gtmp - eta)^2 \rho]
+            for p in range(nao):
                 onebody_deta[p] -= 2.0 * dm_do[a, p,p] * g_DO[a, p] / self.qed.omega[a]
 
             fc_derivative = self.gaussian_derivative_vectorized(self.eta, a)
@@ -529,6 +567,7 @@ class RHF(qedhf.RHF):
             tmp2 = (2.0 * dm_do[a].diagonal().reshape(-1, 1) * dm_do[a].diagonal() \
                    - dm_do[a] * dm_do[a].T) \
                    * g_DO[a].reshape(1, -1) / self.qed.omega[a]
+
             onebody_deta += numpy.sum(tmp1 - tmp2, axis=1)
             del fc_derivative, tmp1, tmp2
 
@@ -597,6 +636,7 @@ class RHF(qedhf.RHF):
         ph_exp_val = self.qed.get_bdag_plus_b_sq_expval(imode)
 
         # Apply the derivative formula
+        # FIXME: this is incorrect for many-photon mode
         derivative = numpy.exp((-0.5 * (tmp * diff_eta) ** 2) * (ph_exp_val + 1)) \
                      * (tmp ** 2) * diff_eta
 

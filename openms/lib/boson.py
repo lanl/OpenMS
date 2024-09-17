@@ -532,7 +532,7 @@ class Boson(object):
 
         # Values used by 'post-hf integrals' methods
         # whether to shfit the h1 in post-hf integral with DSE_oei
-        self.shift = shift if isinstance(shift, bool) else False
+        self.shift = kwargs.get("shift", False)
         # self.shift = shift
 
         # ------------------------------------
@@ -910,19 +910,23 @@ class Photon(Boson):
         hmat = get_bosonic_Ham(self.nmodes, nboson_states, self.omega, za, Fa)
 
         # Photon cavity mode eigenvectors
-        h_evec = self._mf.eig(hmat, numpy.eye(sum(self.nboson+1)))[1]
+        h_evec = self._mf.eig(hmat, numpy.eye(sum(nboson_states)))[1]
 
         # Photon ground state energy
         mode_e_tot = 0.0
         idx = 0
         for imode in range(self.nmodes):
             mdim = self.nboson[imode] + 1
-            sinhr = numpy.sinh(Fa[imode])
+            sinh2r = numpy.sinh(2.0 * Fa[imode])
             cosh2r = numpy.cosh(2.0 * Fa[imode])
-            for a in range(mdim):
-                coeff_term = numpy.conj(h_evec[idx, 0]) * h_evec[idx, 0]
-                mode_e_tot += self.omega[imode] * (a * cosh2r + sinhr * sinhr) * coeff_term
-                idx += 1
+
+            p = h_evec[idx:idx+mdim,0].conj() * h_evec[idx:idx+mdim,0]
+            nw = (numpy.arange(mdim) + 0.5) * cosh2r - 0.5
+            nw_grad = (numpy.arange(mdim) + 0.5) * sinh2r * 2.0
+            mode_e_tot += self.omega[imode] * numpy.dot(p, nw)
+            self.e_boson_grad_r[imode] = self.omega[imode] * numpy.dot(p, nw_grad)
+            idx += mdim
+
         self.e_boson = mode_e_tot
         self.boson_coeff = h_evec
 

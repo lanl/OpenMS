@@ -450,8 +450,7 @@ class RHF(scf.hf.RHF):
         if mol is None: mol = self.mol
         return scf.hf.get_hcore(mol)
 
-    def get_hcore(
-        self, mol=None, dm=None):
+    def get_hcore(self, mol=None, dm=None):
         r"""
         Return non-QED or DSE-mediated OEI in AO basis.
 
@@ -643,6 +642,17 @@ class RHF(scf.hf.RHF):
         return self.e_tot
     kernel = lib.alias(scf, alias_name='kernel')
 
+    def _finalize(self):
+        '''Hook for dumping results and clearing up the object.'''
+        if self.converged:
+            logger.note(self, 'converged SCF energy = %.15g', self.e_tot)
+            logger.note(self, 'converged z = [%s]', ', '.join(f'{z:.15g}' for z in self.qed.z_alpha))
+            logger.note(self, 'converged f = [%s]', ', '.join(f'{f:.15g}' for f in self.qed.couplings_var))
+            logger.note(self, 'converged F = [%s]', ', '.join(f'{f:.15g}' for f in self.qed.squeezed_var))
+        else:
+            logger.note(self, 'SCF not converged.')
+            logger.note(self, 'SCF energy = %.15g', self.e_tot)
+        return self
 
     def post_kernel(self, breakline=('='*80)):
         r"""Prints relevant citation information for calculation."""
@@ -654,6 +664,34 @@ class RHF(scf.hf.RHF):
         logger.note(self, f"{breakline}\n")
         return self
 
+    def make_rdm1_org(self, mo_coeff, mo_occ, nfock=2, **kwargs):
+        r"""
+        """
+        import math
+
+        mocc = mo_coeff[:,mo_occ>0]
+        rho = (mocc*mo_occ[mo_occ>0]).dot(mocc.conj().T)
+
+        nao = rho.shape[0]
+        imode = 0
+
+        rho_tot = numpy.zeros((nfock, nao, nfock, nao))
+        for m in range(nfock):
+            for n in range(nfock):
+                # <m | D(z_alpha) |0>
+                zalpha = self.qed.z_alpha[imode]
+
+                z0 = numpy.exp(-0.5 * zalpha ** 2)
+                zm = z0 * zalpha ** m * numpy.sqrt(math.factorial(m))
+                zn = z0 * zalpha ** n * numpy.sqrt(math.factorial(n))
+                rho_tmp = rho * zm * zn
+                # back to AO
+                rho_tot[m, :, n, :] = rho_tmp
+
+        rho_e = numpy.einsum("mpmq->pq", rho_tot)
+        rho_b = numpy.einsum("mpnp->mn", rho_tot) / numpy.trace(rho)
+
+        return rho_tot, rho_e, rho_b
 
     def dump_flags(self, verbose=None):
         r"""Parent method overwritten to include :class:`~lib.boson.Boson` flags."""

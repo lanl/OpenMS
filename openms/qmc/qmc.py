@@ -124,8 +124,8 @@ class QMCbase(object):
            nblocks:     Number of blocks
            nsteps:      Number of steps per block
         """
-        if ( _citations["pra2024"] not in runtime_refs ):
-            runtime_refs.append(_citations["pra2024"])
+        if "pra2024" not in runtime_refs:
+            runtime_refs.append("pra2024")
 
         self.system = self.mol = system
 

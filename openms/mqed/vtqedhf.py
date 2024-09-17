@@ -236,19 +236,12 @@ class RHF(scqedhf.RHF):
         self.vsq_grad = onebody_dvsq + twobody_dvsq
 
         # photon energy part:
-        for imode in range(nmodes):
-            # FIXME for multiple photon basis set
-            # FIXME: include ZPE or not
-            sinhr = numpy.sinh(self.qed.squeezed_var[imode])
-            coshr = numpy.cosh(self.qed.squeezed_var[imode])
-            tmp = self.qed.omega[imode] * 2.0 * sinhr * coshr
-            self.vsq_grad[imode] += tmp
+        # FIXME: include ZPE or not
+        self.vsq_grad += self.qed.e_boson_grad_r
 
 
     def grad_var_params(self, dm_do, g_DO, dm=None):
         r"""Compute dE/df where f is the variational transformation parameters.
-        
-        Compute dE/df where f is the variational transformation parameters
 
         :math:`\eta` here is the eigenvalue of :math:`\lambda \sqrt{\omega_\alpha/2} (\boldsymbol{d}\cdot \boldsymbol{e}_\alpha)`,
         not just the eigenvalue of :math:`\boldsymbol{d}\cdot \boldsymbol{e}_\alpha`.

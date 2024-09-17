@@ -276,6 +276,9 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
         h1e = mf.get_hcore(mol, dm, dress=True)
         e_tot = mf.energy_tot(dm, h1e, vhf)
 
+        # construct Hp matrix and diagonalize
+        mf.qed.update_boson_coeff(e_tot, dm)
+
         # Here Fock matrix is h1e + vhf, without DIIS.  Calling get_fock
         # instead of the statement "fock = h1e + vhf" because Fock matrix may
         # be modified in some methods.
@@ -347,8 +350,7 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
 
 class RHF(qedhf.RHF):
     r"""Non-relativistic SC-QED-RHF subclass."""
-    def __init__(
-        self, mol, qed=None, xc=None, **kwargs):
+    def __init__(self, mol, qed=None, xc=None, **kwargs):
 
         super().__init__(mol, qed, xc, **kwargs)
 
@@ -399,14 +401,14 @@ class RHF(qedhf.RHF):
 
         return h1e + vhf
 
-
+    # get bare MO coefficients
     def get_bare_mo_coeff(self, dm):
 
         s1e = self.get_ovlp(self.mol)
         fock = self.initialize_bare_fock(dm)
         mo_energy, mo_coeff = self._eigh(fock, s1e)
-
         return mo_energy, mo_coeff
+
 
 
     def ao2mo(self, A):

@@ -347,6 +347,29 @@ class RHF(scqedhf.RHF):
 
         return variables, gradients
 
+    def set_var_params(self, params):
+        r"""set the additional variaitonal params"""
+
+        params = numpy.hstack([p.ravel() for p in params])
+
+        fsize = 0
+        etasize = self.eta.size
+        if params.size > fsize:
+            self.eta = params[fsize:fsize+etasize].reshape(self.eta_grad.shape)
+        fsize += etasize
+
+        varsize = self.qed.couplings_var.size
+        if params.size > fsize:
+            self.qed.couplings_var = params[fsize : fsize + varsize].reshape(
+                self.var_grad.shape
+            )
+            self.qed.update_couplings()
+
+        fsize += varsize
+        if params.size > fsize:
+            self.qed.squeezed_var = params[fsize :].reshape(
+                self.vsq_grad.shape
+            )
 
     def set_params(self, params, fock_shape=None):
         r""" get size of the variational parameters

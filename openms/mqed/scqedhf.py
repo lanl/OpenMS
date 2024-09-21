@@ -213,6 +213,10 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
 
     mf.init_var_params(dm)
 
+    # update initial_params according to the input
+    if init_params is not None:
+        mf.set_var_params(init_params)
+
     # construct h1e, gmat in DO representation (used in SC/VT-QEDHF)
     mf.get_h1e_DO(mol, dm=dm)
 
@@ -381,7 +385,6 @@ class RHF(qedhf.RHF):
         if "vtqedhf" not in openms.runtime_refs:
             openms.runtime_refs.append("vtqedhf")
 
-        self.mo2dipole = numpy.zeros_like(self.qed.gmat)
         self.ao2dipole = numpy.zeros_like(self.qed.gmat)
 
         self.dm_do = numpy.zeros_like(self.qed.gmat)
@@ -471,7 +474,7 @@ class RHF(qedhf.RHF):
                 s = p + 1
 
                 # non-QED Fock matrix, AO basis
-                fock = self.initialize_bare_fock(dm = dm)
+                fock = self.initialize_bare_fock(dm=dm)
 
                 # Transform to MO basis
                 fock = self.ao2mo(fock)
@@ -531,12 +534,10 @@ class RHF(qedhf.RHF):
 
             # check degeneracy
             self.check_n_resolve_degeneracy(evals, evecs, dm)
-            self.mo2dipole[a] = evecs
             self.eta[a] = evals
 
             # Creating the basis change matrix from ao to dipole basis
-            self.ao2dipole[a] = lib.einsum("ui, ip-> up",
-                                           self.mo_coeff, self.mo2dipole[a])
+            self.ao2dipole[a] = lib.einsum("ui, ip-> up", self.mo_coeff, evecs)
 
         return self
 
@@ -798,6 +799,15 @@ class RHF(qedhf.RHF):
 
         return variables, gradients
 
+
+    def set_var_params(self, params):
+        r"""set the additional variaitonal params"""
+
+        params = numpy.hstack(params)
+
+        etasize = self.eta.size
+        if params.size > 0:
+            self.eta = params[:etasize].reshape(self.eta_grad.shape)
 
     def set_params(self, params, fock_shape=None):
 

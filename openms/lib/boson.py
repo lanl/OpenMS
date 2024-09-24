@@ -486,6 +486,92 @@ class Boson(object):
         return numpy.outer(numpy.conj(bc), bc)
 
 
+    def update_boson_coeff(self, dm):
+        r"""Update eigenvectors for all modes in :class:`Boson`.
+
+        Construct and diagonalize photonic component of the
+        Pauli-Fierz Hamiltonian for ``mode`` of :class:`Boson`.
+        Store eigenvectors in :attr:`boson_coeff`, update
+        photonic energy, :attr:`e_boson`.
+
+        .. math::
+            \hat{H}_\tt{photon}
+            &= \sum_\al \hat{H}^\al_\tt{photon} \\
+            \hat{H}^\al_\tt{photon}
+            &= \om_\al \cb{\al} \ab{\al}
+             + \sqrt{\frac{\om_\al}{2}} \bm{e}_\al
+               \cdot \sum_{\mu\nu} \rho_{\mu\nu}
+               \cdot \mel*{\mu}{\la_\al \cdot \hat{D}}{\nu} (\cb{\al} + \ab{\al})
+        where :math:`\bm{\rho}` is the provided electronic density matrix, ``dm``.
+
+        --------------------------------------------------------------------
+
+        The bosonic creation and annihilation operators act on photon number
+        states as:
+
+        .. math::
+            \cb{} \ab{} \ket{m} &= m \ket{m} \\
+                  \cb{} \ket{m} &= \sqrt{m+1} \ket{m+1} \\
+                  \ab{} \ket{m} &= \sqrt{m} \ket{m-1}
+        In the Fock/particle number basis, the off-diagonal bilinear
+        interaction terms are:
+
+        .. math::
+            \mel*{n}{\cb{} + \ab{}}{m}
+            &= \mel*{n}{\cb{}}{m} + \mel*{n}{\ab{}}{m} \\
+            &= \mel*{n}{\sqrt{m+1}}{m+1} + \mel*{n}{\sqrt{m}}{m-1} \\
+            &= \d{m+1}{n} \sqrt{m+1} + \d{m-1}{n} \sqrt{m}
+
+        .. note::
+            In coherent-state representation, photonic Hamiltonian
+            has only diagonal terms.
+            :math:`\hat{H}_{\tt{photon}}=\sum_{\al}\om_{\al}\cb{\al}\ab{\al}`
+
+        Parameters
+        ----------
+        eref : float
+            Reference electronic energy.
+        dm : :class:`~numpy.ndarray`
+            Density matrix.
+        """
+
+        # Total photon energy
+        ph_e_tot = 0.0
+
+        for a in range(self.nmodes):
+            mdim = self.nboson[a] + 1
+
+            # Diagonal terms
+            hmat = numpy.diag(self.omega[a] * numpy.arange(mdim))
+
+            # Off diagonal terms, scaled by bilinear-coupling term and residual
+            # coupling values, if the cavity mode has non-zero photon occupation
+            # Also, photonic Hamiltonian is diagonal in CS representation
+            if mdim > 1 and self.use_cs == False:
+
+                h_od = numpy.diag(numpy.sqrt(numpy.arange(1, mdim)), k = 1) \
+                        + numpy.diag(numpy.sqrt(numpy.arange(1, mdim)), k = -1)
+
+                za = lib.einsum("pq, qp-> ", self.get_geb_ao(a), dm)
+                za *= self.couplings_res[a]
+
+                hmat -= (h_od * za)
+
+            # Photon cavity mode eigenvectors
+            self.boson_coeff[a] = h_evec = self._mf.eig(hmat, numpy.eye(mdim))[1]
+
+            # Photon mode energy
+            mode_e_tot = 0.0
+            for n in range(mdim):
+                coeff_term = numpy.conj(h_evec[n, 0]) * h_evec[n, 0]
+                mode_e_tot += self.omega[a] * n * coeff_term
+            ph_e_tot += mode_e_tot # add to total photon energy
+
+        self.e_boson = ph_e_tot
+
+        return self
+
+
     def update_mean_field(self, mf, **kwargs):
         r"""
         Update with attributes from mean-field object, parameter ``mf``.
@@ -654,10 +740,6 @@ class Boson(object):
         r"""Template method to update :math:`z_\al` values in CS representation."""
         raise NotImplementedError("Subclasses must implement this method.")
 
-    def update_boson_coeff(self):
-        r"""Template method to construct and diagonalize photonic Hamiltonian."""
-        raise NotImplementedError("Subclasses must implement this method.")
-
     def get_dse_hcore(self):
         r"""Template method to construct DSE-mediated OEI in AO basis."""
         raise NotImplementedError("Subclasses must implement this method.")
@@ -744,93 +826,6 @@ class Photon(Boson):
         if self.use_cs == True:
             self.z_alpha = lib.einsum("Xpq, qp-> X", self.gmat, dm)
         return self
-
-
-    def update_boson_coeff(self, eref, dm, mode):
-        r"""Update eigenvectors for ``mode`` in :class:`Boson`.
-
-        Construct and diagonalize photonic component of the
-        Pauli-Fierz Hamiltonian for ``mode`` of :class:`Boson`.
-        Store eigenvectors in :attr:`boson_coeff`, update
-        photonic energy, :attr:`e_boson`.
-
-        .. math::
-            \hat{H}_\tt{photon}
-            &= \sum_\al \hat{H}^\al_\tt{photon} \\
-            \hat{H}^\al_\tt{photon}
-            &= \om_\al \cb{\al} \ab{\al}
-             + \sqrt{\frac{\om_\al}{2}} \bm{e}_\al
-               \cdot \sum_{\mu\nu} \rho_{\mu\nu}
-               \cdot \mel*{\mu}{\la_\al \cdot \hat{D}}{\nu} (\cb{\al} + \ab{\al})
-        where :math:`\bm{\rho}` is the provided electronic density matrix, ``dm``.
-
-        --------------------------------------------------------------------
-
-        The bosonic creation and annihilation operators act on photon number
-        states as:
-
-        .. math::
-            \cb{} \ab{} \ket{m} &= m \ket{m} \\
-                  \cb{} \ket{m} &= \sqrt{m+1} \ket{m+1} \\
-                  \ab{} \ket{m} &= \sqrt{m} \ket{m-1}
-        In the Fock/particle number basis, the off-diagonal bilinear
-        interaction terms are:
-
-        .. math::
-            \mel*{n}{\cb{} + \ab{}}{m}
-            &= \mel*{n}{\cb{}}{m} + \mel*{n}{\ab{}}{m} \\
-            &= \mel*{n}{\sqrt{m+1}}{m+1} + \mel*{n}{\sqrt{m}}{m-1} \\
-            &= \d{m+1}{n} \sqrt{m+1} + \d{m-1}{n} \sqrt{m}
-
-        .. note::
-            In coherent-state representation, photonic Hamiltonian
-            has only diagonal terms.
-            :math:`\hat{H}_{\tt{photon}}=\sum_{\al}\om_{\al}\cb{\al}\ab{\al}`
-
-        Parameters
-        ----------
-        eref : float
-            Reference electronic energy.
-        dm : :class:`~numpy.ndarray`
-            Density matrix.
-        mode : int
-            Index for ``mode`` stored in the object.
-
-        Returns
-        -------
-        :class:`~numpy.ndarray`, :class:`~numpy.ndarray`
-            Eigenvalues and eigenvectors of the photonic Hamiltonian.
-        """
-
-        mdim = self.nboson[mode] + 1
-
-        # Diagonal terms
-        hmat = numpy.diag(eref + self.omega[mode] * numpy.arange(mdim))
-
-        # Off diagonal terms, scaled by bilinear-coupling term and residual
-        # coupling values, if the cavity mode has non-zero photon occupation
-        # Also, photonic Hamiltonian is diagonal in CS representation
-        if mdim > 1 and self.use_cs == False:
-
-            h_od = numpy.diag(numpy.sqrt(numpy.arange(1, mdim)), k = 1) \
-                    + numpy.diag(numpy.sqrt(numpy.arange(1, mdim)), k = -1)
-
-            za = lib.einsum("pq, qp-> ", self.get_geb_ao(mode), dm)
-            za *= self.couplings_res[mode]
-
-            hmat -= (h_od * za)
-
-        # Photon cavity mode eigenvectors
-        h_evec = self._mf.eig(hmat, numpy.eye(mdim))[1]
-
-        # Photon ground state energy
-        mode_e_tot = 0.0
-        for a in range(mdim):
-            coeff_term = numpy.conj(h_evec[a, 0]) * h_evec[a, 0]
-            mode_e_tot += self.omega[mode] * a * coeff_term
-        self.e_boson = mode_e_tot
-
-        return h_evec
 
 
     def get_dse_hcore(self, dm=None, s1e=None, residue=False):

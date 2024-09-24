@@ -176,17 +176,16 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
     e_tot = mf.energy_tot(dm, h1e, vhf)
     logger.info(mf, 'init E= %.15g', e_tot)
 
-    # Create initial photonic eigenvector guess for each mode
-    for a in range(mf.qed.nmodes):
-        mf.qed.boson_coeff[a] = mf.qed.update_boson_coeff(e_tot, dm, a)
 
     mo_energy, mo_coeff = cholesky_diag_fock_rao(mf, h1e + vhf)
     mo_occ = mf.get_occ(mo_energy, mo_coeff)
     dm = mf.make_rdm1(mo_coeff, mo_occ)
     #logger.debug(mf, "trace of ao_density: %.8f", numpy.trace(dm))
 
+    # Create initial photonic eigenvector guess(es)
     if mf.qed.use_cs:
         mf.qed.update_cs(dm)
+    mf.qed.update_boson_coeff(dm)
 
     mf.init_var_params(dm)
 
@@ -277,6 +276,11 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
         h1e = mf.get_hcore(mol, dm, dress=True)
         e_tot = mf.energy_tot(dm, h1e, vhf)
 
+        # Update photonic coefficients and compute photonic energy
+        mf.qed.update_cs(dm) # Update coherent state values
+        if mf.qed.use_cs == False:
+            mf.qed.update_boson_coeff(dm)
+
         # Here Fock matrix is h1e + vhf, without DIIS.  Calling get_fock
         # instead of the statement "fock = h1e + vhf" because Fock matrix may
         # be modified in some methods.
@@ -319,6 +323,11 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
         mo_occ = mf.get_occ(mo_energy, mo_coeff)
         dm, dm_last = mf.make_rdm1(mo_coeff, mo_occ), dm
         vhf = mf.get_veff(mol, dm, dm_last, vhf)
+
+        # Final update of photonic coefficients and energy
+        mf.qed.update_cs(dm) # Update coherent state values
+        if mf.qed.use_cs == False:
+            mf.qed.update_boson_coeff(dm)
 
         h1e = mf.get_hcore(mol, dm, dress=True)
         e_tot, last_hf_e = mf.energy_tot(dm, h1e, vhf), e_tot

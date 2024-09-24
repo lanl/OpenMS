@@ -319,7 +319,7 @@ class QEDAFQMC(AFQMC):
             self.cavity_mode = (
                 cavity_coupling * cavity_vec
             )  # To match with definition in qedhf.py -- I think coupling and vector should be separated.
-            self.NMODE = len(cavity_freq)
+            self.nmodes = len(cavity_freq)
             self.qedmf = QEDRHF(
                 self.mol, cavity_mode=self.cavity_mode, cavity_freq=self.cavity_freq
             )
@@ -333,7 +333,7 @@ class QEDAFQMC(AFQMC):
             )
 
             self.dipole_ao_polarized = []
-            for mode in range(self.NMODE):
+            for mode in range(self.nmodes):
                 self.dipole_ao_polarized.append(
                     self.photon.get_polarized_dipole_ao(mode)
                 )
@@ -445,6 +445,15 @@ class QEDAFQMC(AFQMC):
                 order_i + 1.0
             )
             self.walker_tensors += temp
+
+    def propagate_photon_hamiltonian( self ):
+        # Half-step photon propagation
+
+        # exp_Hph is diagonal in the Fock basis
+        waTa = np.einsum("m,F->mF", self.cavity_freq, np.arange(self.NFock)) # (NMode, NFock)
+        waTa = np.sum( waTa, axis=0 ) # (NFock)
+        evol_Hph = np.exp( -0.5 * self.dt * waTa ) # (NFock)
+        self.walker_tensors = np.einsum( "F,zFSaj->zFSaj", evol_Hph, self.walker_tensors )
 
     def propagation(self, h1e, F, ltensor):
         r"""

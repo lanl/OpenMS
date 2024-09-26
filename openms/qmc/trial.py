@@ -65,11 +65,11 @@ The summation over determinants in the second term can be performed via the aid 
 import sys
 from abc import abstractmethod
 from pyscf import tools, lo, scf, fci
+from openms.lib.boson import Boson
 from openms.mqed.qedhf import RHF as QEDRHF
 from pyscf.lib import logger
 import numpy as backend
 import h5py
-
 
 
 class TrialWFBase(object):
@@ -172,7 +172,8 @@ class TrialHF(TrialWFBase):
         self.psi = self.mf.mo_coeff
         # Nao * Na
         self.psi = xinv.dot(self.mf.mo_coeff[:, : self.mol.nelec[0]])
-        self.psi_boson = None
+
+        self.psi_b = None
         # self.boson_basis = "Fock"
 
     def ovlp_with_walkers(self, walkers):
@@ -416,6 +417,54 @@ class multiCI(TrialWFBase):
         # vbias += backend.einsum("npq,zqp->zn ", Ltensor, Gb)
 
         raise NotImplementedError("Force bias with MSD is not implemented yet.")
+
+
+
+# =====================================
+# define joint fermion-boson trial
+# =====================================
+from openms.qmc.trial_boson import *
+
+class trail_EPH(object):
+    def __init__(self, trial_e, trial_b):
+        self.trial_e = trial_e
+        self.trial_b = trial_b
+
+    def force_bias(self, walkers):
+        r"""compute the force bias"""
+
+        pass
+
+    def ovlp_with_walkers(self, walkers):
+        r"""compute the trial-walker overlap"""
+
+        pass
+
+def make_trial(mol, mf=None, **kwargs):
+    r"""make trial WF according to the options"""
+
+    if mf is not None:
+        print(f"Mean-field reference is {mf.__class__}")
+        trial = TrialHF(mol, mf=mf)
+    else:
+        print(f"Mean-field reference is None, we will build from RHF")
+        trial = TrialHF(mol)
+
+    if isinstance(mol, Boson):
+        # here, we temporarily append trial WF for boson into the trial
+
+        boson_size = sum(mol.nboson_states)
+        trial.psi_b = backend.zeros(boson_size)
+        trial.psi_b[:] = 1.0 / backend.sqrt(boson_size)
+
+        return trial
+    else:
+        return trial
+    # else:
+    #    raise ValueError(f"system type {mol.__class__} is supported!" +
+    #                    " A trial function must be provided!")
+
+    return trial
 
 
 # =====================================

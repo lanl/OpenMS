@@ -111,7 +111,7 @@ class AFQMC(qmc.QMCbase):
         r"""
         Dump flags
         """
-        print(f"\n========  AFQMC simulation using OpenMS package ========\n")
+        logger.note(self, f"\n========  AFQMC simulation using OpenMS package ========\n")
 
     def hs_transform(self, h1e):
         r"""
@@ -356,8 +356,7 @@ class QEDAFQMC(AFQMC):
             self.bilinear_factor = (
                 backend.sqrt(self.cavity_freq / 2) * self.cavity_coupling
             )
-            # FIXME: no 1/2 !
-            self.DSE_factor = self.cavity_coupling**2 / 2
+            self.DSE_factor = self.cavity_coupling**2
             self.MuQc = backend.einsum(
                 "m,FG,mab->FGab",
                 self.bilinear_factor,
@@ -429,6 +428,7 @@ class QEDAFQMC(AFQMC):
         energy = e1 + e2 + self.energy_nuc + ZPE + bilinear
 
         return energy
+
 
     def propagate_bilinear_coupling(self):
         # Full-step Bilinear propagation

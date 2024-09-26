@@ -24,12 +24,12 @@ import logging
 import time
 import warnings
 
-from openms.qmc.trial import TrialHF, TrialUHF
 from openms import runtime_refs, _citations
 from . import generic_walkers as gwalker
 from pyscf.lib import logger
 from openms.lib.logger import task_title
 from openms.lib.boson import Boson
+from openms.qmc.trial import make_trial
 from openms.qmc.estimators import local_eng_elec_chol
 from openms.qmc.estimators import local_eng_elec_chol_new
 
@@ -109,6 +109,7 @@ class QMCbase(object):
         taylor_order=6,
         energy_scheme=None,
         batched=False,
+        propagator_options = None,
         *args,
         **kwargs,
     ):
@@ -166,6 +167,21 @@ class QMCbase(object):
         self.batched = batched
 
         self.h1e_b = None  # TODO: optimize the handling of h1e_b
+        self.chol_Xa = None  # TODO: optimize the handling of this term
+        self.chol_bilinear = None  # TODO: optimize the handling of this term
+
+        # update propagator options
+        self.propagator_options = {
+            "verbose": self.verbose,
+            "stdout" : self.stdout,
+            "quantizaiton": "first",
+            "energy_scheme" : self.energy_scheme,
+            "talor_order" : self.taylor_order,
+        }
+
+        if propagator_options is not None:
+            self.propagator_options.update(propagator_options)
+
         self.build()  # setup calculations
 
     def build(self):
@@ -173,57 +189,49 @@ class QMCbase(object):
         Build up the afqmc calculations
         """
         # set up trial wavefunction
-        logger.info(self, task_title("Initialize Trial WF and Walker"))
+        logger.note(self, task_title("Initialize Trial WF and Walker"))
+
+        # make a trial_options for creating trail WF.
+        trial_options = {
+            "verbose": self.verbose,
+            "stdout": self.stdout,
+            "trail_type": "RHF",
+            "numdets": 1,
+        }
+
         self.spin_fac = 1.0
         if self.trial is None:
-            if self.mf is not None:
-                logger.info(self, f"Mean-field reference is {self.mf.__class__}")
-                self.trial = TrialHF(self.mol, mf=self.mf)
-            else:
-                logger.info(
-                    self, f"Mean-field reference is None, we will build from RHF"
-                )
-                self.trial = TrialHF(self.mol)
+            self.trial = make_trial(self.mol, mf=self.mf, **trial_options)
 
         # set up walkers
-        # moved this into walker class
-        # temp = self.trial.wf.copy()
-        # self.walker_tensors = backend.array([temp] * self.num_walkers, dtype=backend.complex128)
-        # self.walker_coeff = backend.array([1.] * self.num_walkers)
-        logger.info(self, task_title("Set up walkers"))
+        logger.note(self, task_title("Set up walkers"))
         self.walkers = gwalker.Walkers_so(nwalkers=self.num_walkers, trial=self.trial)
-        logger.info(self, "Done!")
+        logger.note(self, "Done!")
 
-        logger.info(self, task_title("Get integrals"))
+        logger.note(self, task_title("Get integrals"))
         self.h1e, self.eri, self.ltensor = self.get_integrals()
-        logger.info(self, "Done!")
+        logger.note(self, "Done!")
 
         # prepare the propagator
-        logger.info(self, task_title("preparing  propagator"))
+        logger.note(self, task_title("preparing  propagator"))
         if isinstance(self.system, Boson):
-            logger.info(
+            logger.note(
                 self,
                 "\nsystem is a electron-boson coupled system!"
                 + "\nPhaselessElecBoson propagator is to be used!\n",
             )
-            self.propagator = PhaselessElecBoson(
-                dt=self.dt,
-                taylor_order=self.taylor_order,
-                energy_scheme=self.energy_scheme,
-                quantization="first",
-            )
+            self.propagator = PhaselessElecBoson(self.dt, **self.propagator_options)
+            self.propagator.chol_bilinear = self.chol_bilinear
+            self.propagator.chol_Xa  = self.chol_Xa
         else:
-            logger.info(
+            logger.note(
                 self,
                 "\nsystem is a bare electronic system!"
                 + "\nPhaseless propagator is to be used!\n",
             )
-            self.propagator = Phaseless(
-                dt=self.dt,
-                taylor_order=self.taylor_order,
-                energy_scheme=self.energy_scheme,
-            )
+            self.propagator = Phaseless(dt=self.dt, **self.propagator_options)
         logger.info(self, "Done!")
+
         # FIXME: temporarily assign system to propgator as well
         # FIXME: need to decide how to handle access system from the propagation
         self.propagator.system = self.system
@@ -244,6 +252,7 @@ class QMCbase(object):
 
         import tempfile
 
+        # get h1e, and ori in OAO representation
         ftmp = tempfile.NamedTemporaryFile()
         tools.fcidump.from_mo(self.mol, ftmp.name, Xmat)
         h1e, eri, self.nuc_energy = read_fcidump(ftmp.name, norb)
@@ -254,7 +263,6 @@ class QMCbase(object):
         ltensor = u * backend.sqrt(s)
         ltensor = ltensor.T
         ltensor = ltensor.reshape(ltensor.shape[0], norb, norb)
-        self.nfields = ltensor.shape[0]
 
         if isinstance(self.system, Boson):
             system = self.system
@@ -265,22 +273,32 @@ class QMCbase(object):
             # bilinear_gmat = backend.zeros_like(system.gmat)
             # for im in range(system.nmodes):
             #    bilinar_gmat[im] = system.gmat[im] * system.couplings_bilinear[im]
-            chol_b = system.gmat.copy()
+            chol_eb = system.gmat.copy()
             # transform into OAO
             self.h1e_b = backend.einsum(
                 "ik, mkj,  jl-> mil", Xmat.T, h1e_b, Xmat, optimize=True
             )
-            chol_b = backend.einsum(
-                "ik, mkj, jl -> mil", Xmat.T, chol_b, Xmat, optimize=True
+            chol_eb = backend.einsum(
+                "ik, mkj, jl -> mil", Xmat.T, chol_eb, Xmat, optimize=True
             )
 
             logger.debug(self, f"size of chol before adding DSE: {ltensor.shape[0]}")
-            if backend.linalg.norm(chol_b) > 1.0e-10:
-                ltensor = backend.concatenate((ltensor, chol_b), axis=0)
+            if backend.linalg.norm(chol_eb) > 1.0e-10:
+                ltensor = backend.concatenate((ltensor, chol_eb), axis=0)
             logger.debug(self, f"size of chol after adding DSE:  {ltensor.shape[0]}")
+
+            # add terms due to decoupling of bilinear term
+            if self.propagator_options["decouple_bilinear"]:
+                logger.debug(self, f"creating chol due to decomposition of bilinear term")
+
+                # (1 + 1j) * \sqrt{\omega} (\lambda\cdot D)
+                tmp = (system.omega) ** 0.5 * (1.0 + 1j)
+                self.chol_bilinear = tmp * chol_eb
+                self.chol_Xa = tmp
 
         self.nfields = ltensor.shape[0]
         return h1e, eri, ltensor
+
 
     def propagate_walkers(self, walkers, xbar, ltensor):
         pass
@@ -425,7 +443,8 @@ class QMCbase(object):
 
         # setup propagator
         # self.build_propagator(h1e, eri, ltensor)
-        propagator.build(h1e, eri, ltensor, self.trial, self.h1e_b)
+        propagator.build(h1e, ltensor, self.trial, self.h1e_b)
+
 
         # start the propagation
         tt = 0.0

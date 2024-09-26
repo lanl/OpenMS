@@ -5,7 +5,7 @@ from pyscf import gto
 from openms.mqed import qedhf
 
 
-def compute_qedhf(p_occ=0, cs=False):
+def compute_qedhf(nfock=0, cs=False):
 
     itest = 0.0
     zshift = itest * 2.0
@@ -33,7 +33,7 @@ def compute_qedhf(p_occ=0, cs=False):
     cavity_mode = numpy.zeros((nmode, 3))
     cavity_mode[0, :] = 0.1 * numpy.asarray([0, 1, 0])
 
-    qedmf = qedhf.RHF(mol, omega=cavity_freq, vec=cavity_mode, nboson=p_occ, use_cs=cs)
+    qedmf = qedhf.RHF(mol, omega=cavity_freq, vec=cavity_mode, nboson_states=nfock, use_cs=cs)
     qedmf.max_cycle = 500
     qedmf.kernel()
 
@@ -44,18 +44,18 @@ class TestQEDHF(unittest.TestCase):
 
     def test_n_photon_convergence(self):
 
-        photon_n_list = range(0,8,1)
+        photon_n_list = range(1,9,1)
         ref_qed_e_tots = [-262.050746414733, -262.052856900157,
                           -262.052870889973, -262.052870927649,
                           -262.052870927716, -262.052870927716,
                           -262.052870927716, -262.052870927716]
 
         for n in photon_n_list:
-            e_tot = compute_qedhf(p_occ=n, cs=False)
+            e_tot = compute_qedhf(nfock=n, cs=False)
             err_msg = f"FOCK STATE : E_tot does not match the reference value for n_photon = {n}."
             self.assertAlmostEqual(e_tot, ref_qed_e_tots[n], places=6, msg=err_msg)
 
-            e_tot = compute_qedhf(p_occ=n, cs=True)
+            e_tot = compute_qedhf(nfock=n, cs=True)
             err_msg = f"COHERENT STATE : E_tot does not match the reference value for n_photon = {n}."
             self.assertAlmostEqual(e_tot, ref_qed_e_tots[-1], places=6, msg=err_msg)
 

@@ -15,16 +15,15 @@
 #          Ilia Mazin <imazin@lanl.gov>
 #
 
+from typing import Union, List
 import numpy
 from scipy import linalg
-
-from openms.mqed import qedhf, scqedhf, vtqedhf
-
 from pyscf import lib
 from pyscf import gto
 from pyscf.lib import logger
 from openms.lib.ov_blocks import one_e_blocks, block_diag
 from openms.lib.ov_blocks import two_e_blocks, two_e_blocks_full
+from openms.mqed import qedhf, scqedhf, vtqedhf
 
 
 def get_bosonic_Ham(nmodes, nboson_states, omega, za, Fa):
@@ -337,8 +336,11 @@ class Boson(object):
     """
 
     def __init__(
-        self, mol, omega, vec, gfac=None,
-        nboson=0, add_nuc_dipole=True, **kwargs):
+        self, mol, mf, omega, vec, gfac=None,
+        nboson_states: Union[int, List[int]] = 1,
+        add_nuc_dipole=True,
+        **kwargs
+    ):
 
         # PySCF molecule object
         self._mol = None
@@ -376,6 +378,8 @@ class Boson(object):
             else:
                 self.origin_shift = o_shift.copy()
                 del (o_shift)
+
+        self._mf = mf
 
         # Determines if QED-OEI contribution constructed from
         # quadrupole moment matrix or product of dipole moment matrices
@@ -451,8 +455,9 @@ class Boson(object):
 
             self.vec = vec.copy()
 
+        nboson = nboson_states
         # Cavity mode photon occupation numbers
-        self.nboson = numpy.zeros(self.nmodes, dtype=int)
+        self.nboson = numpy.ones(self.nmodes, dtype=int)
 
         # Photon occupation specified by integer or list of integers
         if isinstance(nboson, int): # same occupation for all modes
@@ -573,7 +578,7 @@ class Boson(object):
             photon mode density matrix
         """
 
-        mdim = self.nboson[mode] + 1
+        mdim = self.nboson[mode]
         idx = 0
         if mode > 0:
             idx = sum(self.nboson[:mode])  + mode
@@ -623,6 +628,9 @@ class Boson(object):
             has only diagonal terms.
             :math:`\hat{H}_{\tt{photon}}=\sum_{\al}\om_{\al}\cb{\al}\ab{\al}`
 
+
+        In the VSQ representation: (TBA)
+
         Parameters
         ----------
         eref : float
@@ -642,7 +650,7 @@ class Boson(object):
         # ph_e_tot = 0.0
 
         # for a in range(self.nmodes):
-        #     mdim = self.nboson[a] + 1
+        #     mdim = self.nboson[a]
 
         #     # Diagonal terms
         #     hmat = numpy.diag(self.omega[a] * numpy.arange(mdim))
@@ -669,7 +677,6 @@ class Boson(object):
         #         coeff_term = numpy.conj(h_evec[n, 0]) * h_evec[n, 0]
         #         mode_e_tot += self.omega[a] * n * coeff_term
         #     ph_e_tot += mode_e_tot # add to total photon energy
-
         # self.e_boson = ph_e_tot
 
         # we assume noninteracting bosons at this moment
@@ -677,30 +684,33 @@ class Boson(object):
         za *= self.couplings_res * numpy.sqrt(self.omega/2.0) # only consider the residual part
 
         Fa = self.squeezed_var
-        nboson_states = [n + 1 for n in self.nboson]
-        hmat = get_bosonic_Ham(self.nmodes, nboson_states, self.omega, za, Fa)
+        hmat = get_bosonic_Ham(self.nmodes, self.nboson_states, self.omega, za, Fa)
 
         # Photon cavity mode eigenvectors
-        h_evec = self._mf.eig(hmat, numpy.eye(sum(nboson_states)))[1]
+        # h_evec = self._mf.eig(hmat, numpy.eye(sum(nboson_states)))[1]
+        e, c = scipy.linalg.eigh(hmat)
+        idx = numpy.argmax(abs(c.real), axis=0)
+        e = e[idx]
+        c[:,c[idx,numpy.arange(len(e))].real<0] *= -1
 
         # Photon ground state energy
-        mode_e_tot = 0.0
+        Etot = 0.0
+        # we did't include ZPE here
         idx = 0
         for imode in range(self.nmodes):
-            mdim = self.nboson[imode] + 1
+            mdim = self.nboson_states[imode]
             sinh2r = numpy.sinh(2.0 * Fa[imode])
             cosh2r = numpy.cosh(2.0 * Fa[imode])
 
-            p = h_evec[idx:idx+mdim,0].conj() * h_evec[idx:idx+mdim,0]
+            p = c[idx:idx+mdim,0].conj() * c[idx:idx+mdim,0]
             nw = (numpy.arange(mdim) + 0.5) * cosh2r - 0.5
             nw_grad = (numpy.arange(mdim) + 0.5) * sinh2r * 2.0
-            mode_e_tot += self.omega[imode] * numpy.dot(p, nw)
+            Etot += self.omega[imode] * numpy.dot(p, nw)
             self.e_boson_grad_r[imode] = self.omega[imode] * numpy.dot(p, nw_grad)
             idx += mdim
 
-        self.e_boson = mode_e_tot
-        self.boson_coeff = h_evec
-
+        self.e_boson = Etot
+        self.boson_coeff = c
         return self
 
 
@@ -911,12 +921,9 @@ class Boson(object):
 
 class Photon(Boson):
     r"""Photon subclass."""
-    def __init__(
-        self, mol, omega, vec, gfac=None,
-        nboson=0, add_nuc_dipole=True, shift=False, **kwargs):
+    def __init__(self, *args, **kwargs):
 
-        super().__init__(
-                mol, omega, vec, gfac, nboson, add_nuc_dipole, **kwargs)
+        super().__init__(*args, **kwargs)
 
         self.gmat = None
         self.q_lambda_ao = None
@@ -964,7 +971,7 @@ class Photon(Boson):
 
 
     def get_dse_hcore(self, dm=None, s1e=None, residue=False):
-        r"""Compute QED-RHF DSE-mediated 1e- integrals.
+        r"""Compute QED-RHF boson-mediated 1e- integrals.
 
         Regardless of Fock basis or coherent-state (CS) representation,
         return quadrupole-modified OEI contribution, which arises
@@ -1042,7 +1049,8 @@ class Photon(Boson):
             DSE-mediated OEI for all photon modes.
         """
 
-        if s1e is None: s1e = self._mf.get_ovlp(self._mol)
+        if s1e is None:
+            s1e = self._mf.get_ovlp(self._mol)
 
         # Always shift OEI with photon ground state energy
         dse_oei = self.e_boson * s1e / self.nelectron
@@ -1051,7 +1059,7 @@ class Photon(Boson):
         g_dse = numpy.ones(self.nmodes) if not residue else \
                 (self.couplings_res ** 2)
 
-        if self.complete_basis == True:
+        if self.complete_basis:
             dse_oei -= 0.5 * lib.einsum("X, Xpq-> pq", g_dse, self.q_lambda_ao)
         else:
             s_eval, s_evec = linalg.eigh(s1e)
@@ -1283,7 +1291,7 @@ class Photon(Boson):
 
     def get_bdag_plus_b_sq_expval(self, mode):
 
-        mdim = self.nboson[mode] + 1
+        mdim = self.nboson[mode]
 
         h_diag = numpy.diag(2 * numpy.arange(mdim))
         pdm = self.get_boson_dm(mode)
@@ -1292,7 +1300,7 @@ class Photon(Boson):
 
     def get_bdag_minus_b_expval(self, mode):
 
-        mdim = self.nboson[mode] + 1
+        mdim = self.nboson[mode]
 
         h_od = numpy.diag(numpy.sqrt(numpy.arange(1, mdim)), k = 1) \
                + numpy.diag(numpy.sqrt(numpy.arange(1, mdim)), k = -1)
@@ -1349,7 +1357,7 @@ class Photon(Boson):
 
         # add DSE-oei contribution
         if not self.shift:
-            h1 += self.add_dse_hcore(self.pa+self.pb)
+            h1 += self.get_dse_hcore(self.pa+self.pb)
 
         ptot = block_diag(self.pa, self.pb)
         h1 = block_diag(h1, h1)
@@ -1572,8 +1580,8 @@ if __name__ == "__main__":
     mf = hf.run()
 
     for i in range(nmodes):
-        g_wx = hf.qed.get_geb_ao(i)
-        print("e-ph coupling matrix of mode ", i, "is \n", g_wx)
+        g_eb = hf.qed.get_geb_ao(i)
+        print("e-ph coupling matrix of mode ", i, "is \n", g_eb)
 
     # get I
     I = hf.qed.get_I()

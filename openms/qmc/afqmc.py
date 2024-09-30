@@ -455,6 +455,7 @@ class QEDAFQMC(AFQMC):
         evol_Hph = np.exp( -0.5 * self.dt * waTa ) # (NFock)
         self.walker_tensors = np.einsum( "F,zFSaj->zFSaj", evol_Hph, self.walker_tensors )
 
+
     def propagation(self, h1e, F, ltensor):
         r"""
         Ref: https://www.cond-mat.de/events/correl13/manuscripts/zhang.pdf

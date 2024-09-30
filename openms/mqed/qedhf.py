@@ -409,6 +409,7 @@ class RHF(scf.hf.RHF):
         self.bare_h1e = None
         self.qed = None
 
+        cavity_options = kwargs
         if qed is None:
 
             qed_req_args = ["omega", "vec"]
@@ -419,7 +420,7 @@ class RHF(scf.hf.RHF):
                 raise ValueError(err_msg)
 
             else:
-                self.qed = boson.Photon(mol, **kwargs)
+                self.qed = boson.Photon(mol, mf=self, **kwargs)
 
         elif qed is not None and (not isinstance(qed, boson.Boson)):
             err_msg = f"The 'qed' parameter is not an " + \
@@ -431,7 +432,21 @@ class RHF(scf.hf.RHF):
             self.qed = qed
 
         # Update QED object
-        self.qed.update_mean_field(self, **kwargs)
+        # self.qed.update_mean_field(self, **kwargs)
+
+        # update the setting according to each specific MF
+        # couplings_var should be zero in QEDHF
+        qed.couplings_var = numpy.zeros(qed.nmodes)
+        qed.update_couplings()
+
+        self.qed = qed
+
+        # make dipole matrix in AO
+        #self.make_dipolematrix() # replaced by qed functions
+
+        self.qed.get_gmatao()
+        self.qed.get_q_dot_lambda()
+        self.gmat = self.qed.gmat
 
 
     def get_oei_AO(self):

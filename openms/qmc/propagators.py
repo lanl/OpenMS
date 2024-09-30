@@ -27,7 +27,7 @@ class PropagatorBase(ABC):
         self.mf_shift = None
 
     # @abstractmethod
-    def build(self, h1e, ltensor, trial, h1e_b=None):
+    def build(self, h1e, ltensor, trial, geb=None):
         r"""Build the propagators and intermediate variables
 
         Note the Hamiltonain in QMC format (with MF shift) is:
@@ -71,7 +71,6 @@ class PropagatorBase(ABC):
         self.TL_tensor = backend.einsum("pr, npq->nrq", trial.psi.conj(), ltensor)
         self.exp_h1e = scipy.linalg.expm(-self.dt / 2 * shifted_h1e)
         self.shifted_h1e = shifted_h1e
-        self.h1e_b = h1e_b
 
         # logger.debug(self, "norm of shifted_h1e: %15.8f", backend.linalg.norm(shifted_h1e))
         # logger.debug(self, "norm of TL_tensor:   %15.8f", backend.linalg.norm(self.TL_tensor))
@@ -196,7 +195,7 @@ class Phaseless(PropagatorBase):
             W^{(n+1)}_k = W^{(n)}_k \frac{\langle \Psi_T\ket{\psi^{(n+1)}_w}}
                             {\langle \Psi_T\ket{\psi^{(n)}_w}}N_I(\boldsymbol(x)_w)
 
-        We use :math:`R` denotes the overlap ration, and :math:`N_I=\exp[xF - F^2]`. Hence
+        We use :math:`R` denotes the overlap ratio, and :math:`N_I=\exp[xF - F^2]`. Hence
 
         .. math::
 
@@ -362,7 +361,7 @@ class PhaselessElecBoson(Phaseless):
         super().__init__(dt, **kwargs)
         self.boson_quantization = kwargs.get("quantization", "second")
         self.decouple_bilinear = kwargs.get("decouple_bilinear", False)
-        self.h1e_b  = None # bilinear coupling term (without decomposition)
+        self.geb  = None # bilinear coupling term (without decomposition)
 
     def dump_flags(self):
         super().dump_flags()
@@ -370,7 +369,7 @@ class PhaselessElecBoson(Phaseless):
         logger.note(self, f"quantization of boson:     {self.boson_quantization}")
         logger.note(self, task_title("")+"\n")
 
-    def build(self, h1e, ltensor, trial, h1e_b=None):
+    def build(self, h1e, ltensor, trial, geb=None):
         r"""The QMC Hamiltonian of the coupled electron-boson system is
         (We consider DSE in the general form, we can simply set DSE to be
         zero for the cases without DSE terms)
@@ -403,6 +402,7 @@ class PhaselessElecBoson(Phaseless):
 
         super().build(h1e, ltensor, trial)
 
+        self.geb = geb
         # if we decouple the bilinear term
         if self.decouple_bilinear:
             nmodes = self.system.nmodes
@@ -412,8 +412,6 @@ class PhaselessElecBoson(Phaseless):
             rho_mf = trial.psi.dot(trial.psi.T.conj())
             mf_shift = 1j * backend.einsum("npq,pq->n", self.chol_bilinear, rho_mf)
             self.shifted_h1e -= backend.einsum("n, npq->pq", mf_shift, 1j * self.chol_bilinear)
-        else:
-            self.h1e_b = h1e_b
 
     def propagate_walkers_twobody_1st(self, walkers, trial):
         r"""Propagate by potential term using discrete HS transform."""
@@ -461,9 +459,9 @@ class PhaselessElecBoson(Phaseless):
 
         oei = backend.zeros(self.shifted_h1e.shape)
 
-        if not self.decouple_bilinear and self.h1e_b is not None:
+        if not self.decouple_bilinear and self.geb is not None:
             zlambda = backend.einsum("pq, Xpq ->X", self.DM, self.system.gmat)
-            oei = backend.einsum("n, npq->pq", zlambda, self.h1e_b)
+            oei = backend.einsum("n, npq->pq", zlambda, self.geb)
 
         shifted_h1e = self.shifted_h1e + oei
         self.exp_h1e = scipy.linalg.expm(-self.dt / 2 * shifted_h1e)

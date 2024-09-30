@@ -18,6 +18,11 @@ def get_wfn(weights, psiw):
     return wfn / backend.sqrt(norm)
 
 
+def bosonic_GF(T, W):
+    r""" compute the bosonic green's function"""
+    # TODO
+    pass
+
 def GF(T, W):
     r"""
     Compute one-body Green's function (Eqns. 65-66 of Ref. :cite:`zhang2021jcp`):
@@ -58,8 +63,18 @@ def GF_so(T, W, na, nb):
     return backend.array([Gfa, Gfb]), [Gfa_half, Gfb_half]
 
 
-def local_eng_e_boson(h1e, eri, gmat, mass, freq, Gf, Q, laplacian, spin_fac=0.5):
+def local_eng_eb_2nd(h1e, chols, geb, freq, Gf, Gb, spin_fac=0.5):
+    r"""compute the local enegy of the coupled electron-boson system
+    in the second quantizaiton format
+    """
+    nao = h1e.shape[1]
+
+    E_elec = local_eng_elec_chol_new(h1e, ltensor, Gf, spin_fac)
+
+
+def local_eng_eb_1st(h1e, eri, gmat, mass, freq, Gf, Q, laplacian, spin_fac=0.5):
     r"""Compute the local energy of coupled electron-boson system
+    in the firstquantizaiton format
 
     Args:
 
@@ -96,7 +111,12 @@ def local_eng_e_boson(h1e, eri, gmat, mass, freq, Gf, Q, laplacian, spin_fac=0.5
     return [etot, E_electron, E_boson, e_eb]
 
 
-def local_eng_boson(nao, mass, freq, Q):
+def local_eng_boson_2nd(freq, nfock, Gb):
+    r"""compute local energy of bosons in 2nd quantizaiton"""
+    pass
+
+
+def local_eng_boson_1st(nao, mass, freq, Q):
     r"""Compute local energy of bosons in 1st quantization"""
 
     kin = -0.5 * backend.sum(Lap) / mass - 0.5 * freq * nao

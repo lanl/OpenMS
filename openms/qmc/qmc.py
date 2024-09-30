@@ -166,7 +166,7 @@ class QMCbase(object):
         self.hybrid_energy = None
         self.batched = batched
 
-        self.h1e_b = None  # TODO: optimize the handling of h1e_b
+        self.geb = None  # TODO: optimize the handling of geb
         self.chol_Xa = None  # TODO: optimize the handling of this term
         self.chol_bilinear = None  # TODO: optimize the handling of this term
 
@@ -268,20 +268,16 @@ class QMCbase(object):
             system = self.system
             # Add boson-mediated oei and eri:
             # shape [nm, nao, nao]
-            tmp = (system.omega * 0.5) ** 0.5
-            h1e_b = system.gmat * tmp[:, backend.newaxis, backend.newaxis]
-            # bilinear_gmat = backend.zeros_like(system.gmat)
-            # for im in range(system.nmodes):
-            #    bilinar_gmat[im] = system.gmat[im] * system.couplings_bilinear[im]
+
             chol_eb = system.gmat.copy()
             # transform into OAO
-            self.h1e_b = backend.einsum(
-                "ik, mkj,  jl-> mil", Xmat.T, h1e_b, Xmat, optimize=True
-            )
             chol_eb = backend.einsum(
                 "ik, mkj, jl -> mil", Xmat.T, chol_eb, Xmat, optimize=True
             )
 
+            # geb is the bilinear coupling term
+            tmp = (system.omega * 0.5) ** 0.5
+            self.geb = chol_eb * tmp[:, backend.newaxis, backend.newaxis]
             logger.debug(self, f"size of chol before adding DSE: {ltensor.shape[0]}")
             if backend.linalg.norm(chol_eb) > 1.0e-10:
                 ltensor = backend.concatenate((ltensor, chol_eb), axis=0)
@@ -292,9 +288,8 @@ class QMCbase(object):
                 logger.debug(self, f"creating chol due to decomposition of bilinear term")
 
                 # (1 + 1j) * \sqrt{\omega} (\lambda\cdot D)
-                tmp = (system.omega) ** 0.5 * (1.0 + 1j)
-                self.chol_bilinear = tmp * chol_eb
-                self.chol_Xa = tmp
+                self.chol_bilinear = self.geb * (1.0 + 1j)
+                self.chol_Xa = (system.omega) ** 0.5 * (1.0 + 1j)
 
         self.nfields = ltensor.shape[0]
         return h1e, eri, ltensor
@@ -443,7 +438,7 @@ class QMCbase(object):
 
         # setup propagator
         # self.build_propagator(h1e, eri, ltensor)
-        propagator.build(h1e, ltensor, self.trial, self.h1e_b)
+        propagator.build(h1e, ltensor, self.trial, self.geb)
 
 
         # start the propagation

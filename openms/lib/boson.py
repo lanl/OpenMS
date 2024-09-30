@@ -379,7 +379,6 @@ class Boson(object):
                 self.origin_shift = o_shift.copy()
                 del (o_shift)
 
-        self._mf = mf
 
         # Determines if QED-OEI contribution constructed from
         # quadrupole moment matrix or product of dipole moment matrices
@@ -505,33 +504,53 @@ class Boson(object):
                 self.use_cs = False
                 self.z_alpha = z_a.copy()
 
+        if self.use_cs:
+            logger.info(self, "CS basis for photon is used")
+        else:
+            logger.info(self, "Fock basis for photon is used")
+
+        if "couplings_var" in kwargs:
+            self.couplings_var = kwargs["couplings_var"]
+            self.optimize_varf = False
+        else:
+            self.optimize_varf = True
+            self.couplings_var = 0.5 * numpy.ones(self.nmodes)
+
+        self.squeezed_cs = kwargs.get("squeezed_cs", False)
+        self.optimize_vsq = kwargs.get("optimize_vsq", False)
+        self.squeezed_var = numpy.zeros(self.nmodes)
+        if "squeezed_var" in kwargs:
+            self.optimize_vsq = False
+            self.squeezed_var = kwargs["squeezed_var"]
+
         # Pre-factors of PF Hamiltonian components from coupling strengths
         self.couplings = numpy.asarray(self.gfac, dtype=float)
         self.couplings_bilinear = numpy.zeros(self.nmodes, dtype=float)
         self.couplings_self = numpy.zeros(self.nmodes, dtype=float)
         self.e_boson_grad_r = numpy.zeros(self.nmodes, dtype=float)
+        self.couplings_res = numpy.zeros(self.nmodes, dtype=float)
 
         for a in range(self.nmodes):
-            self.couplings_bilinear[a] = (self.couplings[a]
-                                          * numpy.sqrt(0.5 * self.omega[a]))
+            self.couplings_bilinear[a] = (
+                self.couplings[a] * numpy.sqrt(0.5 * self.omega[a])
+            )
+            self.couplings_res[a] = 1.0 - self.couplings_var[a]
             self.couplings_self[a] = 0.5 * self.couplings[a] ** 2
 
         # Variational attributes (default : QED-HF)
         self.optimize_varf = False
-        self.couplings_var = numpy.zeros(self.nmodes, dtype=float)
-        self.couplings_res = numpy.ones(self.nmodes, dtype=float)
-        self.squeezed_var = numpy.zeros(self.nmodes)
-        self.optimize_vsq = kwargs.get("optimize_vsq", False)
 
         # Boson info
         self.boson_type = self.__class__.__name__
         self.cavity_type = None
-        self.boson_coeff = [None] * self.nmodes
+        boson_size = sum(self.nboson_states)
+        self.boson_coeff = numpy.zeros((boson_size, boson_size))
+        self.boson_coeff[:, 0] = 1.0/numpy.sqrt(boson_size)
         self.e_boson = 0.0
 
         # Mean-field info
-        self._mf = None
-        self.nao = None
+        self._mf = mf
+        self.nao = self._mol.nao_nr()
         self.dipole_ao = None
         self.quadrupole_ao = None
 
@@ -564,7 +583,7 @@ class Boson(object):
     # General boson methods
     # ---------------------
 
-    def get_boson_dm(self, mode):
+    def get_boson_dm(self, mode=None):
         r"""Return photon ``mode`` density matrix.
 
         Parameters
@@ -577,6 +596,10 @@ class Boson(object):
         :class:`~numpy.ndarray`
             photon mode density matrix
         """
+
+        if mode is None:
+            bc = self.boson_coeff[:, 0].copy()
+            return numpy.outer(numpy.conj(bc), bc)
 
         mdim = self.nboson[mode]
         idx = 0

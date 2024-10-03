@@ -74,18 +74,14 @@ __logo__ = r"""
 _citations = {}
 _citations["openms"] = textwrap.dedent(f"""\
 {" " * 4} Y. Zhang and I.M. Mazin. \"OpenMS: A multi-scale ecosystem for
-{" " * 4} solving coupled Maxwell-Schroedinger equations in open quantum
-{" " * 4} environments.\"
+{" " * 4} Maxwell-Schroedinger equations in open quantum environments.\"
 {" " * 6} {r'https://github.com/lanl/OpenMS'}
 """)
 
-_citations["pccp2023"] = textwrap.dedent(f"""\
-{" " * 4} B.M. Weight, X. Li, Y. Zhang. \"Theory and modeling of light-matter
-{" " * 4} interactions in chemistry: current and future\",
-{" " * 6} Phys. Chem. Chem. Phys., 25, 3154 (2023).
-""")
-
 _citations["scqedhf"] = textwrap.dedent(f"""\
+{" " * 4} X. Li and Y. Zhang, \"First-principles molecular quantum electrodynamics
+{" " * 4} theory at all coupling strengths\",
+{" " * 6} {r'https://arxiv.org/abs/2310.18228'}
 """)
 
 _citations["vsq_qedhf"] = textwrap.dedent(f"""\
@@ -98,9 +94,19 @@ _citations["vtqedhf"] = textwrap.dedent(f"""\
 {" " * 6} {r'https://arxiv.org/abs/2310.18228'}
 """)
 
+_citations["pccp2023"] = textwrap.dedent(f"""\
+{" " * 4} B.M. Weight, X. Li, Y. Zhang. \"Theory and modeling of light-matter
+{" " * 4} interactions in chemistry: current and future\",
+{" " * 6} Phys. Chem. Chem. Phys., 25, 3154 (2023).
+""")
+
 _citations["pra2024"] = textwrap.dedent(f"""\
 {" " * 4} BM Weight, S Tretiak, Y Zhang, Diffusion quantum Monte Carlo approach to the
 {" " * 4}     polaritonic ground state. Phys. Rev. A 109, 032804 (2024).
+""")
+
+_citations["afqmc2024"] = textwrap.dedent(f"""\
+{" " * 4} BM Weight, Y Zhang, TBA.
 """)
 
 # Empty list store the citation info for each job
@@ -159,10 +165,11 @@ from . import maxwell
 from . import models
 from . import mqed
 from . import oqs
-from . import qmd
 from . import solvers
-from . import spindy
 
 # Whether to enable debug mode. When this flag is set, some modules may run
 # extra debug code.
 DEBUG = __config__.DEBUG
+
+from openms import spindy
+from openms import qmd

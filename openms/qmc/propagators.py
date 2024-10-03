@@ -6,10 +6,16 @@ import scipy
 from openms.lib.logger import task_title
 from abc import abstractmethod, ABC
 
-class PropagatorBase(ABC):
+class PropagatorBase(object):
+    r"""Base propagator class
 
-    r"""
-    Base propagator class
+    Basic function of propagator:
+
+        - **build**: Used to build the intermediate variables that are not changing during the random walking.
+        - **propagate_walkers**: Main function to propagate the walkers.
+        - **propagate_walkers_onebody**: Propagate the one-body term.
+        - **propagate_walkers_twobody**: Propagate the two-body term.
+
     """
 
     def __init__(self, dt=0.01, **kwargs):
@@ -97,6 +103,9 @@ class PropagatorBase(ABC):
         pass
 
 
+from openms.qmc.estimators import local_eng_elec_chol
+from openms.qmc.estimators import local_eng_elec_chol_new
+
 class Phaseless(PropagatorBase):
     r"""
     HS-transformation based AFQMC propagators
@@ -105,6 +114,12 @@ class Phaseless(PropagatorBase):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+
+    def compute_local_energies(self, TL_theta, h1e, vbias, gf):
+        r"""compute local energies"""
+        # eloc = local_eng_elec_chol_new(h1e, ltensor, gf)
+        return local_eng_elec_chol(TL_theta, h1e, vbias, gf)
 
     def propagate_walkers_onebody(self, phiw):
         r"""Propgate one-body term"""
@@ -435,6 +450,10 @@ class PhaselessElecBoson(Phaseless):
 
         where :math:`g_{\alpha, pq} = \bra{p} \boldsymbol{\lambda}_\alpha\cdot\boldsymbol{D} \ket{q}`
         and :math:`Q_\alpha = \sqrt{\frac{1}{2\omega_\alpha}}(b^\dagger_\alpha + b_\alpha)`.
+
+        b) decoupling the bilinear term:
+
+
         """
 
         super().build(h1e, ltensor, trial)
@@ -468,6 +487,7 @@ class PhaselessElecBoson(Phaseless):
             System object.
         trial :
             Trial wavefunction object.
+
 
         step 1) is to compute shifted_h1e with contribution from bilinear coupling as
 
@@ -503,6 +523,18 @@ class PhaselessElecBoson(Phaseless):
         shifted_h1e = self.shifted_h1e + oei
         self.exp_h1e = scipy.linalg.expm(-self.dt / 2 * shifted_h1e)
         return backend.einsum("pq, zqr->zpr", self.exp_h1e, phiw)
+
+    def propagate_decoupled_bilinear(self, trial, walkers):
+        r"""Propagate the bilinear term in decoupled formalism
+
+        Any coupling between the fermions and bosons can be decoupled as
+
+        .. math::
+
+            \hat{O}_f\hat{O}_b = \frac{1}{2}\left[(\hat{O}_f + \hat{O}_b)^2 -
+            \hat{O}^2_f - \hat{O}^2_b\right].
+        """
+        pass
 
     def propagate_bosons(self, trial, walkers):
         r"""
@@ -555,6 +587,7 @@ class PhaselessElecBoson(Phaseless):
 
         """
 
+        # note geb already has sqrt(w/2)
         nmodes = self.system.nmodes
         # FIXME: need to transform gmat into OAO
         zlambda = backend.einsum("pq, Xpq ->X", self.DM, self.system.gmat)
@@ -563,15 +596,14 @@ class PhaselessElecBoson(Phaseless):
             zlambda *= self.chol_Xa
 
         boson_size = sum(self.system.nboson_states)
-        Hb = backend.zeros((boson_size, boson_size))
-        idx = 0
-        for imode in range(nmodes):
-            mdim = self.system.nboson_states[imode]
-            a = backend.diag(backend.sqrt(backend.arange(1, mdim)), k = 1)
-            h_od = a + a.T
-            Hb[idx:idx+mdim, idx:idx+mdim] = h_od * zlambda[imode]
+        Hb = backend.zeros((boson_size, boson_size), dtype=backend.complex128)
 
         if self.decouple_bilinear:
+            idx = 0
+            for imode in range(nmodes):
+                mdim = self.system.nboson_states[imode]
+                a = backend.diag(backend.sqrt(backend.arange(1, mdim)), k = 1)
+                h_od = (a + a.T) * (0.5 / self.system.omega[imode]) ** 0.5
 
             xi = backend.random.normal(0.0, 1.0, walkers.nwalkers)
             tau = 1j * backend.sqrt(self.dt)
@@ -581,7 +613,15 @@ class PhaselessElecBoson(Phaseless):
             for order_i in range(self.taylor_order):
                 temp = backend.einsum("zNM, zM->zN", op_power, temp) / (order_i + 1.0)
                 walkers.phiw_b += temp
+
         else:
+            zlambda = backend.einsum("pq, Xpq ->X", self.DM, self.geb)
+            idx = 0
+            for imode in range(nmodes):
+                mdim = self.system.nboson_states[imode]
+                a = backend.diag(backend.sqrt(backend.arange(1, mdim)), k = 1)
+                h_od = a + a.T
+                Hb[idx:idx+mdim, idx:idx+mdim] = h_od * zlambda[imode]
 
             # exp(-\sqrt{w/2} g c^\dag_i c_j (b^\dag + b)) | n>
             evol_Hep = backend.exp(-self.dt * Hb)
@@ -622,7 +662,7 @@ class PhaselessElecBoson(Phaseless):
         ltmp = ltensor.copy()
         # 3b) add the contribution due to the decomposition of bilinear term
         #if self.decouple_bilinear:
-        #    ltmp = backend.concatenate((ltmp, chol_bilinear), axis=0)
+        #    ltmp = backend.concatenate((ltmp, self.chol_bilinear), axis=0)
         cfb, cmf = self.propagate_walkers_twobody(trial, walkers, vbias, ltmp)
         del ltmp
 

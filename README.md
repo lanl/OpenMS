@@ -20,7 +20,6 @@ Here, Open = open quantum system, open source, open science, etc., you name it.
 ## Authors:
 
 [Yu Zhang](mailto:zhy@lanl.gov)
-[Ilia Mazin](mailto:imazin@lanl.gov)
 
 ## Features:
 

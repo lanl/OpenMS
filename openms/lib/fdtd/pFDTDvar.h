@@ -8,8 +8,8 @@ float shift;
 long t;
 
 /* variables used for separating the vertical loss and the horizontal loss */
-float Sumx,Sumy,Sumz,SideSumx,SideSumy,SumUpper,SumLower;
+float Sumx, Sumy, Sumz, SideSumx, SideSumy, SumUpper, SumLower;
 
 /*variables for GSL random number generator*/
-const gsl_rng_type * rng_type;
-gsl_rng * rng_r;
+const gsl_rng_type *rng_type;
+gsl_rng *rng_r;

@@ -181,9 +181,6 @@ def kernel(
         mf_diis.space = mf.diis_space
         mf_diis.rollback = mf.diis_space_rollback
 
-        # We get the used orthonormalized AO basis from any old eigendecomposition.
-        # Since the ingredients for the Fock matrix have already been built, we can
-        # just go ahead and use it to determine the orthonormal basis vectors.
         fock = mf.get_fock(h1e, s1e, vhf, dm)
         _, mf_diis.Corth = mf.eig(fock, s1e)
     else:
@@ -544,8 +541,6 @@ class RHF(hf.RHF):
 
             # DSE-mediated K
             vk_dse[i] += lib.einsum("Xpr, Xqs, rs -> pq", gtmp, gtmp, dm[i])
-            #gdm = lib.einsum("Xqs, rs -> Xqr", gtmp, dm)
-            #vk += lib.einsum("Xpr, Xqr -> pq", gtmp, gdm)
 
         vj = vj_dse.reshape(dm_shape)
         vk = vk_dse.reshape(dm_shape)
@@ -740,9 +735,6 @@ class RHF(hf.RHF):
 
         cput0 = (logger.process_clock(), logger.perf_counter())
 
-        #if dm0 is None:
-        #    dm0 = self.get_init_guess(self.mol, self.init_guess)
-
         self.dump_flags()
         self.build(self.mol)
 
@@ -853,9 +845,6 @@ class RHF(hf.RHF):
     def update_var_params(self):
         r"""Template method to update SC/VT-QED-HF variational parameters."""
         pass
-
-    # below are deprecated functions which are to be removed
-    # in furture release
 
 
 class RKS(rks.KohnShamDFT, RHF):

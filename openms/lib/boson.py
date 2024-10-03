@@ -31,14 +31,6 @@ def get_bosonic_Ham(nmodes, nboson_states, omega, za, Fa):
     r"""Construct Bosonic Hamiltonian in different representation
     after integrating out the electronic DOF.
 
-    TODO: Finish constructing the Hb matrix in different representation:
-
-        - Fock/CS representation.
-        - FIXME: squeezed coherent state :math:`S(F)D(z)\ket{0}`
-        - FIXME: Displaced squeezed state :math:`D(z)S(F)\ket{0}`
-        - FIXME: Squeezed LF :math:`S(F) D(\hat{f})\ket{0}`
-        - FIXME: LF squeezed :math:`D(\hat{f})S(F) \ket{0}`
-
     Bosonic Hamiltonain after integrating out the electronic DOF:
 
     .. math::
@@ -561,8 +553,6 @@ class Boson(object):
         # self.shift = shift
 
         # ------------------------------------
-        # TODO: reorganize the following
-        # get molecular attributes
         self.spin = mol.spin
         self.intor = mol.intor
         self.symmetry = mol.symmetry

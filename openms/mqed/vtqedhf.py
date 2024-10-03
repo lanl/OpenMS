@@ -205,7 +205,6 @@ class RHF(scqedhf.RHF):
         tmp = tau / self.qed.omega[imode]
         ph_exp_val = 0.0 # self.qed.get_bdag_plus_b_sq_expval(imode)
         derivative = -numpy.exp(-0.5 * (tmp * diff_eta) ** 2) * (tmp * diff_eta) ** 2
-        # FIXME: the line below is incorrect for many-photon basis
         # derivative = - numpy.exp(-0.5*(tmp * diff_eta) ** 2) * (ph_exp_val + 1)  * (tmp * diff_eta) ** 2
 
         # in principle, the couplings_var should be > 0.0
@@ -262,7 +261,6 @@ class RHF(scqedhf.RHF):
         self.vsq_grad = onebody_dvsq + twobody_dvsq
 
         # photon energy part:
-        # FIXME: include ZPE or not
         self.vsq_grad += self.qed.e_boson_grad_r
 
 

@@ -401,20 +401,7 @@ class RHF(qedhf.RHF):
         self.qed.couplings_var = numpy.ones(self.qed.nmodes)
         self.qed.update_couplings()
 
-        # s1e = self.get_ovlp(mol)
-        # self.X = scf_addons.partial_cholesky_orth_(s1e, canthr=1.0e-7,
-        #                                           cholthr=CHOLESKY_THRESHOLD)
-
-        # Check condition of overlap and e-p interaction matrices
-        # and remove linear dependency
-        # FIXME: this is not compatible with model system
-        # scipy_helper.remove_linear_dep(self, threshold=1.0e-7, lindep=1.0e-7,
-        #                               cholesky_threshold=CHOLESKY_THRESHOLD,
-        #                               force_pivoted_cholesky=FORCE_PIVOTED_CHOLESKY)
-
-        # self.L, self.P = mathlib.full_cholesky_orth(s1e, threshold=1.e-7)
         self.P = self.L = None
-        # self.n_oao = self.P.shape[1]
 
         # will replace it with our general DIIS
         self.diis_space = 20
@@ -444,8 +431,6 @@ class RHF(qedhf.RHF):
 
     def get_cholesky(self):
         #check conditions of overlap and bilinear coupling matrix
-        # self._check_and_remove_linear_dep(threshold=1.e-7, lindep=1.e-7,
-
         scipy_helper.remove_linear_dep(self, threshold=1.0e-7, lindep=1.0e-7,
                                          cholesky_threshold=CHOLESKY_THRESHOLD,
                                          force_pivoted_cholesky=FORCE_PIVOTED_CHOLESKY)
@@ -458,7 +443,6 @@ class RHF(qedhf.RHF):
         logger.info(self, '\nInitial guess from hcore in scqedhf.')
         h1e = self.get_bare_hcore(mol)
         s1e = self.get_ovlp(mol)
-        #mo_energy, mo_coeff = self.eig(h1e, s1e)
         if self.P is None:
             self.get_cholesky()
 
@@ -624,7 +608,6 @@ class RHF(qedhf.RHF):
         r"""Repulsion integral modifier according to dipole self-energy terms
 
         """
-        # TODO: updaete it to make it compatiable with other symmetries (s4 and s8)
 
         # eri_ao = self.mol.intor("int2e", aosym="s1")
         # eri = lib.einsum("pu, qv, rw, st, pqrs->uvwt", U, U, U, U, eri_ao)
@@ -641,7 +624,6 @@ class RHF(qedhf.RHF):
         if eri.size == nao**4:
             eri = eri.reshape((nao,)*4)
 
-        # transformation U(u, p) * U(v, q) * U(r, s) * U(t, w) * eri(p, q, r, s) -> eri(u, v, w, t)
         eri = numpy.einsum("pu, qv, rw, st, pqrs->uvwt", U, U, U, U, eri, optimize=True)
 
         return eri
@@ -649,8 +631,6 @@ class RHF(qedhf.RHF):
 
     def FC_factor(self, eta, imode, onebody=True):
         r"""Compute Franck-Condon (or renormalization) factor
-
-        FIXME: check the whether eta has sqrt{\omega/2} or not
 
         .. math::
 
@@ -693,10 +673,9 @@ class RHF(qedhf.RHF):
 
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
-        ph_exp_val = 0.0 # self.qed.get_bdag_plus_b_sq_expval(imode)  # FIXME
+        ph_exp_val = 0.0 # self.qed.get_bdag_plus_b_sq_expval(imode)
 
         # Apply the derivative formula
-        # FIXME: this is incorrect for many-photon mode
         derivative = numpy.exp((-0.5 * (tmp * diff_eta) ** 2) * (ph_exp_val + 1)) \
                      * (tmp ** 2) * diff_eta
 
@@ -729,14 +708,12 @@ class RHF(qedhf.RHF):
             mol = self.mol
 
         if self.bare_h1e is None:
-            # logger.debug(self, " get h1e for the first time !!!!")
             self.bare_h1e = self.get_bare_hcore(mol)
 
         nmode, nao, nao = self.qed.gmat.shape
         if self.g_dipole is None:
             self.g_dipole = numpy.zeros((nmode,nao))
 
-        # FIXME: generalized it to multiple modes
         for a in range(self.qed.nmodes):
 
             gtmp = self.qed.gmat[a] * numpy.sqrt(self.qed.omega[a] / 2.0)
@@ -921,7 +898,6 @@ class RHF(qedhf.RHF):
         where :math:`\tilde{g}` is the diagonal matrix.
         It is obvious that the VT-QEDHF WF is no longer the single produc state
 
-        TODO: extend it to many-photon basis set
         """
         import math
 

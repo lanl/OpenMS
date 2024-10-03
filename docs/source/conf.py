@@ -5,14 +5,14 @@ import os
 import sys
 
 project = 'OpenMS'
-copyright = '2024, Triad National Security, LLC. All rights reserved.'
-author = 'Yu Zhang, Ilia M. Mazin'
+copyright = 'Copyright 2024. Triad National Security, LLC. All rights reserved.'
+author = 'Yu Zhang'
 sys.path.insert(0, os.path.abspath('../../openms'))
 
 # import module seems not working in readthedoc build
 #import openms
-release = '0.1.beta'
-version = "0.1" #openms.__version__
+release = '0.2.0'
+version = "0.2.0" #openms.__version__
 
 # -- General configuration
 
@@ -26,7 +26,10 @@ extensions = [
     'sphinx.ext.autosummary',
     #'sphinx.ext.duration',
     #'sphinx.ext.doctest',
+    'sphinxcontrib.bibtex',
 ]
+
+bibtex_bibfiles = ['refs.bib']
 
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3', None),

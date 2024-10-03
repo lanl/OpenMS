@@ -45,7 +45,17 @@ to break the evolution operator :math:`e^{-\Delta\tau H} \approx   e^{-\Delta\ta
 Hubbard-Stratonovich transformation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Cholesky decomposition of eri:
+For a generic Hamiltonian, we can always separate it into one-body and two-body parts:
+
+.. math ::
+
+    \hat{H} = \sum_{ij} h_{ij} c^\dagger_i c_j + \frac{1}{2}\sum_{ijkl} I_{ijkl}
+              c^\dagger_i c^\dagger_j c_k c_l
+              \equiv \hat{H}_1 + \hat{H}_2
+
+we need to rewrite the Hamiltonian into the so-called MC format, i.e., rewrite
+the two-body term as squares of one-body operators in order to do Hubbard-Stratonovich
+transformation, which can be achieved by the Cholesky decomposition of eri:
 
 .. math::
 
@@ -55,10 +65,10 @@ The two-body interactions becomes
 
 .. math::
 
-     H_2 = & \sum_{ijkl} V_{ijkl} c^\dagger_i c^\dagger_j c_k c_l \\
-         = & \sum_{ijkl} V_{ijkl} c^\dagger_i c_l c^\dagger_j c_k- \sum_{ijkl} c^\dagger_i c_l \delta_{jl} \\
-         = & \sum_{ijkl}\sum_\gamma (L^*_{\gamma,il} c^\dagger_i c_l) (L_{\gamma,kj}c^\dagger_j c_k)
-            - \sum_{ijkj} V_{ijkj} c^\dagger_i c_k
+     H_2 = & \frac{1}{2} \sum_{ijkl} V_{ijkl} c^\dagger_i c^\dagger_j c_k c_l \\
+         = & \frac{1}{2} \sum_{ijkl} [V_{ijkl} c^\dagger_i c_l c^\dagger_j c_k- \sum_{ijkl} c^\dagger_i c_l \delta_{jl}] \\
+         = & \frac{1}{2} \sum_{ijkl}\sum_\gamma (L^*_{\gamma,il} c^\dagger_i c_l) (L_{\gamma,kj}c^\dagger_j c_k)
+           - \frac{1}{2} \sum_{ijkj} V_{ijkj} c^\dagger_i c_k
 
 Hence, the last term in above equation is a single-particle operator, which is defined as the
 shifted_h1e in the code.

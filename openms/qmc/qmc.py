@@ -278,6 +278,7 @@ class QMCbase(object):
             # geb is the bilinear coupling term
             tmp = (system.omega * 0.5) ** 0.5
             self.geb = chol_eb * tmp[:, backend.newaxis, backend.newaxis]
+
             logger.debug(self, f"size of chol before adding DSE: {ltensor.shape[0]}")
             if backend.linalg.norm(chol_eb) > 1.0e-10:
                 ltensor = backend.concatenate((ltensor, chol_eb), axis=0)
@@ -461,7 +462,6 @@ class QMCbase(object):
             # local_energy = self.local_energy(TL_theta, h1e, eri, vbias, gf)
 
             walkers.eloc = local_eng_elec_chol(TL_theta, h1e, eri, vbias, gf)
-
             walkers.eloc += self.nuc_energy
 
             energy = backend.dot(walkers.weights, walkers.eloc)

@@ -34,9 +34,10 @@ class PropagatorBase(ABC):
 
         .. math::
 
-            \hat{H}_{mc} = \hat{T} + \sum_\gamma \langle L_\gamma\rangle \hat{L}_\gamma +
-                          \frac{1}{2}\sum_\gamma (\hat{L}_\gamma - \langle \hat{L}_\gamma\rangle)^2 +
-                          C - \frac{1}{2}\langle \hat{L}_\gamma \rangle^2.
+           \hat{H}_{mc} = \hat{T} + \sum_\gamma \langle L_\gamma\rangle \hat{L}_\gamma +
+                         \frac{1}{2}\sum_\gamma (\hat{L}_\gamma - \langle \hat{L}_\gamma\rangle)^2
+                         - \frac{1}{2}\langle \hat{L}_\gamma \rangle^2.
+                         + C
 
         where :math:`\langle \hat{L}_{\gamma} \rangle = \sum_{pq} L_{\gamma,pq} \rho^{MF}_{pq}`
         and :math:`\hat{T}` operator is:
@@ -99,6 +100,7 @@ class PropagatorBase(ABC):
 class Phaseless(PropagatorBase):
     r"""
     HS-transformation based AFQMC propagators
+
     """
 
     def __init__(self, *args, **kwargs):
@@ -108,11 +110,11 @@ class Phaseless(PropagatorBase):
         r"""Propgate one-body term"""
         return backend.einsum("pq, zqr->zpr", self.exp_h1e, phiw)
 
+
     def propagate_walkers_twobody(self, trial, walkers, vbias, ltensor):
         r"""Propgate two-body term
         Which is the major computational bottleneck.
 
-        TODO: improve the efficiency
         of this part with a) MPI, b) GPU, c) tensor hypercontraction
         """
 
@@ -209,7 +211,7 @@ class Phaseless(PropagatorBase):
 
         """
 
-        # TODO: 1) adpat it fully to the propagator class
+        # TODO: 1) adapt it fully to the propagator class
         # 2) introduce eshift ?
 
         # be cautious! power of 2 was neglected before.
@@ -275,7 +277,7 @@ class PhaselessBoson(Phaseless):
 
         .. math::
 
-            V2b = & \frac{1}{2}\sum_{ijkl} V_{ijkl} b^\dagger_i b^\dagger_j b_k b_l \\
+          H^e_2 = & \frac{1}{2}\sum_{ijkl} V_{ijkl} b^\dagger_i b^\dagger_j b_k b_l \\
                 = & \frac{1}{2}\sum_{ijkl} V_{ijkl} b^\dagger_i [b_k b^\dagger_j - \delta_{jk}] b_l \\
                 = & \frac{1}{2}\sum_{ijkl} V_{ijkl} b^\dagger_i b_k b^\dagger_j b_l - \sum_{ijk} V_{ikkj} b^\dagger_i b_j \\
 
@@ -338,23 +340,56 @@ class PhaselessElecBoson(Phaseless):
 
     Brief introduction to the Theoretical background.
 
+    Here we define :math:`\hat{\boldsymbol{g}}^\alpha = \boldsymbol{\lambda}_\alpha
+    \cdot \hat{\boldsymbol{D}} =g^\alpha_{ij}\hat{c}^\dagger_i \hat{c}_j`
+    and :math:`\hat{X}_\alpha = \sqrt{\frac{1}{2\omega_\alpha}}(b^\dagger_\alpha + b_\alpha)`.
     The Hamiltonian for the electron-boson is
 
     .. math::
 
-        \hat{H} = \hat{h}_e  + \hat{V}_e + \hat{H}_p + \sqrt{\omega_\alpha}{2}
-        g^\alpha_{ij}\hat{c}^\dagger_i \hat{c}_j (\hat{b}^\dagger_\alpha + \hat{b}_\alpha)
-        + \frac{1}{2}(g^\alpha_{ij} \hat{c}^\dagger_i \hat{c}_j )^2.
+        \hat{H} = \hat{H}_e + \hat{H}_p + \sqrt{\frac{\omega_\alpha}{2}}
+        \hat{\boldsymbol{g}}^\alpha (\hat{b}^\dagger_\alpha + \hat{b}_\alpha)
+        + \frac{1}{2}(\hat{\boldsymbol{g}}^\alpha)^2.
 
-    The last term is zero for some systems.
+    The last DSE term is zero for some systems and :math:`\hat{H}_p =\sum_\alpha
+    \omega_\alpha b^\dagger_\alpha b_\alpha`.
+
+    With the decoupling of the bilinear term:
+
+    .. math::
+
+        \omega_\alpha\hat{\boldsymbol{g}}^\alpha \hat{X}_\alpha =
+        \frac{1}{2} \omega_\alpha[\hat{\boldsymbol{g}}^\alpha + \hat{X}_\alpha]^2
+        - \frac{1}{2} \omega_\alpha(\hat{X}_\alpha)^2
+        - \frac{1}{2} \omega_\alpha(\hat{\boldsymbol{g}}^\alpha)^2
 
     The corresponding MC Hamiltonian is:
 
     .. math::
 
-         \hat{H}_{mc} = \hat{T}_e + \frac{1}{2}\sum_\gamma \hat{L}^2_{\gamma} +
+         \hat{H}_{mc} = \hat{T}_e + \frac{1}{2}\sum_\gamma \hat{L}^2_{\gamma}
+                      + \frac{1}{2}\sum_\alpha
+                      [\hat{L}^2_{D, \alpha} + \hat{L}^2_{gX,\alpha}
+                      + \hat{L}^2_{g, \alpha} + \hat{L}^2_{X, \alpha}]
+                      + \hat{H}_p.
 
-    TBD.
+    where,
+
+    .. math::
+
+       \hat{L}_{D, \alpha} = & \hat{\boldsymbol{g}}^\alpha \\
+       \hat{L}_{gX,\alpha} = & \sqrt{\omega_\alpha} (\hat{\boldsymbol{g}}^\alpha  + \hat{X}_\alpha) \\
+       \hat{L}_{g, \alpha} = & i\sqrt{\omega_\alpha} \hat{\boldsymbol{g}}^\alpha \\
+       \hat{L}_{X, \alpha} = & i\sqrt{\omega_\alpha} \hat{\boldsymbol{X}}^\alpha
+
+    If we don't decouple the bilinear term, the MC Hamiltonain is:
+
+    .. math::
+
+         \hat{H}_{mc} = \hat{T}_e + \frac{1}{2}\sum_\gamma \hat{L}^2_{\gamma}
+                      + \frac{1}{2}\sum_\alpha \hat{L}^2_{D, \alpha}
+                      + \sum_\alpha \omega_\alpha \hat{\boldsymbol{g}}^\alpha \hat{X}_\alpha
+                      + \hat{H}_p.
     """
 
     def __init__(self, dt, **kwargs):
@@ -370,7 +405,9 @@ class PhaselessElecBoson(Phaseless):
         logger.note(self, task_title("")+"\n")
 
     def build(self, h1e, ltensor, trial, geb=None):
-        r"""The QMC Hamiltonian of the coupled electron-boson system is
+        r"""Build the propagator and intermediate variables
+
+        The QMC Hamiltonian of the coupled electron-boson system is shown above.
         (We consider DSE in the general form, we can simply set DSE to be
         zero for the cases without DSE terms)
 
@@ -565,6 +602,7 @@ class PhaselessElecBoson(Phaseless):
         inv_ovlp = backend.linalg.inv(ovlp)
         theta = backend.einsum("zqp, zpr->zqr", walkers.phiw, inv_ovlp)
         self.Gf = backend.einsum("zqr, pr->zpq", theta, trial.psi.conj())
+
         self.DM = (
             2.0
             * backend.einsum("z, zpq->pq", walkers.weights, self.Gf)

@@ -11,12 +11,12 @@
 # material to reproduce, prepare derivative works, distribute copies to the
 # public, perform publicly and display publicly, and to permit others to do so.
 #
-# Authors:   Yu Zhang    <zhy@lanl.gov>
-#          Ilia Mazin <imazin@lanl.gov>
+# Author: Yu Zhang <zhy@lanl.gov>
 #
 
 import numpy
 from scipy import linalg
+import warnings
 
 from pyscf import lib
 from pyscf.lib import logger
@@ -76,6 +76,12 @@ Then we derive the QEDHF functional and Fock matrix accordingly based on the HF 
 """
 
 
+def newton_update(var, gradient, precond0):
+    r"""TBA"""
+    var -= precond0 * gradient
+    return var
+
+
 def entropy(rho):
     r"""Compute lentropy for given density matrix
 
@@ -93,20 +99,30 @@ def entropy(rho):
 class RHF(scqedhf.RHF):
     r"""Non-relativistic VT-QED-HF subclass."""
 
-    def __init__(
-        self, mol, qed=None, xc=None, **kwargs):
+    def __init__(self, mol, **kwargs):
 
-        super().__init__(mol, qed, xc, **kwargs)
+        super().__init__(mol, **kwargs)
+
+        # print headers
+        logger.info(self, openms.__logo__)
 
         if "vtqedhf" not in openms.runtime_refs:
             openms.runtime_refs.append("vtqedhf")
 
-        self.var_grad = numpy.zeros(self.qed.nmodes)
+        self.vlf_grad = numpy.zeros(self.qed.nmodes)
         self.vsq_grad = numpy.zeros(self.qed.nmodes)
-        self.dse_tot = numpy.zeros(self.qed.nmodes)
 
-        self.oei = numpy.zeros((self.nao, self.nao))
-        self.vhf_dse = numpy.zeros((self.nao, self.nao))
+        if "couplings_var" in kwargs:
+            self.qed.couplings_var = numpy.asarray(kwargs["couplings_var"])
+            self.qed.optimize_varf = False
+        else:
+            self.qed.optimize_varf = True
+            self.qed.couplings_var = 0.5 * numpy.ones(self.qed.nmodes)
+        if "squeezed_cs" in kwargs:
+            self.qed.squeezed_cs = kwargs["squeezed_cs"]
+
+        self.qed.update_couplings()
+        self.vhf_dse = None
 
 
     def get_hcore(self, mol=None, dm=None, dress=True):
@@ -115,7 +131,8 @@ class RHF(scqedhf.RHF):
 
         if dm is not None:
 
-            self.oei = self.qed.get_dse_hcore(dm, residue=True) # this is zero for scqedhf
+            # self.oei = self.qed.get_dse_hcore(dm, residue=True) # this is zero for scqedhf
+            self.oei = self.qed.add_oei_ao(dm, residue=True)  # this is zero for scqedhf
             return h1e + self.oei
 
         return h1e
@@ -134,7 +151,8 @@ class RHF(scqedhf.RHF):
             self.qed.update_cs(dm)
 
         # two-electron part (residue, to be tested!)
-        vj_dse, vk_dse = self.qed.get_dse_jk(dm, residue=True)
+        # vj_dse, vk_dse = self.qed.get_dse_jk(dm, residue=True)
+        vj_dse, vk_dse = self.get_dse_jk(dm, residue=True)
         self.vhf_dse = vj_dse - 0.5 * vk_dse
         vhf += self.vhf_dse
 
@@ -148,7 +166,7 @@ class RHF(scqedhf.RHF):
 
             \frac{d G}{\partial f_\alpha} =
         """
-        nao = self.gmat[imode].shape[0]
+        nao = self.qed.gmat[imode].shape[0]
         if onebody:
             p, q = numpy.ogrid[:nao, :nao]
             diff_eta = eta[imode, q] - eta[imode, p]
@@ -175,7 +193,7 @@ class RHF(scqedhf.RHF):
             \frac{d G}{\partial f_\alpha} =
         """
 
-        nao = self.nao
+        nao = self.qed.gmat[imode].shape[0]
         if onebody:
             p, q = numpy.ogrid[:nao, :nao]
             diff_eta = eta[imode, q] - eta[imode, p]
@@ -185,8 +203,7 @@ class RHF(scqedhf.RHF):
 
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
-        ph_exp_val = self.qed.get_bdag_plus_b_sq_expval(imode)
-
+        ph_exp_val = 0.0 # self.qed.get_bdag_plus_b_sq_expval(imode)
         derivative = -numpy.exp(-0.5 * (tmp * diff_eta) ** 2) * (tmp * diff_eta) ** 2
         # FIXME: the line below is incorrect for many-photon basis
         # derivative = - numpy.exp(-0.5*(tmp * diff_eta) ** 2) * (ph_exp_val + 1)  * (tmp * diff_eta) ** 2
@@ -213,6 +230,11 @@ class RHF(scqedhf.RHF):
 
         onebody_dvsq = numpy.zeros(nmodes)
         twobody_dvsq = numpy.zeros(nmodes)
+
+        for imode in range(nmodes):
+            tau = numpy.exp(self.qed.squeezed_var[imode])
+            if abs(self.qed.squeezed_var[0]) > 1.0e-5:
+                g2_dot_D = 2.0 * numpy.einsum("pp, p->", dm_do[imode], g_DO[imode]**2)
 
         # will be replaced with c++ code
         for imode in range(nmodes):
@@ -277,58 +299,61 @@ class RHF(scqedhf.RHF):
             return
 
         # gradient w.r.t f_\alpha
-        onebody_dvar = numpy.zeros(self.qed.nmodes)
-        twobody_dvar = numpy.zeros(self.qed.nmodes)
+        nmodes = self.qed.nmodes
+        onebody_dvlf = numpy.zeros(nmodes)
+        twobody_dvlf = numpy.zeros(nmodes)
 
-        for a in range(self.qed.nmodes):
+        for a in range(nmodes):
 
             tau = numpy.exp(self.qed.squeezed_var[a])
             if abs(self.qed.couplings_var[a]) > 1.e-5:
                 g2_dot_D = 2.0 * numpy.einsum("pp, p->", dm_do[a], g_DO[a]**2)
-                onebody_dvar[a] += g2_dot_D / self.qed.omega[a] / self.qed.couplings_var[a]
+                onebody_dvlf[a] += g2_dot_D / self.qed.omega[a] / self.qed.couplings_var[a]
 
             # one-electron part
             derivative = self.gaussian_derivative_f_vector(self.eta, a)
 
-            h_dot_g = self.h1e_DO[a] * derivative # element_wise
+            h_dot_g = self.h1e_DO * derivative  # element_wise
             oei_derivative = numpy.einsum("pq, pq->", h_dot_g, dm_do[a])
             tmp = numpy.einsum("pp, p->p", dm_do[a], g_DO[a])
             tmp = 2.0 * numpy.einsum("p,q->", tmp, tmp)
-            tmp -= numpy.einsum("pq, pq, p, q->", dm_do[a], dm_do[a], g_DO[a], g_DO[a])
+            tmp -= numpy.einsum(
+                "pq, pq, p, q->", dm_do[a], dm_do[a], g_DO[a], g_DO[a]
+            )
             oei_derivative += tmp / self.qed.omega[a] / self.qed.couplings_var[a]
 
-            onebody_dvar[a] += oei_derivative
+            onebody_dvlf[a] += oei_derivative
 
             # two-electron part
             derivative = self.gaussian_derivative_f_vector(self.eta, a, onebody=False)
-            derivative *= (2.0 * self.eri_DO[a] - self.eri_DO[a].transpose(0, 3, 2, 1))
+            derivative *= (2.0 * self.eri_DO - self.eri_DO.transpose(0, 3, 2, 1))
 
-            tmp = lib.einsum('pqrs, rs-> pq', derivative, dm_do[a])
-            tmp = lib.einsum('pq, pq->', tmp, dm_do[a])
-            twobody_dvar[a] = tmp / 4.0
+            tmp = lib.einsum("pqrs, rs-> pq", derivative, dm_do[a], optimize=True)
+            tmp = lib.einsum("pq, pq->", tmp, dm_do[a], optimize=True)
+            twobody_dvlf[a] = tmp / 4.0
 
-            self.var_grad[a] = onebody_dvar[a] + twobody_dvar[a]
+            self.vlf_grad[a] = onebody_dvlf[a] + twobody_dvlf[a]
 
-            if abs(1.0 - self.qed.couplings_var[a]) > 1.e-4 and self.vhf_dse[a] is not None:
-                self.dse_tot[a] = self.energy_elec(dm, self.oei, self.vhf_dse)[0]
-                self.var_grad[a] -= self.dse_tot[a] * 2.0 / (1.0 - self.qed.couplings_var[a])
+        if abs(1.0 - self.qed.couplings_var[0]) > 1.0e-4 and self.vhf_dse is not None:
+            # only works for nmode == 1
+            self.dse_tot = self.energy_elec(dm, self.oei, self.vhf_dse)[0]
+            self.vlf_grad[0] -= self.dse_tot * 2.0 / (1.0 - self.qed.couplings_var[0])
 
         return self
 
-
     def norm_var_params(self):
         var_norm = linalg.norm(self.eta_grad) / numpy.sqrt(self.eta.size)
-        var_norm += linalg.norm(self.var_grad) / numpy.sqrt(self.var_grad.size)
+        var_norm += linalg.norm(self.vlf_grad) / numpy.sqrt(self.vlf_grad.size)
         var_norm += linalg.norm(self.vsq_grad) / numpy.sqrt(self.vsq_grad.size)
         return var_norm
 
 
     def update_var_params(self):
-        self.eta -= self.precond * self.eta_grad
 
+        self.eta -= self.precond * self.eta_grad
         if self.qed.optimize_varf:
             #TODO: give user warning to use smaller precond if it diverges
-            self.qed.couplings_var -= self.precond * self.var_grad
+            self.qed.couplings_var -= self.precond * self.vlf_grad
             self.qed.update_couplings()
         if self.qed.optimize_vsq:
             self.qed.squeezed_var -= self.precond * self.vsq_grad
@@ -340,7 +365,7 @@ class RHF(scqedhf.RHF):
 
         if self.qed.optimize_varf:
             variables = numpy.hstack([variables.ravel(), self.qed.couplings_var])
-            gradients = numpy.hstack([gradients.ravel(), self.var_grad])
+            gradients = numpy.hstack([gradients.ravel(), self.vlf_grad])
         if self.qed.optimize_vsq:
             variables = numpy.hstack([variables.ravel(), self.qed.squeezed_var])
             gradients = numpy.hstack([gradients.ravel(), self.vsq_grad])
@@ -361,7 +386,7 @@ class RHF(scqedhf.RHF):
         varsize = self.qed.couplings_var.size
         if params.size > fsize:
             self.qed.couplings_var = params[fsize : fsize + varsize].reshape(
-                self.var_grad.shape
+                self.vlf_grad.shape
             )
             self.qed.update_couplings()
 
@@ -383,14 +408,14 @@ class RHF(scqedhf.RHF):
             self.eta = params[fsize : fsize + etasize].reshape(self.eta_grad.shape)
 
         fsize += etasize
-        if params.size > fsize:
+        if self.qed.optimize_varf and params.size > fsize:
             self.qed.couplings_var = params[fsize : fsize + varsize].reshape(
-                self.var_grad.shape
+                self.vlf_grad.shape
             )
             self.qed.update_couplings()
 
         fsize += varsize
-        if params.size > fsize:
+        if self.qed.optimize_vsq and params.size > fsize:
             self.qed.squeezed_var = params[fsize :].reshape(
                 self.vsq_grad.shape
             )

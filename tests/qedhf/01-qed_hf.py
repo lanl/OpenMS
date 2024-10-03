@@ -37,7 +37,7 @@ class TestQEDHF(unittest.TestCase):
         cavity_mode[0, :] = 0.1 * numpy.asarray([0, 1, 0])
 
         qed = boson.Photon(mol, omega=cavity_freq, vec=cavity_mode)
-        qedmf = qedhf.RHF(mol, qed)
+        qedmf = qedhf.RHF(mol, qed=qed)
 
         qedmf.max_cycle = 500
         qedmf.kernel()
@@ -74,7 +74,7 @@ class TestQEDHF(unittest.TestCase):
         cavity_mode[0, :] = 0.1 * numpy.asarray([0, 1, 0])
 
         qed = boson.Photon(mol, omega=cavity_freq, vec=cavity_mode, use_cs=False)
-        qedmf = qedhf.RHF(mol, qed)
+        qedmf = qedhf.RHF(mol, qed=qed)
 
         qedmf.max_cycle = 500
         qedmf.kernel()

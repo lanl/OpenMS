@@ -205,7 +205,6 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
     # Create initial photonic eigenvector guess(es)
     if mf.qed.use_cs:
         mf.qed.update_cs(dm)
-    mf.qed.update_boson_coeff(dm)
 
     mf.init_var_params(dm)
 

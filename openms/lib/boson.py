@@ -1229,9 +1229,8 @@ class Photon(Boson):
         """
 
         warnings.warn(
-            "The 'get_dse_hcore' function is deprecated, please use add_oei_ao
-            instead because since boson-mediated oei part includes both DSE
-            and bilinear term",
+            "The 'get_dse_hcore' function is deprecated, please use add_oei_ao" +
+            "instead because since boson-mediated oei part includes both DSE and bilinear term",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -1477,7 +1476,35 @@ class Photon(Boson):
 
         return lib.einsum("X, Xuv-> Xuv", self.couplings, gmat)
 
-    get_gmatao = get_gmat_ao
+    def get_gmatao(self):
+        r"""Compute interaction matrix for all modes in AO basis.
+
+        Only difference from get_geb_ao is the sqrt(w/2) factor in get_geb_ao
+
+        TODO: get_gmat_ao or this one will be deprecated
+
+        .. math::
+            \bm{\tilde{d}} = \sum_\al \cdot
+                             \mel*{\mu}{\bm{\la}_\al\cdot\hat{D}}{\nu}
+        Function only runs if :attr:`gmat` is not ``None``.
+
+
+        Returns
+        -------
+        :class:`~numpy.ndarray`
+            Interaction matrix, stored in :attr:`gmat`.
+        """
+
+        if self.gmat is None:
+            nao = self._mol.nao_nr()
+            gmat = numpy.empty((self.nmodes, nao, nao))
+            for mode in range(self.nmodes):
+                gmat[mode] = self.get_polarized_dipole_ao(mode) #* self.couplings[mode]
+                logger.debug(self, f" Norm of gao without w {numpy.linalg.norm(gmat[mode])}")
+                gmat[mode] *= self.couplings[mode]
+                #gmat = numpy.einsum("Jx,J,xuv->Juv", self.vec, self.gfac, self.dipole_ao)
+            self.gmat = gmat
+
 
     def get_geb_ao(self, mode):
         r"""Return bilinear interaction term of ``mode`` in :class:`Boson`.

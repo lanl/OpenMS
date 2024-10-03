@@ -16,11 +16,11 @@
 #
 
 import numpy
-from scipy import linalg
 
-from pyscf import dft
+from pyscf.dft import rks
 from pyscf import lib
 from pyscf import scf
+from pyscf.scf import hf
 from pyscf.lib import logger
 
 import openms
@@ -29,6 +29,40 @@ from openms import __config__
 
 TIGHT_GRAD_CONV_TOL = getattr(__config__, "TIGHT_GRAD_CONV_TOL", True)
 
+r"""
+Theoretical background of QEDHF
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Within the Coherent State (CS) representation (for photonic DOF), the
+QEDHF wavefunction ansatz is
+
+.. math::
+
+   \ket{\Psi} = &\sum_n c_n \prod_\alpha e^{z_\alpha b^\dagger_\alpha - z^*_\alpha b_\alpha } \ket{HF}\otimes{n_\alpha} \\
+              = &\sum_n c_n U(\mathbf{z}) \ket{HF}\otimes{n_\alhpa}.
+
+where :math:`z_\alpha=-\frac{\lambda_\alpha\cdot\langle\boldsymbol{D}\rangle}{\sqrt{2\omega_\alpha}}` denotes
+the photon displacement due to the coupling with electrons.
+
+Consequently, we can use :math:`U(\mathbf{z})` to transform the original PF Hamiltonian
+into CS representation
+
+.. math::
+
+    H_{CS} = & U^\dagger(\mathbf{z}) H U(\mathbf{z}) \\
+           = & H_e+\sum_\alpha\Big\{\omega_\alpha b^\dagger_\alpha b_\alpha
+               +\frac{1}{2}[\lambda_\alpha\cdot(\boldsymbol{D}-\langle\boldsymbol{D}\rangle)]^2  \\
+             & -\sqrt{\frac{\omega_\alpha}{2}}[\lambda_\alpha\cdot(\boldsymbol{D} -
+             \langle\boldsymbol{D}\rangle)](b^\dagger_\alpha+ b_\alpha)\Big\}.
+
+
+With the ansatz, the QEDHF energy is
+
+.. math::
+
+  E_{QEDHF}= E_{HF} + \frac{1}{2}\langle \boldsymbol{lambda}\cdot [\boldsymbol{D}-\langle \boldsymbol{D}\rangle)]^2\rangle,
+
+"""
 
 def kernel(
     mf, conv_tol=1e-10, conv_tol_grad=None,
@@ -106,24 +140,27 @@ def kernel(
     s1e = mf.get_ovlp(mol)
 
     if dm0 is None:
-        dm = scf.hf.get_init_guess(mol, mf.init_guess)
+        dm = mf.get_init_guess(mol, mf.init_guess)
     else:
         dm = dm0
 
-    # Initial (bare) electronic energy
-    h1e = mf.bare_h1e = scf.hf.get_hcore(mol)
-    vhf = scf.hf.get_veff(mol, dm)
-    e_tot = mf.energy_tot(dm, h1e, vhf)
-    logger.info(mf, 'init E (non-QED)= %.15g', e_tot)
-
-    # Create initial photonic eigenvector guess(es)
-    mf.qed.update_boson_coeff(dm)
+    if mf.qed.use_cs:
+        mf.qed.update_cs(dm)
 
     # Initialize additional variational parameters,
-    # construct 'h1e' in dipole (DO) basis
+    # construct 'h1e' 'gmat' in dipole (DO) basis
     # (used by SC-QED-HF/VT-QED-HF subclasses)
     mf.init_var_params(dm)
-    mf.get_h1e_DO(mol, dm)
+    mf.get_h1e_DO(mol, dm=dm)
+
+    # Initial electronic energy
+    h1e = mf.get_hcore(mol, dm)
+    vhf = mf.get_veff(mol, dm)
+    e_tot = mf.energy_tot(dm, h1e, vhf)
+    logger.info(mf, 'init E= %.15g', e_tot)
+
+    # Create initial photonic eigenvector guess(es)
+    mf.qed.update_boson_coeff(e_tot, dm)
 
     scf_conv = False
     mo_energy = mo_coeff = mo_occ = None
@@ -168,8 +205,11 @@ def kernel(
 
         # Update gradients of additional variational parameters
         # and 'h1e' in DO basis (used by SC-QED-HF/VT-QED-HF subclasses)
-        mf.get_h1e_DO(mol, dm)
+        mf.get_h1e_DO(mol, dm=dm)
         mf.grad_var_params(dm)
+
+        h1e = mf.get_hcore(mol, dm)
+        fock = mf.get_fock(h1e, s1e, vhf, dm, cycle, mf_diis)
 
         # Diagonalize Fock matrix and update density matrix
         mo_energy, mo_coeff = mf.eig(fock, s1e)
@@ -178,23 +218,24 @@ def kernel(
 
         # Update photonic coefficients and compute photonic energy
         mf.qed.update_cs(dm) # Update coherent state values
-        if mf.qed.use_cs == False:
-            mf.qed.update_boson_coeff(dm)
 
         # Update h1e, vhf, and e_tot
         h1e = mf.get_hcore(mol, dm)
         vhf = mf.get_veff(mol, dm, dm_last, vhf)
-        fock = mf.get_fock(h1e, s1e, vhf, dm, cycle, mf_diis)
         e_tot = mf.energy_tot(dm, h1e, vhf)
 
+        # construct Hp matrix and diagonalize
+        mf.qed.update_boson_coeff(e_tot, dm)
+
         # Check SCF convergence
+        fock = mf.get_fock(h1e, s1e, vhf, dm)  # = h1e + vhf, no DIIS
         norm_eta = mf.norm_var_params()
-        norm_gorb = linalg.norm(mf.get_grad(mo_coeff, mo_occ, fock))
-        norm_gorb = norm_gorb + norm_eta
+        norm_gorb = numpy.linalg.norm(mf.get_grad(mo_coeff, mo_occ, fock))
+        norm_gorb += norm_eta
         if not TIGHT_GRAD_CONV_TOL:
             norm_gorb = norm_gorb / numpy.sqrt(norm_gorb.size)
-        norm_ddm = linalg.norm(dm-dm_last)
-        logger.info(mf, 'cycle= %d  E= %.15g  delta_E= %4.3g  |g|= %4.3g  |ddm|= %4.3g',
+        norm_ddm = numpy.linalg.norm(dm-dm_last)
+        logger.info(mf, 'cycle= %d E= %.15g  delta_E= %4.3g  |g|= %4.3g  |ddm|= %4.3g',
                     cycle+1, e_tot, e_tot-last_hf_e, norm_gorb, norm_ddm)
 
         if callable(mf.check_convergence):
@@ -222,22 +263,22 @@ def kernel(
 
         # Final update of photonic coefficients and energy
         mf.qed.update_cs(dm) # Update coherent state values
-        if mf.qed.use_cs == False:
-            mf.qed.update_boson_coeff(dm)
+        mf.qed.update_boson_coeff(e_tot, dm)
 
         # Final update of h1e, vhf, e_tot, fock
         h1e = mf.get_hcore(mol, dm)
-        vhf = mf.get_veff(mol, dm)
+        vhf = mf.get_veff(mol, dm, dm_last, vhf)
+
         e_tot, last_hf_e = mf.energy_tot(dm, h1e, vhf), e_tot
         fock = mf.get_fock(h1e, s1e, vhf, dm)
 
         # Verify SCF convergence
         norm_eta = mf.norm_var_params()
-        norm_gorb = linalg.norm(mf.get_grad(mo_coeff, mo_occ, fock))
+        norm_gorb = numpy.linalg.norm(mf.get_grad(mo_coeff, mo_occ, fock))
         norm_gorb = norm_gorb + norm_eta
         if not TIGHT_GRAD_CONV_TOL:
             norm_gorb = norm_gorb / numpy.sqrt(norm_gorb.size)
-        norm_ddm = linalg.norm(dm-dm_last)
+        norm_ddm = numpy.linalg.norm(dm-dm_last)
 
         conv_tol = conv_tol * 10
         conv_tol_grad = conv_tol_grad * 3
@@ -252,13 +293,22 @@ def kernel(
 
     logger.timer(mf, 'scf_cycle', *cput0)
     # A post-processing hook before return
-    mf.post_kernel()
+    mf.post_kernel(locals())
     return scf_conv, e_tot, mo_energy, mo_coeff, mo_occ
 
 
 def get_fock(
-    mf, h1e=None, s1e=None, vhf=None, dm=None, cycle=-1, diis=None,
-    diis_start_cycle=None, level_shift_factor=None, damp_factor=None):
+    mf,
+    h1e=None,
+    s1e=None,
+    vhf=None,
+    dm=None,
+    cycle=-1,
+    diis=None,
+    diis_start_cycle=None,
+    level_shift_factor=None,
+    damp_factor=None,
+):
     r"""
     Return Fock matrix in AO basis, :math:`F = h_{core} + V_{HF}`.
 
@@ -314,8 +364,9 @@ def get_fock(
     if cycle > -1:
         mf.update_var_params()
 
-    if h1e is None: h1e = mf.get_hcore(mf.mol, dm)
-    if vhf is None: vhf = mf.get_veff(mf.mol, dm)
+    h1e = mf.get_hcore(dm=dm)
+    if vhf is None:
+        vhf = mf.get_veff(mf.mol, dm)
 
     f = h1e + vhf
 
@@ -332,21 +383,27 @@ def get_fock(
     if dm is None: dm = mf.make_rdm1()
     if s1e is None: s1e = mf.get_ovlp()
 
+    if 0 <= cycle < diis_start_cycle - 1 and abs(damp_factor) > 1e-4:
+        f = damping(s1e, dm * 0.5, f, damp_factor)
     if diis is not None and cycle >= diis_start_cycle:
         variables, gradients = mf.pre_update_var_params()
-        params = diis.update(s1e, dm, f, mf, h1e, vhf,
-                             var=variables, var_grad=gradients)
+        params = diis.update(s1e, dm, f, mf, h1e, vhf, var=variables, var_grad=gradients)
         f = mf.set_params(params, fock_shape=f.shape)
-
+    if abs(level_shift_factor) > 1e-4:
+        f = level_shift(s1e, dm * 0.5, f, level_shift_factor)
     return f
 
 
-class RHF(scf.hf.RHF):
+class RHF(hf.RHF):
     r"""Non-relativistic QED-RHF class."""
-    def __init__(
-        self, mol, qed=None, xc=None, **kwargs):
+    def __init__(self, mol, **kwargs):
+        # print headers
 
         logger.info(self, openms.__logo__)
+        if "pccp2023" not in openms.runtime_refs:
+            openms.runtime_refs.append("pccp2023")
+
+        xc = kwargs.get("xc", None)
 
         if xc is not None:
             raise NotImplementedError("RKS object currently not supported.")
@@ -355,37 +412,75 @@ class RHF(scf.hf.RHF):
 
         self.nao = mol.nao_nr()
         self.bare_h1e = None
+        self.oei = None
         self.qed = None
 
+        qed = kwargs.get("qed", None)
+        cavity = kwargs.get("cavity", None)
+
+        cavity_options = kwargs
         if qed is None:
+            if "cavity_mode" in kwargs:
+                cavity_options["vec"] = cavity_mode = kwargs["cavity_mode"]
+            elif not "vec" in kwargs:
+                raise ValueError("The required keyword argument 'cavity_mode or vec' is missing")
 
-            qed_req_args = ["omega", "vec"]
-            if not all(i in kwargs for i in qed_req_args):
-                err_msg = f"Must provide either Boson object in 'qed' " + \
-                          f"parameter, OR 'omega', 'vec', parameters."
-                logger.error(self, err_msg)
-                raise ValueError(err_msg)
+            if "cavity_freq" in kwargs:
+                cavity_options["omega"] = cavity_freq = kwargs["cavity_freq"]
+            elif not "omega" in kwargs:
+                raise ValueError("The required keyword argument 'cavity_freq' is missing")
 
-            else:
-                self.qed = boson.Photon(mol, **kwargs)
+            qed = boson.Photon(mol, mf=self, **cavity_options)
 
         elif qed is not None and (not isinstance(qed, boson.Boson)):
             err_msg = f"The 'qed' parameter is not an " + \
                       f"instance of OpenMS Boson class."
             logger.error(self, err_msg)
             raise ValueError(err_msg)
-
         else:
-            self.qed = qed
+            # update the mf attribute of qed
+            qed._mf = self
 
         # Update QED object
-        self.qed.update_mean_field(self, **kwargs)
+        # qed.update_mean_field(self, **kwargs)
+
+        # update the setting according to each specific MF
+        # couplings_var should be zero in QEDHF
+        qed.couplings_var = numpy.zeros(qed.nmodes)
+        qed.update_couplings()
+        qed._mf = self
+        self.qed = qed
+
+        # make dipole matrix in AO
+        #self.make_dipolematrix() # replaced by qed functions
+
+        self.qed.get_gmatao()
+        self.qed.get_q_dot_lambda()
 
 
-    def get_hcore(
-        self, mol=None, dm=None):
+    def get_oei_AO(self):
+        r"""return the effective oei in AO for usage in QMC
+        """
+        pass
+
+    def get_eri_AO(sefl, Ltensor=True):
+        r"""return the effective eri (or chols) in AO for usage in QMC
+        """
+        pass
+
+    def get_bare_hcore(self, mol=None):
+        r"""return the bare hcore"""
+        if mol is None: mol = self.mol
+        return hf.get_hcore(mol)
+
+    def get_hcore(self, mol=None, dm=None):
         r"""
         Return non-QED or DSE-mediated OEI in AO basis.
+
+        DSE-mediated oei is
+
+            h_{dse} = -<\lambda\cdot D> g^\alpha_{uv} - 0.5 q^\alpha_{uv}
+                    = -Tr[\rho g^\alpha] g^\alpha_{uv} - 0.5 q^\alpha_{uv}
 
         If ``dm=None``, return non-QED OEI, stored in
         :attr:`bare_h1e`.
@@ -410,17 +505,106 @@ class RHF(scf.hf.RHF):
 
         if mol is None: mol = self.mol
 
+        self.bare_h1e = self.get_bare_hcore(mol)
+
         if dm is None:
             return self.bare_h1e
         else:
-            dse_h1e = self.qed.get_dse_hcore(dm)
-            return (self.bare_h1e + dse_h1e)
+            self.oei = self.qed.add_oei_ao(dm)
+            return (self.bare_h1e + self.oei)
 
 
-    def get_veff(
-        self, mol=None, dm=None, dm_last=0, vhf_last=0, hermi=1):
-        r"""
-        Return DSE-mediated potential matrix, :math:`V^{\tt{QED}}_{\tt{HF}}`.
+    def get_dse_jk(self, dm, residue=False):
+        r"""DSE-mediated JK terms
+
+        To be deprecated, use boson.get_dse_jk instead in the future
+
+        Note: this term exists even if we don't use CS representation
+        don't simply replace this term with z since z can be zero without CS.
+        effective DSE-mediated eri is:
+
+             I' = lib.einsum("Xpq, Xrs->pqrs", gmat, gmat)
+        """
+
+        dm_shape = dm.shape
+        nao = dm_shape[-1]
+        dm = dm.reshape(-1,nao,nao)
+        n_dm = dm.shape[0]
+        logger.debug(self, "No. of dm is %d", n_dm)
+
+        vj_dse = numpy.zeros((n_dm,nao,nao))
+        vk_dse = numpy.zeros((n_dm,nao,nao))
+
+        gtmp = self.qed.gmat
+        if residue: gtmp = self.qed.gmat * self.qed.couplings_res
+        for i in range(n_dm):
+            # DSE-medaited J
+            scaled_mu = lib.einsum("pq, Xpq ->X", dm[i], gtmp)# <\lambada * D>
+            vj_dse[i] += lib.einsum("Xpq, X->pq", gtmp, scaled_mu)
+
+            # DSE-mediated K
+            vk_dse[i] += lib.einsum("Xpr, Xqs, rs -> pq", gtmp, gtmp, dm[i])
+            #gdm = lib.einsum("Xqs, rs -> Xqr", gtmp, dm)
+            #vk += lib.einsum("Xpr, Xqr -> pq", gtmp, gdm)
+
+        vj = vj_dse.reshape(dm_shape)
+        vk = vk_dse.reshape(dm_shape)
+        return vj, vk
+
+    def get_jk(self, mol=None, dm=None, hermi=1, with_j=True, with_k=True, omega=None):
+        # Note the incore version, which initializes an _eri array in memory.
+        if mol is None:
+            mol = self.mol
+        if dm is None:
+            dm = self.make_rdm1()
+        if not omega and (
+            self._eri is not None or mol.incore_anyway or self._is_mem_enough()
+        ):
+            if self._eri is None:
+                self._eri = mol.intor("int2e", aosym="s8")
+            vj, vk = hf.dot_eri_dm(self._eri, dm, hermi, with_j, with_k)
+        else:
+            vj, vk = RHF.get_jk(self, mol, dm, hermi, with_j, with_k, omega)
+
+        vj_dse, vk_dse = self.get_dse_jk(dm)
+        vj += vj_dse
+        vk += vk_dse
+
+        return vj, vk
+
+
+    # keep a bare get_jk and get_veff function
+    # to make the bare ones can be easily overwritten by custom Hamiltonian
+    def get_bare_jk(self, mol=None, dm=None, hermi=1, with_j=True, with_k=True,
+               omega=None):
+        # Note the incore version, which initializes an _eri array in memory.
+        if mol is None: mol = self.mol
+        if dm is None: dm = self.make_rdm1()
+        if (not omega and
+            (self._eri is not None or mol.incore_anyway or self._is_mem_enough())):
+            if self._eri is None:
+                self._eri = mol.intor('int2e', aosym='s8')
+            vj, vk = hf.dot_eri_dm(self._eri, dm, hermi, with_j, with_k)
+        else:
+            vj, vk = hf.SCF.get_jk(self, mol, dm, hermi, with_j, with_k, omega)
+        return vj, vk
+
+    def get_bare_veff(self, mol=None, dm=None, dm_last=0, vhf_last=0, hermi=1):
+        if mol is None: mol = self.mol
+        if dm is None: dm = self.make_rdm1()
+        if self._eri is not None or not self.direct_scf:
+            vj, vk = self.get_bare_jk(mol, dm, hermi)
+            vhf = vj - vk * .5
+        else:
+            ddm = numpy.asarray(dm) - numpy.asarray(dm_last)
+            vj, vk = self.get_bare_jk(mol, ddm, hermi)
+            vhf = vj - vk * .5
+            vhf += numpy.asarray(vhf_last)
+        return vhf
+
+
+    def get_veff(self, mol=None, dm=None, dm_last=0, vhf_last=0, hermi=1):
+        r"""Return DSE-mediated potential matrix, :math:`V^{\tt{QED}}_{\tt{HF}}`.
 
         Overwrite :meth:`hf.RHF.get_veff <pyscf.scf.hf.RHF.get_veff>`.
         Use parent function to compute non-QED potential, :math:`V_{\tt{HF}}`
@@ -429,6 +613,7 @@ class RHF(scf.hf.RHF):
         matrices, added before return.
 
         .. math::
+
             V^{\tt{QED}}_{\tt{HF}} = V_{\tt{HF}}
                                    + (J^{\tt{QED}} - \frac{1}{2} K^{\tt{QED}})
 
@@ -457,27 +642,31 @@ class RHF(scf.hf.RHF):
             :math:`V^{\tt{QED}}_{\tt{HF}}`.
         """
 
-        bare_vhf = super().get_veff(mol, dm, dm_last, vhf_last, hermi)
+        # vj_dse and vk_dse are moved into get_jk
+        # bare_vhf = super().get_veff(mol, dm, dm_last, vhf_last, hermi)
+        # vj_dse, vk_dse = self.qed.get_dse_jk(dm)
+        # vhf = bare_vhf + (vj_dse - vk_dse * .5)
 
-        vj_dse, vk_dse = self.qed.get_dse_jk(dm)
-        vhf = bare_vhf + (vj_dse - vk_dse * .5)
+        if mol is None:
+            mol = self.mol
+        if dm is None:
+            dm = self.make_rdm1()
+
+        if self.qed.use_cs:
+            self.qed.update_cs(dm)
+
+        if self._eri is not None or not self.direct_scf:
+            vj, vk = self.get_jk(mol, dm, hermi)
+            vhf = vj - vk * 0.5
+        else:
+            ddm = numpy.asarray(dm) - numpy.asarray(dm_last)
+            vj, vk = self.get_jk(mol, ddm, hermi)
+            vhf = vj - vk * 0.5
+            vhf += numpy.asarray(vhf_last)
+
         return vhf
 
-
     get_fock = get_fock
-
-
-    def get_init_guess(self, mol=None, key='minao', **kwargs):
-        r"""Return density matrix for specified-type of initial guess.
-
-        Overwrites parent method to update QED-specific values with
-        electronic density matrix dependence.
-        """
-
-        dm = super().get_init_guess(mol, key, **kwargs)
-        if self.qed is not None:
-            self.qed.update_cs(dm)
-        return dm
 
 
     def energy_elec(self, dm=None, h1e=None, vhf=None):
@@ -551,10 +740,8 @@ class RHF(scf.hf.RHF):
 
         cput0 = (logger.process_clock(), logger.perf_counter())
 
-        if dm0 is None:
-            init_dm = self.get_init_guess(self.mol, self.init_guess)
-        else:
-            init_dm = dm0
+        #if dm0 is None:
+        #    dm0 = self.get_init_guess(self.mol, self.init_guess)
 
         self.dump_flags()
         self.build(self.mol)
@@ -563,11 +750,11 @@ class RHF(scf.hf.RHF):
             self.converged, self.e_tot, \
                     self.mo_energy, self.mo_coeff, self.mo_occ = \
                     kernel(self, self.conv_tol, self.conv_tol_grad,
-                           dm0=init_dm, callback=self.callback,
+                           dm0=dm0, callback=self.callback,
                            conv_check=self.conv_check, **kwargs)
         else:
             self.e_tot = kernel(self, self.conv_tol, self.conv_tol_grad,
-                                dm0=init_dm, callback=self.callback,
+                                dm0=dm0, callback=self.callback,
                                 conv_check=self.conv_check, **kwargs)[1]
 
         logger.timer(self, 'SCF', *cput0)
@@ -575,9 +762,21 @@ class RHF(scf.hf.RHF):
         return self.e_tot
     kernel = lib.alias(scf, alias_name='kernel')
 
+    def _finalize(self):
+        '''Hook for dumping results and clearing up the object.'''
+        if self.converged:
+            logger.note(self, 'converged SCF energy = %.15g', self.e_tot)
+            logger.note(self, 'converged z = [%s]', ', '.join(f'{z:.15g}' for z in self.qed.z_alpha))
+            logger.note(self, 'converged f = [%s]', ', '.join(f'{f:.15g}' for f in self.qed.couplings_var))
+            logger.note(self, 'converged F = [%s]', ', '.join(f'{f:.15g}' for f in self.qed.squeezed_var))
+        else:
+            logger.note(self, 'SCF not converged.')
+            logger.note(self, 'SCF energy = %.15g', self.e_tot)
+        return self
 
-    def post_kernel(self, breakline=('='*80)):
+    def post_kernel(self, envs):
         r"""Prints relevant citation information for calculation."""
+        breakline = '='*80
         logger.note(self, f"\n{breakline}")
         logger.note(self, f"*  Hooray, the job is done!\n")
         logger.note(self, f"Citations:\n")
@@ -586,6 +785,34 @@ class RHF(scf.hf.RHF):
         logger.note(self, f"{breakline}\n")
         return self
 
+    def make_rdm1_org(self, mo_coeff, mo_occ, nfock=2, **kwargs):
+        r"""
+        """
+        import math
+
+        mocc = mo_coeff[:,mo_occ>0]
+        rho = (mocc*mo_occ[mo_occ>0]).dot(mocc.conj().T)
+
+        nao = rho.shape[0]
+        imode = 0
+
+        rho_tot = numpy.zeros((nfock, nao, nfock, nao))
+        for m in range(nfock):
+            for n in range(nfock):
+                # <m | D(z_alpha) |0>
+                zalpha = self.qed.z_alpha[imode]
+
+                z0 = numpy.exp(-0.5 * zalpha ** 2)
+                zm = z0 * zalpha ** m * numpy.sqrt(math.factorial(m))
+                zn = z0 * zalpha ** n * numpy.sqrt(math.factorial(n))
+                rho_tmp = rho * zm * zn
+                # back to AO
+                rho_tot[m, :, n, :] = rho_tmp
+
+        rho_e = numpy.einsum("mpmq->pq", rho_tot)
+        rho_b = numpy.einsum("mpnp->mn", rho_tot) / numpy.trace(rho)
+
+        return rho_tot, rho_e, rho_b
 
     def dump_flags(self, verbose=None):
         r"""Parent method overwritten to include :class:`~lib.boson.Boson` flags."""
@@ -598,9 +825,10 @@ class RHF(scf.hf.RHF):
 
     def set_params(self, params, fock_shape=None):
         r"""Reshape Fock after DIIS."""
-        fsize = numpy.prod(fock_shape)
-        f = params[:fsize].reshape(fock_shape)
-        return f
+        if fock_shape is not None:
+            fsize = numpy.prod(fock_shape)
+            f = params[:fsize].reshape(fock_shape)
+            return f
 
     def get_h1e_DO(self, mol=None, dm=None):
         r"""Template method to get one-body terms in dipole operator basis."""
@@ -626,18 +854,26 @@ class RHF(scf.hf.RHF):
         r"""Template method to update SC/VT-QED-HF variational parameters."""
         pass
 
+    # below are deprecated functions which are to be removed
+    # in furture release
 
-class RKS(dft.rks.KohnShamDFT, RHF):
+
+class RKS(rks.KohnShamDFT, RHF):
     r"""Template class for QED-RKS. WIP."""
-    def __init__(
-        self, mol, xc="LDA,VWN", **kwargs):
-        raise NotImplementedError("""RKS object is currently unsupported. WIP.""")
-        #RHF.__init__(self, mol, **kwargs)
-        #dft.rks.KohnShamDFT.__init__(self, xc)
+    def __init__(self, mol, xc="LDA,VWN", **kwargs):
+        RHF.__init__(self, mol, **kwargs)
+        rks.KohnShamDFT.__init__(self, xc)
 
-    #get_veff = dft.rks.get_veff
-    #get_vsap = dft.rks.get_vsap
-    #energy_elec = dft.rks.energy_elec
+    def dump_flags(self, verbose=None):
+        r"""Parent method overwritten to include :class:`~lib.boson.Boson` flags."""
+        RHF.dump_flags(self, verbose)
+        return rks.KohnShamDFT.dump_flags(self, verbose)
+
+    get_veff = rks.get_veff
+    get_vsap = rks.get_vsap
+    energy_elec = rks.energy_elec
+
+
 
 
 if __name__ == "__main__":
@@ -657,10 +893,11 @@ if __name__ == "__main__":
            """
 
     mol = gto.M(atom = atom,
-                basis = "sto-3g",
-                unit = "Angstrom",
-                symmetry = True,
-                verbose = 3)
+                basis="sto3g",
+                unit="Angstrom",
+                symmetry=True,
+                verbose=3,
+    )
 
     nmode = 2
     cavity_freq = numpy.zeros(nmode)
@@ -668,6 +905,14 @@ if __name__ == "__main__":
     cavity_mode = numpy.zeros((nmode, 3))
     cavity_mode[0, :] = 0.1 * numpy.asarray([0, 0, 1])
 
-    qedmf = RHF(mol, omega = cavity_freq, vec = cavity_mode)
+    qedmf = RHF(mol, cavity_mode=cavity_mode, cavity_freq=cavity_freq)
     qedmf.max_cycle = 500
     qedmf.kernel()
+    print(f"Total energy:     {qedmf.e_tot:.10f}")
+
+    qed = qedmf.qed
+
+    # get I
+    qed.kernel()
+    I = qed.get_I()
+    F = qed.g_fock()

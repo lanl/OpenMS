@@ -46,10 +46,10 @@ for solving the molecular quantum electrodynamics (mQED) Hamiltonian.
   WIP.
 """
 
-from . import ccsd
+#from . import ccsd
 #from . import diis
 #from . import ms_qedhf
-from . import qedcc_equations
+#from . import qedcc_equations
 from . import qedhf
 from . import scqedhf
 from . import vtqedhf

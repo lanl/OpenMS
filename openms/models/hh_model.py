@@ -15,9 +15,8 @@
 #
 
 import numpy
-from cqcpy.ov_blocks import one_e_blocks
-from cqcpy.ov_blocks import two_e_blocks
-from cqcpy import utils
+from openms.lib.ov_blocks import block_diag, one_e_blocks
+from openms.lib.ov_blocks import two_e_blocks
 
 
 def get_mo(L, N, U, breaksym, bc="p"):
@@ -88,7 +87,7 @@ class HHModel(object):
         self.ca, self.cb = ca, cb
         self.pa = numpy.einsum("ai,bi->ab", ca[:, :na], ca[:, :na])
         self.pb = numpy.einsum("ai,bi->ab", cb[:, :nb], cb[:, :nb])
-        self.ptot = utils.block_diag(self.pa, self.pb)
+        self.ptot = block_diag(self.pa, self.pb)
         self.g = g
         self.gij = gij
         self.gmat = numpy.zeros((M, 2 * L, 2 * L))
@@ -169,7 +168,7 @@ class HHModel(object):
     def tmat(self):
         r"""Return T-matrix in the spin orbital basis."""
         t = self.tmatS()
-        return utils.block_diag(t, t)
+        return block_diag(t, t)
 
 
     def umat(self):
@@ -187,7 +186,7 @@ class HHModel(object):
     def fock(self):
         if self.pa is None or self.pb is None:
             raise Exception("Cannot build Fock without density ")
-        ptot = utils.block_diag(self.pa, self.pb)
+        ptot = block_diag(self.pa, self.pb)
         U = self.umat()
         T = self.tmat()
         Ua = U - U.transpose((0, 1, 3, 2))
@@ -203,7 +202,7 @@ class HHModel(object):
     def hf_energy(self):
         F = self.fock()
         T = self.tmat()
-        ptot = utils.block_diag(self.pa, self.pb)
+        ptot = block_diag(self.pa, self.pb)
         Ehf = numpy.einsum("ij,ji->", ptot, F)
         Ehf += numpy.einsum("ij,ji->", ptot, T)
         return 0.5 * Ehf + self.const
@@ -220,7 +219,7 @@ class HHModel(object):
         T = self.tmatS()
         ha = numpy.einsum("ij,ip,jq->pq", T, self.ca, self.ca)
         hb = numpy.einsum("ij,ip,jq->pq", T, self.cb, self.cb)
-        return utils.block_diag(ha, hb)
+        return block_diag(ha, hb)
 
 
     def g_fock(self):
@@ -228,8 +227,8 @@ class HHModel(object):
         nb = self.N // 2
         va = self.L - na
         vb = self.L - nb
-        Co = utils.block_diag(self.ca[:, :na], self.cb[:, :nb])
-        Cv = utils.block_diag(self.ca[:, na:], self.cb[:, nb:])
+        Co = block_diag(self.ca[:, :na], self.cb[:, :nb])
+        Cv = block_diag(self.ca[:, na:], self.cb[:, nb:])
         F = self.fock()
         Foo = numpy.einsum("pi,pq,qj->ij", Co, F, Co) - 2 * numpy.einsum(
             "I,pi,Ipq,qj->ij", self.xi, Co, self.gmat, Co
@@ -251,9 +250,9 @@ class HHModel(object):
         nb = self.N // 2
         va = self.L - na
         vb = self.L - nb
-        Co = utils.block_diag(self.ca[:, :na], self.cb[:, :nb])
-        Cv = utils.block_diag(self.ca[:, na:], self.cb[:, nb:])
-        C = utils.block_diag(self.ca, self.cb)
+        Co = block_diag(self.ca[:, :na], self.cb[:, :nb])
+        Cv = block_diag(self.ca[:, na:], self.cb[:, nb:])
+        C = block_diag(self.ca, self.cb)
         U = self.umat()
         Ua = U - U.transpose((0, 1, 3, 2))
         Uat = numpy.einsum("pqrs,pw->wqrs", Ua, C)
@@ -293,7 +292,7 @@ class HHModel(object):
 
 
     def mfG(self):
-        ptot = utils.block_diag(self.pa, self.pb)
+        ptot = block_diag(self.pa, self.pb)
         g = self.gmat
         mfG = numpy.einsum("Ipq,qp->I", g, ptot)
         if self.shift:
@@ -306,8 +305,8 @@ class HHModel(object):
         g = self.gmat
         na = self.N // 2
         nb = self.N // 2
-        Co = utils.block_diag(self.ca[:, :na], self.cb[:, :nb])
-        Cv = utils.block_diag(self.ca[:, na:], self.cb[:, nb:])
+        Co = block_diag(self.ca[:, :na], self.cb[:, :nb])
+        Cv = block_diag(self.ca[:, na:], self.cb[:, nb:])
         oo = numpy.einsum("Ipq,pi,qj->Iij", g, Co, Co)
         ov = numpy.einsum("Ipq,pi,qa->Iia", g, Co, Cv)
         vo = numpy.einsum("Ipq,pa,qi->Iai", g, Cv, Co)
@@ -321,6 +320,6 @@ class HHModel(object):
         g = self.gmat
         na = self.N // 2
         nb = self.N // 2
-        Ctot = utils.block_diag(self.ca, self.cb)
+        Ctot = block_diag(self.ca, self.cb)
         gmo = numpy.einsum("Ipq,pi,qj->Iij", g, Ctot, Ctot)
         return gmo

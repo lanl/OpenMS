@@ -16,6 +16,7 @@
 
 import sys
 from pyscf import tools, lo, scf, fci
+from pyscf.gto import mole
 import numpy as backend
 import scipy
 import itertools
@@ -23,13 +24,40 @@ import logging
 import time
 import warnings
 
-from openms.qmc.trial import TrialHF
+from openms import runtime_refs, _citations
 from . import generic_walkers as gwalker
 from pyscf.lib import logger
 from openms.lib.logger import task_title
 from openms.lib.boson import Boson
+from openms.qmc.trial import make_trial
 from openms.qmc.estimators import local_eng_elec_chol
+from openms.qmc.estimators import local_eng_elec_chol_new
+
 from openms.qmc.propagators import Phaseless, PhaselessElecBoson
+
+r"""
+QMC method
+----------
+
+DF or Cholesky decomposition:
+
+.. math::
+
+    I_{pqrs} \simeq = L_{\lambda, pq} L_{\lambda, rs}
+
+Tensor hypercontraction:
+
+.. math::
+
+    I_{pqrs} \simeq X_{\mu p} X_{\mu q} Z_{\mu\nu} X_{\nu r} X_{\nu s}
+
+it means that the :math:`L` is effectively decomposed into :math:`X`
+
+.. math::
+
+    L_{\lambda pq} = X_{\lambda p} X_{\lambda q}
+
+"""
 
 
 def read_fcidump(fname, norb):
@@ -81,6 +109,7 @@ class QMCbase(object):
         taylor_order=6,
         energy_scheme=None,
         batched=False,
+        propagator_options = None,
         *args,
         **kwargs,
     ):
@@ -96,6 +125,8 @@ class QMCbase(object):
            nblocks:     Number of blocks
            nsteps:      Number of steps per block
         """
+        if "pra2024" not in runtime_refs:
+            runtime_refs.append("pra2024")
 
         self.system = self.mol = system
 
@@ -131,12 +162,25 @@ class QMCbase(object):
         # self.walker_coeff = None
         # self.walker_tensors = None
 
-        #self.mf_shift = None
         self.print_freq = 10
-
         self.hybrid_energy = None
-
         self.batched = batched
+
+        self.geb = None  # TODO: optimize the handling of geb
+        self.chol_Xa = None  # TODO: optimize the handling of this term
+        self.chol_bilinear = None  # TODO: optimize the handling of this term
+
+        # update propagator options
+        self.propagator_options = {
+            "verbose": self.verbose,
+            "stdout" : self.stdout,
+            "quantizaiton": "first",
+            "energy_scheme" : self.energy_scheme,
+            "talor_order" : self.taylor_order,
+        }
+
+        if propagator_options is not None:
+            self.propagator_options.update(propagator_options)
 
         self.build()  # setup calculations
 
@@ -145,75 +189,72 @@ class QMCbase(object):
         Build up the afqmc calculations
         """
         # set up trial wavefunction
-        logger.info(self, task_title("Initialize Trial WF and Walker"))
+        logger.note(self, task_title("Initialize Trial WF and Walker"))
+
+        # make a trial_options for creating trail WF.
+        trial_options = {
+            "verbose": self.verbose,
+            "stdout": self.stdout,
+            "trail_type": "RHF",
+            "numdets": 1,
+        }
+
         self.spin_fac = 1.0
         if self.trial is None:
-            if self.mf is not None:
-                logger.info(self, f"Mean-field reference is {self.mf.__class__}")
-                self.trial = TrialHF(self.mol, mf=self.mf)
-            else:
-                logger.info(self, f"Mean-field reference is None, we will build from RHF")
-                self.trial = TrialHF(self.mol)
+            self.trial = make_trial(self.mol, mf=self.mf, **trial_options)
 
         # set up walkers
-        # moved this into walker class
-        # temp = self.trial.wf.copy()
-        # self.walker_tensors = backend.array([temp] * self.num_walkers, dtype=backend.complex128)
-        # self.walker_coeff = backend.array([1.] * self.num_walkers)
-        logger.info(self, task_title("Set up walkers"))
+        logger.note(self, task_title("Set up walkers"))
         self.walkers = gwalker.Walkers_so(nwalkers=self.num_walkers, trial=self.trial)
-        logger.info(self, "Done!")
+        logger.note(self, "Done!")
 
-        logger.info(self, task_title("Get integrals"))
+        logger.note(self, task_title("Get integrals"))
         self.h1e, self.eri, self.ltensor = self.get_integrals()
-        logger.info(self, "Done!")
+        logger.note(self, "Done!")
 
         # prepare the propagator
-        logger.info(self, task_title("preparing  propagator"))
+        logger.note(self, task_title("preparing  propagator"))
         if isinstance(self.system, Boson):
-            logger.info(
+            logger.note(
                 self,
                 "\nsystem is a electron-boson coupled system!"
                 + "\nPhaselessElecBoson propagator is to be used!\n",
             )
-            self.propagator = PhaselessElecBoson(
-                dt=self.dt,
-                taylor_order=self.taylor_order,
-                energy_scheme=self.energy_scheme,
-                quantization="first",
-            )
+            self.propagator = PhaselessElecBoson(self.dt, **self.propagator_options)
+            self.propagator.chol_bilinear = self.chol_bilinear
+            self.propagator.chol_Xa  = self.chol_Xa
         else:
-            logger.info(
+            logger.note(
                 self,
                 "\nsystem is a bare electronic system!"
                 + "\nPhaseless propagator is to be used!\n",
             )
-            self.propagator = Phaseless(
-                dt=self.dt,
-                taylor_order=self.taylor_order,
-                energy_scheme=self.energy_scheme,
-            )
+            self.propagator = Phaseless(dt=self.dt, **self.propagator_options)
         logger.info(self, "Done!")
+
+        # FIXME: temporarily assign system to propgator as well
+        # FIXME: need to decide how to handle access system from the propagation
+        self.propagator.system = self.system
 
         self.propagator.dump_flags()
 
 
     def dump_flags(self):
-        r"""dump flags (TBA)
-        """
+        r"""dump flags (TBA)"""
         pass
 
     def get_integrals(self):
         r"""return oei and eri in MO"""
 
         overlap = self.mol.intor("int1e_ovlp")
-        self.ao_coeff = lo.orth.lowdin(overlap)
-        norb = self.ao_coeff.shape[0]
+        Xmat = lo.orth.lowdin(overlap)
+        norb = Xmat.shape[0]
 
         import tempfile
 
+        # get h1e, and ori in OAO representation
         ftmp = tempfile.NamedTemporaryFile()
-        tools.fcidump.from_mo(self.mol, ftmp.name, self.ao_coeff)
+        tools.fcidump.from_mo(self.mol, ftmp.name, Xmat)
         h1e, eri, self.nuc_energy = read_fcidump(ftmp.name, norb)
 
         # Cholesky decomposition of eri
@@ -222,11 +263,40 @@ class QMCbase(object):
         ltensor = u * backend.sqrt(s)
         ltensor = ltensor.T
         ltensor = ltensor.reshape(ltensor.shape[0], norb, norb)
-        self.nfields = ltensor.shape[0]
 
+        if isinstance(self.system, Boson):
+            system = self.system
+            # Add boson-mediated oei and eri:
+            # shape [nm, nao, nao]
+
+            chol_eb = system.gmat.copy()
+            # transform into OAO
+            chol_eb = backend.einsum(
+                "ik, mkj, jl -> mil", Xmat.T, chol_eb, Xmat, optimize=True
+            )
+
+            # geb is the bilinear coupling term
+            tmp = (system.omega * 0.5) ** 0.5
+            self.geb = chol_eb * tmp[:, backend.newaxis, backend.newaxis]
+
+            logger.debug(self, f"size of chol before adding DSE: {ltensor.shape[0]}")
+            if backend.linalg.norm(chol_eb) > 1.0e-10:
+                ltensor = backend.concatenate((ltensor, chol_eb), axis=0)
+            logger.debug(self, f"size of chol after adding DSE:  {ltensor.shape[0]}")
+
+            # add terms due to decoupling of bilinear term
+            if self.propagator_options["decouple_bilinear"]:
+                logger.debug(self, f"creating chol due to decomposition of bilinear term")
+
+                # (1 + 1j) * \sqrt{\omega} (\lambda\cdot D)
+                self.chol_bilinear = self.geb * (1.0 + 1j)
+                self.chol_Xa = (system.omega) ** 0.5 * (1.0 + 1j)
+
+        self.nfields = ltensor.shape[0]
         return h1e, eri, ltensor
 
-    def propagation(self, walkers, xbar, ltensor):
+
+    def propagate_walkers(self, walkers, xbar, ltensor):
         pass
 
     def measure_observables(self, operator):
@@ -239,7 +309,7 @@ class QMCbase(object):
 
         .. math::
 
-            \langle \Psi_T \ket{\Psi_w} = det[S]
+            \langle \Psi_T \ket{\Psi_w} = \det[S]
 
         where
 
@@ -319,7 +389,7 @@ class QMCbase(object):
                  + \frac{1}{2}\sum_{\gamma,pq\sigma\sigma'} (L_\gamma G_\sigma)_{pq} (L_\gamma G_{\sigma'})_{pq}
                  - \frac{1}{2}\sum_{\gamma,\sigma} [\sum_{pq} L_{\gamma,pq} G_{pq\sigma}]^2
 
-        i.e. the Ecoul is :math:`\left[\frac{\bra{\Psi_T}L\ket{\Psi_w}{\bra{\Psi_T}\Psi_w\rangle}\right]^2`,
+        i.e. the Ecoul is :math:`\left[\frac{\bra{\Psi_T}L\ket{\Psi_w}}{\bra{\Psi_T}\Psi_w\rangle}\right]^2`,
         which is the TL_Theta tensor in the code
         """
 
@@ -369,7 +439,8 @@ class QMCbase(object):
 
         # setup propagator
         # self.build_propagator(h1e, eri, ltensor)
-        propagator.build(h1e, eri, ltensor, self.trial)
+        propagator.build(h1e, ltensor, self.trial, self.geb)
+
 
         # start the propagation
         tt = 0.0
@@ -401,7 +472,7 @@ class QMCbase(object):
             xbar = -backend.sqrt(self.dt) * (1j * 2 * vbias - propagator.mf_shift)
 
             # step 3): propagate walkers and update weights
-            # self.propagation(walkers, xbar, ltensor)
+            # self.propagate_walkers(walkers, xbar, ltensor)
             propagator.propagate_walkers(trial, walkers, vbias, ltensor)
 
             # moved phaseless approximation to propagation
@@ -422,4 +493,16 @@ class QMCbase(object):
 
             tt += self.dt
 
+        self.post_kernel()
         return time_list, energy_list
+
+
+    def post_kernel(self):
+        r"""Prints relevant citation information for calculation."""
+        breakline = '='*80
+        logger.note(self, f"\n{breakline}")
+        logger.note(self, f"*  Hoollary, the job is done!\n")
+        logger.note(self, f"Citations:")
+        for i, key in enumerate(runtime_refs):
+            logger.note(self, f"[{i+1}]. {_citations[key]}")
+        logger.note(self, f"{breakline}\n")

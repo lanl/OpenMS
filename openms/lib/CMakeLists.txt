@@ -115,6 +115,13 @@ else()
   endif()
 endif()
 
+# Specify architecture
+if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -target arm64-apple-macos10.15")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -target arm64-apple-macos10.15")
+endif()
+
+
 # Set install paths ============================================================
 # not done yet (TODO)
 set(PROJECT_INSTALL_DIR "${PROJECT_SOURCE_DIR}/deps")
@@ -151,10 +158,10 @@ set(MPI_CXX_SKIP_MPICXX TRUE CACHE BOOL "MPI_CXX_SKIP_MPICXX")
 option(ENABLE_QEDLIB "Enable QED c++ libraries" OFF)
 option(ENABLE_MPI "Enable MPI" ON)
 option(ENABLE_QMD "Enable QMD/MQC/CTMQC" ON)
-option(ENABLE_MEEP "Using MEEP for solvng maxwell equations" ON)
+option(ENABLE_MEEP "Using MEEP for solvng maxwell equations" OFF)
 option(ENABLE_MEEP_OPENMP "Enable MEEP OPENMP" OFF)
 option(ENABLE_MEEP_MPI "Enable MEEP OPENMP" OFF)
-option(ENABLE_TA "Using TiledArray lib for tensor contraction" ON)
+option(ENABLE_TA "Using TiledArray lib for tensor contraction" OFF)
 option(ENABLE_TASCALAPACK "Enable ScaLAPACK Bindings in TiledArray" OFF)
 option(ENABLE_TACUDA "Enable use of CUDA with TiledArray" OFF)
 option(ENABLE_TAPYTHON "Enable Python binding of TA lib" ON)
@@ -163,13 +170,6 @@ option(TA_TENSOR_MEM_TRACE "Turn on instrumented tracing of TA::Tensor memory us
 option(TA_TENSOR_MEM_PROFILE "Turn on instrumented profiling of TA::Tensor memory use" ${TA_TENSOR_MEM_TRACE})
 option(BUILD_INFDTD "Using internal FDTDc for solvng maxwell equations" ON)
 
-if (ENABLE_TA)
-	set(EIGEN3_PATH $ENV{EIGEN3_PATH} CACHE INTERNAL "EIGEN3_PATH for TA lib" FORCE)
-	message("EIGEN3_PATH is ${EIGEN3_PATH}")
-	if(NOT EIGEN3_PATH)
-		message(FATAL_ERROR "EIGEN3_PATH is not defined!!! Please download eigen3 (https://gitlab.com/libeigen/eigen/-/archive/3.3.9/eigen-3.3.9.tar.gz) and privde the path as EIGEN3_PATH (no need to compile it)")
-	endif()
-endif()
 
 add_feature_info(QEDLIB ENABLE_QEDLIB "C++ libraries for QED-related integrals")
 add_feature_info(TA ENABLE_TA "TiledArray: block-sparse tensor framework for modern (distributed-memory and heterogeneous) computing")
@@ -253,8 +253,12 @@ endif()
 include_directories(${PROJECT_SOURCE_DIR})
 include_directories(${PROJECT_SOURCE_DIR}/deps/include)
 include_directories(${CMAKE_INSTALL_PREFIX}/include)
-link_directories(${PROJECT_SOURCE_DIR}/deps/lib ${PROJECT_SOURCE_DIR}/deps/lib64)
-link_directories(${CMAKE_INSTALL_PREFIX}/lib ${CMAKE_INSTALL_PREFIX}/lib64)
+if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")  # macOS
+    link_directories(${PROJECT_SOURCE_DIR}/deps/lib ${CMAKE_INSTALL_PREFIX}/lib)
+else()  # Other platforms (Linux, etc.)
+    link_directories(${PROJECT_SOURCE_DIR}/deps/lib ${PROJECT_SOURCE_DIR}/deps/lib64)
+    link_directories(${CMAKE_INSTALL_PREFIX}/lib ${CMAKE_INSTALL_PREFIX}/lib64)
+endif()
 
 configure_file(
   "${PROJECT_SOURCE_DIR}/config.h.in"
@@ -335,19 +339,23 @@ endif()
 
 message(STATUS "FFTW_LIBRARY_DIR: ${FFTW_LIBRARY_DIR}")
 
-get_filename_component(FFTW_LIBRARY_DIR ${FFTW_LIBRARIES} DIRECTORY)
-get_filename_component(FFTW_PARENT_DIR ${FFTW_LIBRARY_DIR} DIRECTORY)
-set(FFTW_INCLUDE_DIR ${FFTW_PARENT_DIR}/include)
-message("FFTW libraries: ${FFTW_LIBRARIES}")
-message("FFTW library path: ${FFTW_LIBRARY_DIR}")
-message("FFTW include path: ${FFTW_INCLUDE_DIR}")
-
 if(ENABLE_MEEP)
   message("")
   message("***********************************")
   message("***   MEEP is to be built")
   message("***********************************")
   message("")
+
+  if(FFTW_LIBRARIES)
+    get_filename_component(FFTW_LIBRARY_DIR ${FFTW_LIBRARIES} DIRECTORY)
+    get_filename_component(FFTW_PARENT_DIR ${FFTW_LIBRARY_DIR} DIRECTORY)
+  else()
+    message(FATAL_ERROR "FFTW_LIBRARIES is not set or is empty.")
+  endif()
+  set(FFTW_INCLUDE_DIR ${FFTW_PARENT_DIR}/include)
+  message("FFTW libraries: ${FFTW_LIBRARIES}")
+  message("FFTW library path: ${FFTW_LIBRARY_DIR}")
+  message("FFTW include path: ${FFTW_INCLUDE_DIR}")
 
   # if building meep, we need to build libctl, harminv, mpb as well,
   # a) build libctl
@@ -466,6 +474,13 @@ endif()
 
 if(ENABLE_TA)
   message("TA lib will be build")
+
+  set(EIGEN3_PATH $ENV{EIGEN3_PATH} CACHE INTERNAL "EIGEN3_PATH for TA lib" FORCE)
+  message("EIGEN3_PATH is ${EIGEN3_PATH}")
+  if(NOT EIGEN3_PATH)
+	message(FATAL_ERROR "EIGEN3_PATH is not defined!!! Please download eigen3 (https://gitlab.com/libeigen/eigen/-/archive/3.3.9/eigen-3.3.9.tar.gz) and privde the path as EIGEN3_PATH (no need to compile it)")
+  endif()
+
   message("EIGEN3 PATH is:      " ${EIGEN3_PATH})
   message("Use scalapack in TA: " ${ENABLE_TASCALAPACK})
   message("Enable CUDA in TA:   " ${ENABLE_TACUDA})

@@ -29,6 +29,7 @@ from openms.lib import mathlib
 from openms.lib import scipy_helper
 from openms.mqed import diis
 from openms.mqed import qedhf
+from openms.mqed import scqedhf
 from openms import __config__
 
 TIGHT_GRAD_CONV_TOL = getattr(__config__, "TIGHT_GRAD_CONV_TOL", True)
@@ -400,6 +401,8 @@ class RHF(qedhf.RHF):
 
         self.qed.couplings_var = numpy.ones(self.qed.nmodes)
         self.qed.update_couplings()
+        if type(self) is scqedhf.RHF:
+            self.qed.use_cs = False
 
         self.P = self.L = None
 

@@ -4,14 +4,18 @@ from pyscf import gto
 from openms.mqed import scqedhf, vtqedhf
 
 def get_mol():
-    atom = """
-           H          0.86681        0.60144        0.00000
-           F         -0.86681        0.60144        0.00000
-           O          0.00000       -0.07579        0.00000
-           He         0.00000        0.00000        2.50000
-           """
-    mol = gto.M(atom=atom, basis="sto3g", unit="Angstrom", symmetry=True, verbose=1)
-    return mol
+    atom = f"C   0.00000000   0.00000000    0.0000;\
+             O   0.00000000   1.23456800    0.0000;\
+             H   0.97075033  -0.54577032    0.0000;\
+             C  -1.21509881  -0.80991169    0.0000;\
+             H  -1.15288176  -1.89931439    0.0000;\
+             C  -2.43440063  -0.19144555    0.0000;\
+             H  -3.37262777  -0.75937214    0.0000;\
+             O  -2.62194056   1.12501165    0.0000;\
+             H  -1.71446384   1.51627790    0.0000"
+
+    return gto.M(atom=atom, basis="sto3g", unit="Angstrom", symmetry=True, verbose=1)
+
 
 methods_map = {
  "vtqedhf": vtqedhf,
@@ -27,7 +31,7 @@ def run_qedhf(method="vtqedhf", falpha=None):
     cavity_freq = numpy.zeros(nmode)
     cavity_freq[0] = 0.5
     cavity_mode = numpy.zeros((nmode, 3))
-    cavity_mode[0, :] = 1.e-1 * numpy.asarray([0, 1, 0])
+    cavity_mode[0, :] = 5.e-2 * numpy.asarray([0, 1, 0])
 
     if falpha is None:
         qedmf = methods_map[method].RHF(mol, xc=None, cavity_mode=cavity_mode,
@@ -48,7 +52,7 @@ class TestVTQEDHF_f(unittest.TestCase):
 
     def test_energy_match(self):
 
-        refs = [-174.9935188527, -175.016224162572]
+        refs = [-262.1271784771804, -262.142884529976]
         etots = []
 
         for j, falpha in enumerate([0.0, 1.0]):
@@ -62,7 +66,7 @@ class TestVTQEDHF_f(unittest.TestCase):
 
     def test_vtqed_min(self):
 
-        ref = -175.0168599150538
+        ref = -262.1453751012338
         e_tot = run_qedhf(method="vtqedhf")
 
         self.assertAlmostEqual(e_tot, ref, places=6, msg="Etot does not match the reference value.")

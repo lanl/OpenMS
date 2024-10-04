@@ -18,6 +18,7 @@ def run_qedhf(zshift, cs=True, nfock=1, nmode=1, gfac=0.1):
     mol = gto.M(
         atom = atom,
         basis="sto3g",
+        #basis="cc-pvdz",
         unit="Angstrom",
         symmetry=True,
         verbose=1,
@@ -27,12 +28,20 @@ def run_qedhf(zshift, cs=True, nfock=1, nmode=1, gfac=0.1):
     cavity_mode = numpy.zeros((nmode, 3))
     cavity_freq[0] = 0.5
     cavity_mode[0, :] = gfac * numpy.asarray([0, 1, 0])
+    zlambda = numpy.zeros(nmode)
 
-    qedmf = qedhf.RHF(mol, omega=cavity_freq, vec=cavity_mode, nboson_states=nfock, use_cs=cs)
+    if cs:
+        qedmf = qedhf.RHF(mol, xc=None, cavity_mode=cavity_mode,
+                          cavity_freq=cavity_freq,
+                          nboson_states = nfock)
+    else:
+        qedmf = qedhf.RHF(mol, xc=None, cavity_mode=cavity_mode,
+                         cavity_freq=cavity_freq,
+                         nboson_states = nfock,
+                         z_alpha=zlambda)
 
     qedmf.max_cycle = 500
-    qedmf.kernel()
-
+    qedmf.kernel() #dm0=dm)
     return qedmf.e_tot
 
 
@@ -40,21 +49,26 @@ class TestQEDHF(unittest.TestCase):
 
     def test_n_photon_convergence(self):
 
-        nlist = range(1,9,1)
-        ref_qed_e_tots = [-262.050746414733, -262.052856900157,
-                          -262.052870889973, -262.052870927649,
-                          -262.052870927716, -262.052870927716,
-                          -262.052870927716, -262.052870927716]
+        nlist = range(1, 7, 1)
+        # cs refs (no changes)
+        refs2 = [-262.0528709277] * len(nlist)
 
-        zshift = 0.0
+        # fock (converges to cs)
+        refs1 = [-262.050746414727, -262.052856900152,
+                -262.052870889967, -262.052870927632,
+                -262.052870927716, -262.052870927715]
+
+        itest = 0
+        zshift = itest * 2.0
+
+        E_c = numpy.zeros(len(nlist))
+        E_f = numpy.zeros(len(nlist))
         for i, n in enumerate(nlist):
-            e_tot = run_qedhf(zshift, nfock=n, cs=False)
-            err_msg = f"FOCK STATE : E_tot does not match the reference value for n_photon = {n}."
-            self.assertAlmostEqual(e_tot, ref_qed_e_tots[i], places=6, msg=err_msg)
+            E_c[i] = run_qedhf(zshift, cs=True, nfock=n)
+            E_f[i] = run_qedhf(zshift, cs=False, nfock=n)
 
-            e_tot = run_qedhf(zshift, nfock=n, cs=True)
-            err_msg = f"COHERENT STATE : E_tot does not match the reference value for n_photon = {n}."
-            self.assertAlmostEqual(e_tot, ref_qed_e_tots[-1], places=6, msg=err_msg)
+        numpy.testing.assert_almost_equal(E_f, refs1, decimal=7, err_msg="Etot does not match the reference value.")
+        numpy.testing.assert_almost_equal(E_c, refs2, decimal=7, err_msg="Etot does not match the reference value.")
 
 if __name__ == '__main__':
     unittest.main()

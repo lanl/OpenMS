@@ -66,6 +66,15 @@ numpy_float_dtypes = {
 }
 
 
+# cupy backend
+try:
+    import cupy
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+
+
+#=================================================
 # Torch Backends (and flags)
 try:
     import torch
@@ -114,6 +123,34 @@ def _replace_float(func):
         return result
 
     return new_func
+
+
+# Numpy Backend
+class NumpyBackend(Backend):
+    """Numpy Backend"""
+    # cupy backend functions
+    def to_host_cpu(ndarray):
+        return ndarray
+
+    def to_host_gpu(mdarray):
+        return cupy.asnumpy(ndarray)
+
+    def get_cpu_free_memory():
+        try:
+            return os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE") / 1024**3.0
+        except:
+            return 0.0
+
+    def get_gpu_free_memory():
+        free_bytes, total_bytes = cupy.cuda.Device().mem_info
+        used_bytes = total_bytes - free_bytes
+        return used_bytes, total_bytes
+
+    def synchronize_cpu():
+        pass
+
+    def synchronize_gpu():
+        cupy.cuda.stream.get_current_stream().synchronize()
 
 
 # Numpy Backend
@@ -459,6 +496,10 @@ def set_backend(name: str):
             raise ValueError(
                 "Unknown device '{device}'. Available devices: 'cpu', 'cuda'"
             )
+    elif name == "cupy":
+        backend.__class__ = CupyBackend
+        backend.float = getattr(cupy, dtype)
+
     elif name == "torch":
         if device == "cpu":
             backend.__class__ = TorchBackend

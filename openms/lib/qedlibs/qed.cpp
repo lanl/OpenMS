@@ -143,7 +143,7 @@ void update_fock_energy_gradient_vt_qedhf(py::object wf, Eigen::MatrixXd eri_var
     //for (size_t i = 0; i < h_pq.size(); ++i) {
     //    cblas_daxpy(n_mo, 1.0, &h_pq[i][0], 1, &dipole_basis_fock[i][0], 1);
     //}
-    cblas_daxpy(n_mo*n_mo, 1.0, &h_pq[0][0], 1, &dipole_basis_fock[0][0], 1);
+    // cblas_daxpy(n_mo*n_mo, 1.0, &h_pq[0][0], 1, &dipole_basis_fock[0][0], 1);
 
     #pragma omp parallel for
     for (int p = 0; p < n_mo; ++p) {

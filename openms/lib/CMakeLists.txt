@@ -434,6 +434,8 @@ if(ENABLE_MEEP)
     ${CMAKE_COMMAND} -E env LDFLAGS=${LDFLAGS}
     ${CMAKE_COMMAND} -E env CPPFLAGS=${CPPFLAGS}
     	../meep/configure  --enable-shared=yes --without-scheme --with-libctl=<INSTALL_DIR> --with-mpb=yes ${MEEP_CONFIGURE_MPI} --with-python=yes --prefix=<INSTALL_DIR>
+    	#../meep/configure  --enable-shared=yes --without-scheme --with-libctl=<INSTALL_DIR> --with-mpb=yes --with-openmp=yes --with-python=yes --prefix=<INSTALL_DIR>
+       #../meep/autogen.sh  --enable-shared=yes --without-scheme --with-libctl=<INSTALL_DIR> --with-mpb=yes --with-mpi=no  --with-python=yes --prefix=<INSTALL_DIR>
     BUILD_COMMAND make
     INSTALL_COMMAND make install
     #TEST_COMMAND make check
@@ -509,10 +511,12 @@ if(ENABLE_TA)
 	-DENABLE_SCALAPACK=${ENABLE_TASCALAPACK}
 	-DPYTHON_EXECUTABLE=${Python3_EXECUTABLE}
 
-    BUILD_COMMAND  cmake --build build --target python-tiledarray
-    INSTALL_COMMAND cmake --build build --target install
+    BUILD_COMMAND  cmake --build ${PROJECT_BINARY_DIR}/deps/src/libta-build --target python-tiledarray -j
+    INSTALL_COMMAND cmake --build ${PROJECT_BINARY_DIR}/deps/src/libta-build --target install
+    # BUILD_COMMAND  cmake --build build --target python-tiledarray
+    # INSTALL_COMMAND cmake --build build --target install
     TEST_COMMAND "" # empty command, will not run tests during build
-    #TEST_COMMAND cmake --build build --target check
+    #TEST_COMMAND cmake --build ${PROJECT_BINARY_DIR}/deps/src/libta-build --target check
     TEST_AFTER_INSTALL TRUE # Run tests after installation with "make check"
     #CMAKE_CACHE_ARGS
   )
@@ -522,7 +526,7 @@ if(ENABLE_TA)
   ExternalProject_Get_Property(libta binary_dir)
   add_test(
     NAME test_libta
-    COMMAND ${CMAKE_COMMAND} --build ${binary_dir} --target test
+    COMMAND ${CMAKE_COMMAND} --build ${binary_dir} --target check
   )
 endif()
 
@@ -552,6 +556,10 @@ message("")
 message("=========================================================")
 feature_summary(WHAT ALL
 	DESCRIPTION "=== OpenMS Package/Feature Info ===")
+
+message("")
+message(" * C_FLAGS are: ${CMAKE_C_FLAGS}")
+message("")
 
 if(EXISTS "${PROJECT_SOURCE_DIR}/cmake.user.inc")
   include("${PROJECT_SOURCE_DIR}/cmake.user.inc")

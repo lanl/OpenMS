@@ -18,4 +18,3 @@ vector<double> test_gaussian(int N, double freq, vector<double>& eta);
 void update_fock_energy_gradient_vt_qedhf(pybind11::object wf, Eigen::MatrixXd gvar);
 
 #endif // QED_MODULE_H
-

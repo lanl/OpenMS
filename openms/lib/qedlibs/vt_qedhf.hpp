@@ -34,7 +34,7 @@
 namespace py = pybind11;
 
 //void cpp_method_impl(py::object self);
-//std::vector<std::vector<double>> cpp_method_impl(py::object py_obj);
+std::vector<std::vector<double>> double_gmat(py::object py_obj);
 std::vector<std::vector<double>> cpp_method_impl(py::object py_obj, const std::vector<std::vector<double>>& g);
 
 

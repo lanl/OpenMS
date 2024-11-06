@@ -11,17 +11,19 @@
 # material to reproduce, prepare derivative works, distribute copies to the
 # public, perform publicly and display publicly, and to permit others to do so.
 #
-# Author:   Yu Zhang    <zhy@lanl.gov>
-#         Ilia Mazin <imazin@lanl.gov>
+# Author: Yu Zhang <zhy@lanl.gov>
 #
 
 r"""
+A collection of libraries
+
 Low-level libraries, including:
 
-- internal Finite-Difference Time-Domain (FDTD) code,
-- efficient mathematical algorithms
-- backends
+  - internal FDTD code,
+  - math libs
+  - Backends
 """
+import sys
 
 from . import backend
 from . import boson

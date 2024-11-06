@@ -54,6 +54,7 @@ class BaseWalkers(object):
         self.overlap = backend.ones(self.nwalkers)
         self.eloc = backend.zeros(self.nwalkers)
         self.ehybrid = None
+        self.phiw_b = None
 
         self.spin_restricted = False
         # print("nwalkers in walkerfunciton is", self.nwalkers)
@@ -61,15 +62,28 @@ class BaseWalkers(object):
 
 # walker in so orbital (akin ghf walker)
 class Walkers_so(BaseWalkers):
+    r"""walker in the SO
+
+    TODO: make the walker can be either fermionic, bosonic
+    or fermion-boson mixture walkers
+
+    """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
         trial = kwargs.get("trial", None)
         if trial is None:
             raise Exception("Trial WF must be specified in walker")
+
         # 1) create walkers
         initial_walkers = initialize_walkers(trial)
         self.phiw = backend.array(
             [initial_walkers] * self.nwalkers, dtype=backend.complex128
         )
+
+        if trial.psi_b is not None:
+            self.phiw_b = backend.array(
+                [trial.psi_b] * self.nwalkers, dtype=backend.complex128
+            )
+
         self.spin_restricted = False

@@ -176,6 +176,11 @@ class TrialHF(TrialWFBase):
         self.psi_b = None
         # self.boson_basis = "Fock"
 
+        # with h5py.File("input.h5", "w") as f:
+        #    f["Xmat"] = Xmat
+        #    f["xinv"] = xinv
+        #    f["trial"] = self.psi
+
     def ovlp_with_walkers(self, walkers):
         r"""Compute the overlap between trial and walkers:
 
@@ -194,7 +199,14 @@ class TrialHF(TrialWFBase):
         """
         return backend.einsum("pr, zpq->zrq", self.psi.conj(), walkers.phiw)
 
+    def bovlp_with_walkers(self, walkers):
+        sb = None
+        if walkers.phiw_b is not None:
+            sb = backend.einsum("N, zN->z", self.psi_b.conj(), walkers.phiw_b)
+        return sb
+
     def get_vbias(self, walkers, ltensor, verbose=False):
+        r"""compute the force bias without constructing the big TL_theta tensor"""
         overlap = self.ovlp_with_walkers(walkers)
         inv_overlap = backend.linalg.inv(overlap)
 
@@ -211,7 +223,6 @@ class TrialHF(TrialWFBase):
         vbias = backend.einsum("npq,zpq->zn", ltensor, Gf)
 
         return Gf, vbias
-
 
 
     def force_bias(self, walkers, TL_tensor, verbose=False):
@@ -246,6 +257,7 @@ class TrialHF(TrialWFBase):
            F_\gamma = \sqrt{-\Delta\tau} \sum_\sigma [(TL)\Theta_w]
 
         TODO: may use L * G contraction to get the vbias, instead of using theta_w???
+        TODO: eventually use get_vbias instead and avoid using the big TL_theta tensor
         """
         overlap = self.ovlp_with_walkers(walkers)
         inv_overlap = backend.linalg.inv(overlap)
@@ -264,9 +276,20 @@ class TrialHF(TrialWFBase):
 
         # since TL_tehta is too big, we will avoid constructing it in the propagation
         TL_theta = backend.einsum("npq, zqr->znpr", TL_tensor, theta)
+        # so TL_tensor * theta = L_tensor * Psi_T * Ghalf = L_tensor * G
+        # vbias is L_tensor * G contraction
 
         # trace[TL_theta] give the force_bias
         # vbias = backend.einsum("znpp->zn", TL_theta)
+
+        # bosonic part
+        if self.psi_b is not None:
+            ovlp_b = self.bovlp_with_walkers(walkers)
+            inv_ovlp = 1.0 / ovlp_b
+            theta = backend.einsum("zN, z->zN", walkers.phiw_b, inv_ovlp)
+            Gb = backend.einsum("zM, N->zMN", theta, self.psi_b.conj())
+            return [Gf, Gb], TL_theta
+
         return Gf, TL_theta
 
 
@@ -334,6 +357,7 @@ class TrialUHF(TrialWFBase):
 
         # :math:`\sum_\sigma(\Psi_T L_{\gamma}) \psi_w (\Psi_T \psi_w)^{-1}`
         # vbias = backend.einsum("npq, zqr->znpr", TL_tensor, Ghalfa)
+
 
 def get_ci(mol, cas):
     from pyscf import mcscf, fci
@@ -419,11 +443,11 @@ class multiCI(TrialWFBase):
         raise NotImplementedError("Force bias with MSD is not implemented yet.")
 
 
-
 # =====================================
 # define joint fermion-boson trial
 # =====================================
 from openms.qmc.trial_boson import *
+
 
 class trail_EPH(object):
     def __init__(self, trial_e, trial_b):
@@ -440,8 +464,20 @@ class trail_EPH(object):
 
         pass
 
+
 def make_trial(mol, mf=None, **kwargs):
-    r"""make trial WF according to the options"""
+    r"""make trial WF according to the options
+
+    in electron-boson case, the trial WF is
+
+    .. math::
+
+        \ket{\Psi_T} = \ket{\Psi^e_T} \otimes \ket{\Psi^b_T}
+
+    instead makeing a big tensor (Nfock * Nspin * Nao * Nao), we use
+    two small tensor (Nfock) for boson and (Nspin * Nao * Nao) for electrons
+    """
+
 
     if mf is not None:
         print(f"Mean-field reference is {mf.__class__}")
@@ -455,6 +491,7 @@ def make_trial(mol, mf=None, **kwargs):
 
         boson_size = sum(mol.nboson_states)
         trial.psi_b = backend.zeros(boson_size)
+        # trial.psi_b[0] = 1.0 # / backend.sqrt(boson_size)
         trial.psi_b[:] = 1.0 / backend.sqrt(boson_size)
 
         return trial
@@ -483,3 +520,7 @@ if __name__ == "__main__":
 
     cas = (2, 2)
     trial = multiCI(mol, cas=cas)
+
+    # example of using bosonic trial
+
+    # example of using joint fermionic-bosonic trial

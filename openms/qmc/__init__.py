@@ -15,14 +15,19 @@
 #
 
 r"""
+Quantum Monte Carlo (QMC)
+=========================
 
-This is the collection of QMC solvers for electron-boson interactions
+This is a collection of QMC solvers for electron-boson interactions
+
 
 """
 
-# TBA
-
-#from . import afqmc
+#from openms.qmc import qmc
+#from openms.qmc import afqmc
+#from openms.qmc import trial
 #from . import propagator
-#from . import qmc
-#from . import trial
+
+#def AFQMC(mol, *args):
+#    return afqmc.AFQMC(mol, *args)
+

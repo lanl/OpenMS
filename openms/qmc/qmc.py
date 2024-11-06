@@ -14,27 +14,6 @@
 # Author: Yu Zhang <zhy@lanl.gov>
 #
 
-import sys
-from pyscf import tools, lo, scf, fci
-from pyscf.gto import mole
-import numpy as backend
-import scipy
-import itertools
-import logging
-import time
-import warnings
-
-from openms import runtime_refs, _citations
-from . import generic_walkers as gwalker
-from pyscf.lib import logger
-from openms.lib.logger import task_title
-from openms.lib.boson import Boson
-from openms.qmc.trial import make_trial
-from openms.qmc.estimators import local_eng_elec_chol
-from openms.qmc.estimators import local_eng_elec_chol_new
-
-from openms.qmc.propagators import Phaseless, PhaselessElecBoson
-
 r"""
 QMC method
 ----------
@@ -43,7 +22,7 @@ DF or Cholesky decomposition:
 
 .. math::
 
-    I_{pqrs} \simeq = L_{\lambda, pq} L_{\lambda, rs}
+    I_{pqrs} \simeq L_{\lambda, pq} L_{\lambda, rs}
 
 Tensor hypercontraction:
 
@@ -58,6 +37,76 @@ it means that the :math:`L` is effectively decomposed into :math:`X`
     L_{\lambda pq} = X_{\lambda p} X_{\lambda q}
 
 """
+
+import sys
+from pyscf import tools, lo, scf, fci
+from pyscf.gto import mole
+import numpy as backend
+import scipy
+import itertools
+import logging
+import h5py
+import time
+import warnings
+
+from openms import runtime_refs, _citations
+from . import generic_walkers as gwalker
+from pyscf.lib import logger
+from openms.lib.logger import task_title
+from openms.lib.boson import Boson
+from openms.qmc.trial import make_trial
+from openms.qmc.estimators import local_eng_elec_chol
+from openms.qmc.estimators import local_eng_elec_chol_new
+
+from openms.qmc.propagators import Phaseless, PhaselessElecBoson
+
+
+def kernel(mc, propagator, trial=None):
+    r"""An universal kernel for qmc propagations
+    """
+
+    # prepare propagation
+    backend.random.seed(mc.random_seed)
+
+    # integrals
+    h1e = mc.h1e
+    ltensor = mc.ltensor
+    propagator = mc.propagator
+
+    trial = mc.trial if trial_wf is None else trial_wf
+    walkers = mc.walkers
+
+    # generalize the propagator build for any typs
+    # (fermions, bosons, or fermion-boson mixture).
+    propagator.build(h1e, ltensor, mc.trial, mc.geb)
+
+    # start the propagation
+    tt = 0.0
+    energy_list = []
+    time_list = []
+    wall_t0 = time.time()
+    while tt <= mc.total_time:
+        dump_result = int(tt / mc.dt) % mc.print_freq == 0
+
+        # step 1: compute bias and GFs
+
+        # step 2: compute energies and other properties
+
+        # step 3: propagate walkers
+
+        # step 4: update weights and re-orthogonalize and re-normalize walkers
+
+        # step 5: store intermediate variables (if needed)
+        if dump_result:
+            time_list.append(tt)
+            energy_list.append(energy)
+            # and other large data into .h5 file
+
+        tt += self.dt
+
+    # finalize the propagations
+    mc.post_kernel()
+    return time_list, energy_list
 
 
 def read_fcidump(fname, norb):
@@ -237,7 +286,7 @@ class QMCbase(object):
         self.propagator.system = self.system
 
         self.propagator.dump_flags()
-
+        # self.propagator.build(self.h1e, self.ltensor, self.geb)
 
     def dump_flags(self):
         r"""dump flags (TBA)"""
@@ -246,7 +295,11 @@ class QMCbase(object):
     def get_integrals(self):
         r"""return oei and eri in MO"""
 
+        # with h5py.File("input.h5") as fa:
+        #    ao_coeff = fa["ao_coeff"][()]
+
         overlap = self.mol.intor("int1e_ovlp")
+        # Lowdin orthogonizaiton S^{-/2} -> X
         Xmat = lo.orth.lowdin(overlap)
         norb = Xmat.shape[0]
 
@@ -258,11 +311,24 @@ class QMCbase(object):
         h1e, eri, self.nuc_energy = read_fcidump(ftmp.name, norb)
 
         # Cholesky decomposition of eri
+        # here eri uses chemist's notation
+        # [il|kj]  a^\dag_i a^\dag_j a_k a_l  = <ij|kl> a^\dag_i a^\dag_j a_k a_l
+        # [] -- chemist, <> physicist notations
+
+        # Cholesky decomposition of eri (ij|kl) -> L_{\gamma,ij} L_{\gamma,kl}
         eri_2d = eri.reshape((norb**2, -1))
         u, s, v = scipy.linalg.svd(eri_2d)
+
+        # mask = s > 1.e-15
+        # ltensor = u[:, mask] * backend.sqrt(s[mask])
+
         ltensor = u * backend.sqrt(s)
         ltensor = ltensor.T
         ltensor = ltensor.reshape(ltensor.shape[0], norb, norb)
+        # with h5py.File("input.h5", "r+") as fa:
+        #    fa["h1e"] = h1e
+        #    fa["nuc_energy"] = self.nuc_energy
+        #    fa["cholesky"] = ltensor
 
         if isinstance(self.system, Boson):
             system = self.system
@@ -339,6 +405,12 @@ class QMCbase(object):
         for idx in range(self.walkers.phiw.shape[0]):
             ortho_walkers[idx] = backend.linalg.qr(self.walkers.phiw[idx])[0]
         self.walkers.phiw = ortho_walkers
+
+        if self.walkers.phiw_b is not None:
+            ortho_walkers = backend.zeros_like(self.walkers.phiw_b)
+            #for idx in range(self.walkers.phiw_b.shape[0]):
+            #    ortho_walkers[idx] = backend.linalg.qr(self.walkers.phiw_b[idx])[0]
+            #self.walkers.phiw_b = ortho_walkers
 
     # renormalization is to be deprecated
     renormalization = orthogonalization
@@ -426,8 +498,16 @@ class QMCbase(object):
 
         """
 
+        # Note of the rename
+        # rename precomputed_ltensor -> TL_tensor
+        # rename ltheta -> TL_theta
+        # trace_ltheta -> trace_tltheta -> vbias
+
+        # prepare propagation
         backend.random.seed(self.random_seed)
 
+        # print("YZ: walkers WF      =", self.walkers.phiw)
+        # print("YZ: walkers weights =", self.walkers.weights)
 
         h1e = self.h1e
         eri = self.eri
@@ -451,6 +531,8 @@ class QMCbase(object):
             dump_result = int(tt / self.dt) % self.print_freq == 0
 
             # step 1): get force bias (note: TL_tensor and mf_shift moved into propagator.atrributes)
+            # store Gf in walkers in order to recycle it in the propagators
+            # gf, vbias = trial.get_vbias(walkers, ltensor, verbose=dump_result)
             gf, TL_theta = trial.force_bias(
                 walkers, propagator.TL_tensor, verbose=dump_result
             )
@@ -461,7 +543,9 @@ class QMCbase(object):
             # compute local energy for each walker
             # local_energy = self.local_energy(TL_theta, h1e, eri, vbias, gf)
 
-            walkers.eloc = local_eng_elec_chol(TL_theta, h1e, eri, vbias, gf)
+            # walkers.eloc = local_eng_elec_chol_new(h1e, ltensor, gf)
+            # walkers.eloc = local_eng_elec_chol(TL_theta, h1e, vbias, gf)
+            walkers.eloc = propagator.compute_local_energies(TL_theta, h1e, vbias, gf)
             walkers.eloc += self.nuc_energy
 
             energy = backend.dot(walkers.weights, walkers.eloc)
@@ -473,7 +557,7 @@ class QMCbase(object):
 
             # step 3): propagate walkers and update weights
             # self.propagate_walkers(walkers, xbar, ltensor)
-            propagator.propagate_walkers(trial, walkers, vbias, ltensor)
+            propagator.propagate_walkers(trial, walkers, vbias, ltensor, verbose=int(dump_result))
 
             # moved phaseless approximation to propagation
             # since it is associated with propagation type
@@ -496,12 +580,18 @@ class QMCbase(object):
         self.post_kernel()
         return time_list, energy_list
 
+    def _finalize(self):
+        '''Hook for dumping results and clearing up the object.'''
+        pass
 
     def post_kernel(self):
         r"""Prints relevant citation information for calculation."""
         breakline = '='*80
         logger.note(self, f"\n{breakline}")
         logger.note(self, f"*  Hoollary, the job is done!\n")
+
+        self._finalize()
+
         logger.note(self, f"Citations:")
         for i, key in enumerate(runtime_refs):
             logger.note(self, f"[{i+1}]. {_citations[key]}")

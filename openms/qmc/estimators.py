@@ -18,10 +18,22 @@ def get_wfn(weights, psiw):
     return wfn / backend.sqrt(norm)
 
 
+# -------------------------------
+# Gf estimators
+# -------------------------------
+
 def bosonic_GF(T, W):
     r""" compute the bosonic green's function"""
-    # TODO
-    pass
+
+    # T shape is nfock
+    # W shape is (nwalker, nfock)
+
+    # TODO:
+    TW = backend.dot(W.T, T.conj())
+    Ghalf = backend.dot(scipy.linalg.inv(TW), W.T)
+    Gf = backend.dot(T.conj(), Ghalf)
+    return Gf, Ghalf
+
 
 def GF(T, W):
     r"""
@@ -62,6 +74,10 @@ def GF_so(T, W, na, nb):
         Gfb_half = backend.zeros((0, Gfa_half.shape[1]), dtype=Gfa_half.dtype)
     return backend.array([Gfa, Gfb]), [Gfa_half, Gfb_half]
 
+
+# -----------------------------------------------------------
+# energy estimators for coupled electron-boson interactions
+# -----------------------------------------------------------
 
 def local_eng_eb_2nd(h1e, chols, geb, freq, Gf, Gb, spin_fac=0.5):
     r"""compute the local enegy of the coupled electron-boson system
@@ -111,10 +127,28 @@ def local_eng_eb_1st(h1e, eri, gmat, mass, freq, Gf, Q, laplacian, spin_fac=0.5)
     return [etot, E_electron, E_boson, e_eb]
 
 
-def local_eng_boson_2nd(freq, nfock, Gb):
-    r"""compute local energy of bosons in 2nd quantizaiton"""
-    pass
+# -----------------------------
+# bosonic energy estimators
+# -----------------------------
 
+def local_eng_boson_2nd(omega, nboson_states, Gb):
+    r"""compute the local bosonic energies with bosonic GF (Gb) in
+    compute local energy of bosons in 2nd quantizaiton
+
+    omega: ndarray
+    nboson_states: ndarray [nfock, ..., nfock_n]
+    Gb: ndarray, bosonic green function
+    """
+     # bosonc energy
+    basis = backend.asarray(
+        [backend.arange(mdim) for mdim in nboson_states]
+    )
+
+    waTa = backend.einsum("m, mF->mF", omega, basis).ravel()
+    eb = backend.einsum( "F,zFF->z", waTa, Gb)
+    return eb
+
+local_eng_boson = local_eng_boson_2nd
 
 def local_eng_boson_1st(nao, mass, freq, Q):
     r"""Compute local energy of bosons in 1st quantization"""
@@ -123,6 +157,9 @@ def local_eng_boson_1st(nao, mass, freq, Q):
     pot = 0.5 * freq**2 * mass * backend.sum(Q * Q)
     return kin + pot
 
+# -------------------------------
+# electronic energy estimators
+# -------------------------------
 
 def local_eng_elec_chol_new(h1e, ltensor, Gf):
     r"""Computing local energy Using L tensor and G
@@ -159,7 +196,7 @@ def local_eng_elec_chol_new(h1e, ltensor, Gf):
     return energy
 
 
-def local_eng_elec_chol(TL_theta, h1e, eri, vbias, Gf):
+def local_eng_elec_chol(TL_theta, h1e, vbias, Gf):
     r"""Compute local energy from oei, eri and GF
 
     Args:
@@ -220,6 +257,8 @@ def local_eng_elec(h1e, eri, Gf, spin_fac=0.5):
     pot = (ecoul - exx) * spin_fac
 
     return kin + pot
+
+local_eng_elec_spin = local_eng_elec
 
 
 if __name__ == "__main__":

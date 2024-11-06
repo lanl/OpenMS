@@ -9,6 +9,10 @@ This is a quantum dynamics and mixed quantum-classcal module, including:
    :undoc-members:
    :show-inheritance:
 
+.. Program reference
+.. -----------------
+
+
 Basic electronic structure driver
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -29,6 +33,14 @@ Basic Mixed quantum-class module
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. automodule:: openms.qmd.mqc
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Trajectory Surface Hopping (TSH)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. automodule:: openms.qmd.tsh
    :members:
    :undoc-members:
    :show-inheritance:

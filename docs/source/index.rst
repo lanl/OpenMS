@@ -12,26 +12,71 @@ how to :ref:`installation` the project.
 
    This project is under active development.
 
-Contents
---------
+.. Contents
+.. --------
 
 .. toctree::
+   :caption: User guide
+   :maxdepth: 1
    :numbered:
 
    overview.rst
    install.rst
-   tutorial.rst
    lib.rst
-   models.rst
    mqed.rst
+   gwf.rst
+   qmc.rst
+   models.rst
    qdynamics.rst
    spindynamics.rst
+   fdtd.rst
+   qcsolvers.rst
+   solvers.rst
+   examples.rst
+   references.rst
 
-   api
+..   tutorial.rst
+..   usage
+..   api
 
-.. Indices and tables
-.. ==================
-..
-.. * :ref:`genindex`
-.. * :ref:`modindex`
-.. * :ref:`search`
+
+.. rubric:: Submodules
+
+.. currentmodule:: openms
+
+
+.. autosummary::
+
+    mqed
+    gwf
+    qmc
+    qmd
+    solvers
+    qcsolvers
+    spindy
+    maxwell
+    lib
+
+*************
+Release Notes
+*************
+
+Development notes and release details can be found below.
+
+.. toctree::
+   :maxdepth: 2
+
+   notes.rst
+
+
+.. only :: html
+
+    Indices and Tables
+    ==================
+
+    * :ref:`modindex`
+    * :ref:`genindex`
+    * :ref:`search`
+
+.. * :ref:`cfg-config-index`
+.. * :ref:`cfg-option-index`

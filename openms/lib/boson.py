@@ -454,7 +454,7 @@ class Boson(object):
         # Photon occupation specified by integer or list of integers
         if isinstance(nboson_states, int): # same occupation for all modes
             nboson_states = numpy.repeat(nboson_states, self.nmodes)
-        elif isinstance(nboson, list): # each mode has own occupation
+        elif isinstance(nboson_states, list): # each mode has own occupation
             nboson_states = numpy.asarray(nboson_states, dtype=int)
 
         if (isinstance(nboson_states, numpy.ndarray)

@@ -728,130 +728,130 @@ class Boson(object):
         return self
 
 
-    def update_mean_field(self, mf, **kwargs):
-        r"""
-        Update with attributes from mean-field object, parameter ``mf``.
+    # def update_mean_field(self, mf, **kwargs):
+    #     r"""
+    #     Update with attributes from mean-field object, parameter ``mf``.
 
-        Called by OpenMS mean-field constructors, save in :attr:`._mf`.
-        Overwrite :attr:`verbose` and :attr:`stdout` values. For each ``mode``,
-        call :func:`init_boson_coeff_guess` to save initial boson coefficient
-        guess in :attr:`boson_coeff`.
+    #     Called by OpenMS mean-field constructors, save in :attr:`._mf`.
+    #     Overwrite :attr:`verbose` and :attr:`stdout` values. For each ``mode``,
+    #     call :func:`init_boson_coeff_guess` to save initial boson coefficient
+    #     guess in :attr:`boson_coeff`.
 
-        If ``couplings_var`` keyword argument is provided to function:
-            1. store in :attr:`couplings_var`,
-            2. update :attr:`optimize_varf` flag to ``True``,
-            3. call :func:`update_couplings` to update
-               :attr:`couplings_res`.
+    #     If ``couplings_var`` keyword argument is provided to function:
+    #         1. store in :attr:`couplings_var`,
+    #         2. update :attr:`optimize_varf` flag to ``True``,
+    #         3. call :func:`update_couplings` to update
+    #            :attr:`couplings_res`.
 
-        :attr:`optimize_varf` flag update **(in step 2, above)** can
-        be overwritten/undone if additional ``optimize_varf=False``
-        keyword argument is provided.
+    #     :attr:`optimize_varf` flag update **(in step 2, above)** can
+    #     be overwritten/undone if additional ``optimize_varf=False``
+    #     keyword argument is provided.
 
-        Parameters
-        ----------
-        mf : :class:`RHF <mqed.qedhf.RHF>`
-            Instance of OpenMS mean-field class.
+    #     Parameters
+    #     ----------
+    #     mf : :class:`RHF <mqed.qedhf.RHF>`
+    #         Instance of OpenMS mean-field class.
 
-        Keyword Arguments
-        -----------------
-        couplings_var : float, :class:`list[floats] <list>`, :class:`~numpy.ndarray`
-            Variational parameter values, :math:`f_\al`.
-            **Optional**
-        optimize_varf : bool
-            Whether to optimize variational parameters.
-            **Optional,** ``default = False``
+    #     Keyword Arguments
+    #     -----------------
+    #     couplings_var : float, :class:`list[floats] <list>`, :class:`~numpy.ndarray`
+    #         Variational parameter values, :math:`f_\al`.
+    #         **Optional**
+    #     optimize_varf : bool
+    #         Whether to optimize variational parameters.
+    #         **Optional,** ``default = False``
 
-        Raises
-        ------
-        ValueError
-            Whenever provided parameter is not expected type or shape.
-        """
+    #     Raises
+    #     ------
+    #     ValueError
+    #         Whenever provided parameter is not expected type or shape.
+    #     """
 
-        self._mf = mf
-        self.verbose = mf.verbose
-        self.stdout = mf.stdout
-        self.nao = mf.nao
+    #     self._mf = mf
+    #     self.verbose = mf.verbose
+    #     self.stdout = mf.stdout
+    #     self.nao = mf.nao
 
-        # Variational parameters and optimization flag (if provided)
-        if "couplings_var" in kwargs and kwargs["couplings_var"] is not None:
+    #     # Variational parameters and optimization flag (if provided)
+    #     if "couplings_var" in kwargs and kwargs["couplings_var"] is not None:
 
-            # QED-HF
-            if type(self._mf) == qedhf.RHF:
-                warn_msg = f"QED-HF does not require variational parameters."
-                logger.warn(self, warn_msg)
+    #         # QED-HF
+    #         if type(self._mf) == qedhf.RHF:
+    #             warn_msg = f"QED-HF does not require variational parameters."
+    #             logger.warn(self, warn_msg)
 
-            # SC/VT-QED-HF
-            elif type(self._mf) in (scqedhf.RHF, vtqedhf.RHF):
+    #         # SC/VT-QED-HF
+    #         elif type(self._mf) in (scqedhf.RHF, vtqedhf.RHF):
 
-                if isinstance(kwargs["couplings_var"], list):
-                    kwargs["couplings_var"] = numpy.asarray(kwargs["couplings_var"],
-                                                            dtype=float)
+    #             if isinstance(kwargs["couplings_var"], list):
+    #                 kwargs["couplings_var"] = numpy.asarray(kwargs["couplings_var"],
+    #                                                         dtype=float)
 
-                if (not isinstance(kwargs["couplings_var"], numpy.ndarray) or
-                    kwargs["couplings_var"].size != self.nmodes):
-                    err_msg = f"Parameter 'couplings_var' does " + \
-                              f"not have dimension: len(omega)."
-                    logger.error(self, err_msg)
-                    raise ValueError(err_msg)
+    #             if (not isinstance(kwargs["couplings_var"], numpy.ndarray) or
+    #                 kwargs["couplings_var"].size != self.nmodes):
+    #                 err_msg = f"Parameter 'couplings_var' does " + \
+    #                           f"not have dimension: len(omega)."
+    #                 logger.error(self, err_msg)
+    #                 raise ValueError(err_msg)
 
-                # SC-QED-HF
-                if type(self._mf) == scqedhf.RHF:
+    #             # SC-QED-HF
+    #             if type(self._mf) == scqedhf.RHF:
 
-                    if not all(i == 1.0 for i in kwargs["couplings_var"]):
-                        err_msg = f"Value of 'f' parameter must be 1.0 for " + \
-                                  f"each mode when mean-field is SC-QED-HF."
-                        logger.error(self, err_msg)
-                        raise ValueError(err_msg)
+    #                 if not all(i == 1.0 for i in kwargs["couplings_var"]):
+    #                     err_msg = f"Value of 'f' parameter must be 1.0 for " + \
+    #                               f"each mode when mean-field is SC-QED-HF."
+    #                     logger.error(self, err_msg)
+    #                     raise ValueError(err_msg)
 
-                    if ("optimize_varf" in kwargs and kwargs["optimize_varf"] == True):
-                        warn_msg = f"Cannot optimize 'f' in SC-QED-HF. " + \
-                                   f"Valus fixed to 1.0 for each mode."
-                        logger.warn(self, warn_msg)
+    #                 if ("optimize_varf" in kwargs and kwargs["optimize_varf"] == True):
+    #                     warn_msg = f"Cannot optimize 'f' in SC-QED-HF. " + \
+    #                                f"Valus fixed to 1.0 for each mode."
+    #                     logger.warn(self, warn_msg)
 
-                    self.couplings_var = kwargs["couplings_var"].copy()
-                    self.update_couplings()
-                    self.optimize_varf = False
+    #                 self.couplings_var = kwargs["couplings_var"].copy()
+    #                 self.update_couplings()
+    #                 self.optimize_varf = False
 
-                # VT-QEDHF
-                if type(self._mf) == vtqedhf.RHF:
+    #             # VT-QEDHF
+    #             if type(self._mf) == vtqedhf.RHF:
 
-                    self.couplings_var = kwargs["couplings_var"].copy()
-                    self.update_couplings()
-                    self.optimize_varf = True
+    #                 self.couplings_var = kwargs["couplings_var"].copy()
+    #                 self.update_couplings()
+    #                 self.optimize_varf = True
 
-                    if ("optimize_varf" in kwargs and kwargs["optimize_varf"] == False):
-                        self.optimize_varf = False
+    #                 if ("optimize_varf" in kwargs and kwargs["optimize_varf"] == False):
+    #                     self.optimize_varf = False
 
-            else:
-                err_msg = f"Mean-field object must be " + \
-                          f"instance of OpenMS QED object."
-                logger.error(self, err_msg)
-                raise ValueError(err_msg)
+    #         else:
+    #             err_msg = f"Mean-field object must be " + \
+    #                       f"instance of OpenMS QED object."
+    #             logger.error(self, err_msg)
+    #             raise ValueError(err_msg)
 
-        # Ensure SC/VT-QEDHF coupling is correct
-        else:
-            if type(self._mf) == scqedhf.RHF:
-                self.couplings_var = numpy.ones(self.nmodes,
-                                                dtype=float)
-                self.update_couplings()
-                self.optimize_varf = False
+    #     # Ensure SC/VT-QEDHF coupling is correct
+    #     else:
+    #         if type(self._mf) == scqedhf.RHF:
+    #             self.couplings_var = numpy.ones(self.nmodes,
+    #                                             dtype=float)
+    #             self.update_couplings()
+    #             self.optimize_varf = False
 
-            elif type(self._mf) == vtqedhf.RHF:
-                self.couplings_var = 0.5 * numpy.ones(self.nmodes,
-                                                      dtype=float)
-                self.update_couplings()
-                self.optimize_varf = True
+    #         elif type(self._mf) == vtqedhf.RHF:
+    #             self.couplings_var = 0.5 * numpy.ones(self.nmodes,
+    #                                                   dtype=float)
+    #             self.update_couplings()
+    #             self.optimize_varf = True
 
-        # Modified dipole moment matrix
-        self.dipole_ao = self.get_dipole_ao()
-        self.gmat = self.get_gmat_ao()
+    #     # Modified dipole moment matrix
+    #     self.dipole_ao = self.get_dipole_ao()
+    #     self.gmat = self.get_gmat_ao()
 
-        # Modified quadrupole moment matrix, only for "complete_basis"
-        if self.complete_basis:
-            self.quadrupole_ao = self.get_quadrupole_ao()
-            self.q_lambda_ao = self.get_q_lambda_ao()
+    #     # Modified quadrupole moment matrix, only for "complete_basis"
+    #     if self.complete_basis:
+    #         self.quadrupole_ao = self.get_quadrupole_ao()
+    #         self.q_lambda_ao = self.get_q_lambda_ao()
 
-        return self
+    #     return self
 
 
     def update_couplings(self):

@@ -601,7 +601,7 @@ class Boson(object):
         return numpy.outer(numpy.conj(bc), bc)
 
 
-    def update_boson_coeff(self, eref, dm):
+    def update_boson_coeff(self, dm):
         r"""Update eigenvectors for all modes in :class:`Boson`.
 
         Construct and diagonalize photonic component of the
@@ -647,8 +647,6 @@ class Boson(object):
 
         Parameters
         ----------
-        eref : float
-            Reference electronic energy.
         dm : :class:`~numpy.ndarray`
             Density matrix.
 

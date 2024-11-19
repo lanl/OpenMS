@@ -1789,7 +1789,6 @@ class Phonon(Boson):
 if __name__ == "__main__":
     import numpy
     from pyscf import gto
-    from openms.mqed import boson
     from openms.mqed import qedhf
 
     mol = gto.M()
@@ -1805,7 +1804,7 @@ if __name__ == "__main__":
     vec = numpy.zeros((nmodes, 3))
     vec[0, :] = 0.05 * numpy.asarray([0.0, 0.0, 1.0])
 
-    qed = boson.Photon(mol, omega=omega, vec=vec)
+    qed = Photon(mol, omega=omega, vec=vec)
     hf = qedhf.RHF(mol, qed)
     hf.max_cycle = 200
     hf.conv_tol = 1.0e-8

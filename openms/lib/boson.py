@@ -460,9 +460,9 @@ class Boson(object):
         if (isinstance(nboson_states, numpy.ndarray)
             and (nboson_states.size == self.nmodes)):
 
-            if not all(i >= 0 for i in nboson_states):
+            if not all(i > 0 for i in nboson_states):
                 err_msg = f"Elements of 'nboson_states' are " + \
-                          f"not all integers >= 0."
+                          f"not all integers > 0."
                 logger.error(self, err_msg)
                 raise ValueError(err_msg)
 

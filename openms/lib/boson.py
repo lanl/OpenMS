@@ -594,8 +594,8 @@ class Boson(object):
 
         mdim = self.nboson_states[mode]
         idx = 0
-        if mode > 0:
-            idx = sum(self.nboson_states[:mode])  + mode
+        if mode > 0: # non-vacuum state density, not tested
+            idx = sum(self.nboson_states[:mode]) + mode
 
         bc = self.boson_coeff[idx:idx+mdim, 0].copy()
         return numpy.outer(numpy.conj(bc), bc)
@@ -1518,12 +1518,13 @@ class Photon(Boson):
         return (numpy.sqrt(0.5 * self.omega[mode]) * self.gmat[mode])
 
 
-    def get_bdag_plus_b_sq_expval(self, mode):
+    def get_FC_factor_ph_expval(self, mode):
 
         mdim = self.nboson_states[mode]
 
-        h_diag = numpy.diag(2 * numpy.arange(mdim))
+        h_diag = numpy.diag(2.0 * numpy.arange(mdim, dtype=float)) + 1.0
         pdm = self.get_boson_dm(mode)
+
         return numpy.sum(h_diag * pdm)
 
 

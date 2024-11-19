@@ -302,7 +302,7 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
 
         # Update photonic coefficients and compute photonic energy
         mf.qed.update_cs(dm) # Update coherent state values
-        mf.qed.update_boson_coeff(e_tot, dm)
+        mf.qed.update_boson_coeff(dm)
 
         # Here Fock matrix is h1e + vhf, without DIIS.  Calling get_fock
         # instead of the statement "fock = h1e + vhf" because Fock matrix may
@@ -349,7 +349,7 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
 
         # Final update of photonic coefficients and energy
         mf.qed.update_cs(dm) # Update coherent state values
-        mf.qed.update_boson_coeff(e_tot, dm)
+        mf.qed.update_boson_coeff(dm)
 
         h1e = mf.get_hcore(mol, dm, dress=True)
         e_tot, last_hf_e = mf.energy_tot(dm, h1e, vhf), e_tot
@@ -655,6 +655,8 @@ class RHF(qedhf.RHF):
         tmp = tau / self.qed.omega[imode]
 
         ph_exp_val = 0.0 # self.qed.get_bdag_plus_b_sq_expval(imode) # to be checked
+        ph_exp_val_test = self.qed.get_FC_factor_ph_expval(imode)
+        print (f"{ph_exp_val_test:12f}")
 
         factor = numpy.exp((-0.5 * (tmp * diff_eta) ** 2) * (ph_exp_val + 1))
 

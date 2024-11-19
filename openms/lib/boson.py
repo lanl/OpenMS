@@ -1111,6 +1111,8 @@ class Photon(Boson):
         z2s = (0.5 * numpy.sum(self.z_alpha**2 * gvar2) + self.e_boson)* s1e/self._mol.nelectron
         # z2s = (0.5 * numpy.sum(self.z_alpha**2 * gvar2))* s1e/self._mol.nelectron
         oei += z2s
+        print (z2s)
+        exit()
 
         # bilinear term
         # off-diaognal (photonic) block

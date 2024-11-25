@@ -15,20 +15,6 @@
 #          Ilia Mazin <imazin@lanl.gov>
 #
 
-import numpy
-
-from pyscf.dft import rks
-from pyscf import lib
-from pyscf import scf
-from pyscf.scf import hf
-from pyscf.lib import logger
-
-import openms
-from openms.lib import boson
-from openms import __config__
-
-TIGHT_GRAD_CONV_TOL = getattr(__config__, "TIGHT_GRAD_CONV_TOL", True)
-
 r"""
 Theoretical background of QEDHF
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -39,7 +25,7 @@ QEDHF wavefunction ansatz is
 .. math::
 
    \ket{\Psi} = &\sum_n c_n \prod_\alpha e^{z_\alpha b^\dagger_\alpha - z^*_\alpha b_\alpha } \ket{HF}\otimes{n_\alpha} \\
-              = &\sum_n c_n U(\mathbf{z}) \ket{HF}\otimes{n_\alhpa}.
+              = &\sum_n c_n U(\mathbf{z}) \ket{HF}\otimes{n_\alpha}.
 
 where :math:`z_\alpha=-\frac{\lambda_\alpha\cdot\langle\boldsymbol{D}\rangle}{\sqrt{2\omega_\alpha}}` denotes
 the photon displacement due to the coupling with electrons.
@@ -60,9 +46,25 @@ With the ansatz, the QEDHF energy is
 
 .. math::
 
-  E_{QEDHF}= E_{HF} + \frac{1}{2}\langle \boldsymbol{lambda}\cdot [\boldsymbol{D}-\langle \boldsymbol{D}\rangle)]^2\rangle,
+  E_{QEDHF}= E_{HF} + \frac{1}{2}\langle \boldsymbol{\lambda}\cdot [\boldsymbol{D}-\langle \boldsymbol{D}\rangle)]^2\rangle,
 
 """
+
+import numpy
+
+from pyscf.dft import rks
+from pyscf import lib
+from pyscf import scf
+from pyscf.scf import hf
+from pyscf.lib import logger
+
+import openms
+from openms.lib import boson
+from openms import __config__
+
+TIGHT_GRAD_CONV_TOL = getattr(__config__, "TIGHT_GRAD_CONV_TOL", True)
+
+
 
 def kernel(
     mf, conv_tol=1e-10, conv_tol_grad=None,
@@ -511,7 +513,7 @@ class RHF(hf.RHF):
             return (self.bare_h1e + self.oei)
 
 
-    def get_dse_jk(self, dm, residue=False):
+    def get_dse_jk(self, dm, residue=False, compute_grad=False):
         r"""DSE-mediated JK terms
 
         To be deprecated, use boson.get_dse_jk instead in the future
@@ -521,6 +523,13 @@ class RHF(hf.RHF):
         effective DSE-mediated eri is:
 
              I' = lib.einsum("Xpq, Xrs->pqrs", gmat, gmat)
+
+        The residual DSE are
+
+        .. math ::
+             H_{DSE} &= \frac{(1-f)^2}{2}(\boldsymbol{\lambda}\cdot\boldsymbol{D})^2 \textit{(with bare DSE)} \\
+                     &= \frac{f^2-2f}{2}(\boldsymbol{\lambda}\cdot\boldsymbol{D})^2  \textit{(without bare DSE)} \\
+
         """
 
         dm_shape = dm.shape
@@ -529,21 +538,40 @@ class RHF(hf.RHF):
         n_dm = dm.shape[0]
         logger.debug(self, "No. of dm is %d", n_dm)
 
-        vj_dse = numpy.zeros((n_dm,nao,nao))
-        vk_dse = numpy.zeros((n_dm,nao,nao))
+        grad_vjk = numpy.zeros((n_dm, nao, nao))
+        vj_dse = numpy.zeros((n_dm, nao, nao))
+        vk_dse = numpy.zeros((n_dm, nao, nao))
 
         gtmp = self.qed.gmat
-        if residue: gtmp = self.qed.gmat * self.qed.couplings_res
+        gvar2 = numpy.ones(self.qed.nmodes)
+        if residue:
+            if self.qed.add_dse:
+                gvar2 = self.qed.couplings_res**2 # element-wise
+            else:
+                gvar2 = self.qed.couplings_var * (self.qed.couplings_var - 2.0)
+            dg = - 2.00 * self.qed.couplings_res # 2(f-1)
+
         for i in range(n_dm):
             # DSE-medaited J
-            scaled_mu = lib.einsum("pq, Xpq ->X", dm[i], gtmp)# <\lambada * D>
-            vj_dse[i] += lib.einsum("Xpq, X->pq", gtmp, scaled_mu)
+            scaled_mu = lib.einsum("pq, Xpq ->X", dm[i], gtmp) # <\lambada * D>
+            vj_dse[i] += lib.einsum("Xpq, X, X->pq", gtmp, scaled_mu, gvar2)
+            if compute_grad:
+                # FIXME: this gradient should be mode specific
+                grad_vjk[i] += lib.einsum("Xpq, X, X->pq", gtmp, scaled_mu, dg)
 
             # DSE-mediated K
-            vk_dse[i] += lib.einsum("Xpr, Xqs, rs -> pq", gtmp, gtmp, dm[i])
+            # vk_dse[i] += lib.einsum("Xpr, Xqs, rs -> pq", gtmp, gtmp, dm[i])
+            gdm = lib.einsum("Xqs, rs -> Xqr", gtmp, dm[i])
+            vk_dse += lib.einsum("Xpr, Xqr, X-> pq", gtmp, gdm, gvar2)
+            if compute_grad:
+                # FIXME: this gradient should be mode specific
+                grad_vjk -= 0.5 * lib.einsum("Xpr, Xqr, X-> pq", gtmp, gdm, dg)
 
         vj = vj_dse.reshape(dm_shape)
         vk = vk_dse.reshape(dm_shape)
+        if compute_grad:
+            grad_vjk = grad_vjk.reshape(dm_shape)
+            return vj, vk, grad_vjk
         return vj, vk
 
     def get_jk(self, mol=None, dm=None, hermi=1, with_j=True, with_k=True, omega=None):
@@ -561,9 +589,10 @@ class RHF(hf.RHF):
         else:
             vj, vk = RHF.get_jk(self, mol, dm, hermi, with_j, with_k, omega)
 
-        vj_dse, vk_dse = self.get_dse_jk(dm)
-        vj += vj_dse
-        vk += vk_dse
+        if self.qed.add_dse:
+            vj_dse, vk_dse = self.get_dse_jk(dm)
+            vj += vj_dse
+            vk += vk_dse
 
         return vj, vk
 
@@ -716,7 +745,7 @@ class RHF(hf.RHF):
         module. Initial density matrix guess moved here from
         kernel function, to allow for computing initial QED
         quantities that require electronic density matrix, such
-        as the :math:`\bm{z}_{\al}` values for calculations
+        as the :math:`\bm{z}_{\alpha}` values for calculations
         being performed with the photonic wavefunction in the
         coherent-state (CS) represenation.
 
@@ -777,6 +806,15 @@ class RHF(hf.RHF):
         logger.note(self, f"{breakline}\n")
         return self
 
+    def make_boson_nocc_org(self, nfock=10):
+        r"""boson occ in original fock representation"""
+        import math
+
+        _, _, rho_b = self.make_rdm1_org(self.mo_coeff, self.mo_occ, nfock=nfock)
+        nocc = numpy.dot(numpy.diagonal(rho_b), numpy.array(range(nfock)))
+        print("nocc =", nocc)
+        return nocc
+
     def make_rdm1_org(self, mo_coeff, mo_occ, nfock=2, **kwargs):
         r"""
         """
@@ -802,7 +840,7 @@ class RHF(hf.RHF):
                 rho_tot[m, :, n, :] = rho_tmp
 
         rho_e = numpy.einsum("mpmq->pq", rho_tot)
-        rho_b = numpy.einsum("mpnp->mn", rho_tot) / numpy.trace(rho)
+        rho_b = numpy.einsum("mpnp->mn", rho_tot) / numpy.trace(rho_e)
 
         return rho_tot, rho_e, rho_b
 

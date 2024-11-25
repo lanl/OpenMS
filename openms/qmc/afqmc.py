@@ -80,20 +80,61 @@ The two-body interactions becomes
 .. math::
 
      H_2 = & \frac{1}{2} \sum_{ijkl} V_{ijkl} c^\dagger_i c^\dagger_j c_k c_l \\
-         = & \frac{1}{2} \sum_{ijkl} [V_{ijkl} c^\dagger_i c_l c^\dagger_j c_k- \sum_{ijkl} c^\dagger_i c_l \delta_{jl}] \\
+         = & \frac{1}{2} \sum_{ijkl} [V_{ijkl} c^\dagger_i c_l c^\dagger_j c_k- \sum_{ijkl}V_{ijkl} c^\dagger_i c_k \delta_{jl}] \\
          = & \frac{1}{2} \sum_{ijkl}\sum_\gamma (L^*_{\gamma,il} c^\dagger_i c_l) (L_{\gamma,kj}c^\dagger_j c_k)
            - \frac{1}{2} \sum_{ijkj} V_{ijkj} c^\dagger_i c_k
 
 Hence, the last term in above equation is a single-particle operator, which is defined as the
-shifted_h1e in the code.
+shifted_h1e in the code. The final MC Hamiltonian is rewritten as:
 
-Finally,
+.. math::
+     H_{mc} = \sum_{ij} [h_{ij} - \frac{1}{2} \sum_{ikjk} V_{ikjk} ] c^\dagger_i c_j
+         + \frac{1}{2} \sum_{ij}\sum_\gamma (L^*_{\gamma,ij} c^\dagger_i c_j)^2
+
+
+In practical calculations, we substract the mean-field background from the interaction operators,
+
+.. math::
+    \bar{L}_\gamma = \bra{\Psi_T}\hat{L}_\gamma\ket{\Psi_T}.
+
+Consequently, the MC Hamiltnian is rewritten as
+
+.. math::
+    \hat{H}_{mc} = \sum_{ij} [h_{ij} - \frac{1}{2} \sum_{ikjk} V_{ikjk} ] c^\dagger_i c_j
+                 + \sum_\gamma [\bar{L}_\gamma (\hat{L}_\gamma -\bar{L}_\gamma)
+                 + \frac{1}{2}\bar{L}^2_\gamma
+                 + \frac{1}{2}(\hat{L}_\gamma-\bar{L}_\gamma)^2].
+
+
+Finally, the Hubbard-Stratonovich transformation of the two-body evolution operator is
 
 .. math::
 
   e^{-\Delta\tau H} = \int d x p(x) B(x)
 
-where :math:`B(x)` is the Auxilary field.
+where :math:`B(x)` is the Auxilary field. Particularly,
+
+.. math::
+    e^{-\Delta\tau \hat{L}^2_\gamma/2}
+    = & \int dx\frac{1}{\sqrt{2\pi}} e^{-x^2/2}
+      e^{x\sqrt{-\Delta\tau}\hat{L}_\gamma}  \\
+    = & \int dx\frac{1}{\sqrt{2\pi}} e^{-x^2/2} e^{x\sqrt{-\Delta\tau}\bar{L}_\gamma}
+      e^{x\sqrt{-\Delta\tau}(\hat{L}_\gamma-\bar{L}_\gamma)}
+
+A dynamic force is defined as
+
+..  math::
+    F_\gamma \equiv \sqrt{-\Delta\tau}\langle \hat{L}_\gamma\rangle
+
+Hence, the Stratonovich transformation is rewritten as
+
+.. math::
+
+   e^{-\Delta\tau \hat{L}^2_\gamma/2}
+   = & \int dx\frac{1}{\sqrt{2\pi}} e^{-x^2/2} e^{xF} e^{x(\sqrt{-\Delta\tau}\hat{L}_\gamma-F)} \\
+   = & \int dx\frac{1}{\sqrt{2\pi}} e^{-(x-F)^2/2} e^{\frac{1}{2}F^2-xF} e^{x\sqrt{-\Delta\tau}\hat{L}_\gamma} \\
+   \equiv & \int dx P_I(x) N_I(x) e^{x\sqrt{-\Delta\tau}\hat{L}_\gamma}.
+
 
 Importance sampling
 ~~~~~~~~~~~~~~~~~~~

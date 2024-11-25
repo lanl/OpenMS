@@ -4,6 +4,6 @@ numpy
 scipy
 sphinx
 sphinx-rtd-theme
-sphinxcontrib.bibtex
+sphinxcontrib-bibtex
 
 

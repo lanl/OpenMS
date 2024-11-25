@@ -1,16 +1,17 @@
 
+.. module:: openms.qmc
 
-***********
-QMC solvers
-***********
+Quantum Monte Carlo (QMC)
+*************************
 
 .. automodule:: openms.qmc
    :members:
    :undoc-members:
    :show-inheritance:
 
+
 Auxiliary-Field Quantum Monte Carlo
-===================================
+-----------------------------------
 
 .. automodule:: openms.qmc.afqmc
    :members:
@@ -18,7 +19,7 @@ Auxiliary-Field Quantum Monte Carlo
    :show-inheritance:
 
 Trial Wavefunction
-==================
+------------------
 
 .. automodule:: openms.qmc.trial
    :members:
@@ -26,7 +27,7 @@ Trial Wavefunction
    :show-inheritance:
 
 Trial Wavefunction (Boson)
-==========================
+--------------------------
 
 .. automodule:: openms.qmc.trial_boson
    :members:
@@ -35,7 +36,7 @@ Trial Wavefunction (Boson)
 
 
 Walker function
-===============
+---------------
 
 .. automodule:: openms.qmc.generic_walkers
    :members:
@@ -44,7 +45,7 @@ Walker function
 
 
 Estimators
-==========
+----------
 
 .. automodule:: openms.qmc.estimators
    :members:
@@ -52,7 +53,7 @@ Estimators
    :show-inheritance:
 
 QMC base class
-==============
+--------------
 
 .. automodule:: openms.qmc.qmc
    :members:
@@ -60,7 +61,7 @@ QMC base class
    :show-inheritance:
 
 Propagators
-===========
+-----------
 
 .. automodule:: openms.qmc.propagators
    :members:

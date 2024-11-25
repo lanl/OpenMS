@@ -491,12 +491,13 @@ def make_trial(mol, mf=None, **kwargs):
 
         boson_size = sum(mol.nboson_states)
         trial.psi_b = backend.zeros(boson_size)
-        # trial.psi_b[0] = 1.0 # / backend.sqrt(boson_size)
-        trial.psi_b[:] = 1.0 / backend.sqrt(boson_size)
+        trial.psi_b[0] = 1.0 # / backend.sqrt(boson_size)
+        # trial.psi_b[:] = 1.0 / backend.sqrt(boson_size)
+        # return trial
+    #else:
+    #    return trial
 
-        return trial
-    else:
-        return trial
+
     # else:
     #    raise ValueError(f"system type {mol.__class__} is supported!" +
     #                    " A trial function must be provided!")

@@ -15,11 +15,7 @@
 #
 
 r"""
-Quantum Monte Carlo (QMC)
-=========================
-
-This is a collection of QMC solvers for electron-boson interactions
-
+A collection of QMC solvers for electron-boson interactions.
 
 """
 

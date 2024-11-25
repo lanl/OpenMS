@@ -15,6 +15,30 @@
 #          Ilia Mazin <imazin@lanl.gov>
 #
 
+r"""
+Theoretical background of SC/VT-QEDHF methods
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+SC-QEDHF module for solving the QED Hamiltonian. The kernel is also used for VT-QEDHF.
+
+The WF ansatz for SC-QEDHF is:
+
+.. math::
+
+   \ket{\Phi} = e^{} \ket{\Phi_0}
+
+The corresponding HF Energy within SC-QEDHF formalism becomes:
+
+.. math::
+
+  E = \sum_{pq} h_{pq} D_{pq} G_{pq} + \cdots
+
+
+
+"""
+
+
+
 import time
 import numpy
 from scipy import linalg
@@ -38,27 +62,6 @@ CHOLESKY_THRESHOLD = getattr(__config__, "CHOLESKY_THRESHOLD", 1e-10)
 FORCE_PIVOTED_CHOLESKY = getattr(__config__, "FORCE_PIVOTED_CHOLESKY", False)
 LINEAR_DEP_TRIGGER = getattr(__config__, "LINEAR_DEP_TRIGGER", 1e-10)
 
-r"""
-Theoretical background of SC/VT-QEDHF methods
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-SC-QEDHF module for solving the QED Hamiltonian. The kernel is also used for VT-QEDHF.
-
-The WF ansatz for SC-QEDHF is:
-
-.. math::
-
-   \ket{\Phi} = e^{} \ket{\Phi_0}
-
-The corresponding HF Energy within SC-QEDHF formalism becomes:
-
-.. math::
-
-  E = \sum_{pq} h_{pq} D_{pq} G_{pq} + \cdots
-
-
-
-"""
 
 def unitary_transform(U, A):
     r"U^T A U"
@@ -962,6 +965,66 @@ class RHF(qedhf.RHF):
         self._finalize()
         return self.e_tot
     kernel = lib.alias(scf, alias_name='kernel')
+
+
+    def get_jk_chols(self, mol=None, dm=None, hermi=1, with_j=True, with_k=True, omega=None):
+        r"""get jk matrix in the in DO and with chols
+
+        .. math::
+
+            I_{ijkl} = I^e_{ijkl} + g_{ij}g_{kl}
+
+        where :math:`I^e` is the pure electronci two-body integral.
+        the latter term counts for the photon-mediated correlations
+
+        .. math::
+
+            J_{uv} &= \sum_{ls} D_{ls}(uv|ls) \\
+            K_{uv} &= \sum_{ls} D_{ls}(us|lv)
+
+        Hence, the photon-mediated part of JK is:
+
+        .. math::
+
+            J^p_{uv} &= \sum_{ls} D_{ls}(uv|ls) = \sum_{ls} D_{ls} g_{uv} g_{ls} \\
+            K^p_{uv} &= \sum_{ls} D_{ls} g_{us} g_{lv}
+
+        """
+        # Note the incore version, which initializes an _eri array in memory.
+        if mol is None:
+            mol = self.mol
+        if dm is None:
+            dm = self.make_rdm1()
+            dm = self.get_dm_do(dm, self.ao2dipole)
+
+        vj = vk = None
+
+        # replace the following with chols, without using eri_DO
+        fc_factor = self.FC_factor(self.eta, imode, onebody=False)
+        fc_factor *= (1.0 * self.eri_DO - 0.5 * self.eri_DO.transpose(0, 3, 2, 1))
+        # G_{pqrs} * [I_{pqrs} - 0.5 * I_{ps rq} ] * rho_{rs}
+        # = L_{\gamma, pq} L_{\gamma, rs} * \rho_{rs}
+        # - L_{\gamma, pq} L_{\gamma, rs} * \rho_{rq}
+
+        # vj = G_{pqrs} I_{pqrs} * \rho_{rs}
+        #    = G_{pqrs} L_{\gamma, pq} L_{\gamma, rs} * \rho_{rs}
+
+        # vk = G_{psrq} I_{psrq} * \rho_{rs}
+        #    = G_{psrq} L_{\gamma, ps} L_{\gamma, rq} * \rho_{rs}
+
+        # the above is the same as the following, using the following if we
+        # want to separate it into vj and vk
+
+        # add dressing factor to two-body integrals (todo)
+        for imode in range(self.qed.nmodes):
+            #U = self.ao2dipole[imode]
+            factor = self.FC_factor(self.eta, imode, onebody=False)
+            eri_tmp = self.eri_DO * factor
+            vj, vk = hf.dot_eri_dm(eri_tmp, dm, hermi, with_j, with_k)
+            del eri_tmp
+
+        return vj, vk
+
 
     # ===============================
     # below are deprecated functions

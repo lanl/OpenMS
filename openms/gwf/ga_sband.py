@@ -14,24 +14,11 @@
 #
 
 r"""
-Gutzwiller Approximation (GA) based scf method
-==============================================
 
-
-Theoretical background of GASCF
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Gutzwiller Wavefunction is defiend as
-
-.. math::
-
-    \ket{\Psi_G} = \mathcal{P} \ket{\Psi_0} = \prod_I \mathcal{P}_I \ket{\Psi_0}
-
-Gutzwiller approximation (GA):
-------------------------------
+.. Gutzwiller Approximation (GA) based scf method
+.. ==============================================
 
 Renormalization factors:
-------------------------
 
 There are two steps:
 
@@ -42,6 +29,82 @@ Ref:
      https://online.kitp.ucsb.edu/online/excitcm09/ho/pdf/Ho_ExcitationsCM_KITP.pdf
      https://www.tandfonline.com/doi/full/10.1080/00268976.2020.1734243
 
+
+The onsite Gutzwiller operator is expressed in the local (fermionic) Fock
+states :math:`\ket{\Gamma_I}`,
+
+..  math::
+    \mathcal{P}_I = \sum_{\Gamma_I\Gamma'_I} \Phi_{\Gamma_I\Gamma'_I} \sqrt{P^0_{\Gamma_I}}
+    \ket{\Gamma_I}\bra{\Gamma'_I}.
+
+where the :math:`P^0_{\Gamma_I}` is the occupation propabaility of the uncorrelated
+state:
+
+.. math::
+    P^0_{\Gamma_I} \equiv |\bra{\Psi_0}\Gamma_I\rangle|^2.
+
+And the expansion coefficients :math:`\Phi_{\Gamma_I\Gamma'_I}` are the variational
+parameters, which are grouped into a Hermitian matrix :math:`\Phi_I`.
+
+For single band, :math:`\Phi_I` is a diagonal matrix,
+
+.. math::
+    \Phi_I =
+    \begin{bmatrix}
+    \phi_{I0} & 0 & 0 & 0 \\
+    0 & \phi_{I\uparrow} & 0 & 0 \\
+    0 & 0 & \phi_{I\downarrow} & 0 \\
+    0 & 0 & 0 & \phi_{I2} \\
+    \end{bmatrix}
+
+which are computed from the embedding Hamilonian.
+
+Quasiparticle Hamiltonian
+-------------------------
+
+.. math::
+    H^{qp} = \sum_{IJ}\sum_{\alpha\beta} T^{IJ}_{\alpha\beta}
+             \mathcal{R}_{I\alpha}\mathcal{R}_{J\beta} c^\dagger_{I\alpha} c_{J\beta}
+             + \sum_I \mu_i \hat{n}_{I\alpha}.
+
+where the renormalization factors are
+
+.. math::
+    \mathcal{R}_{I\sigma} = \frac{\text{Tr}\left[\Phi^\dagger_I M^\dagger_{I\sigma} \Phi_i M_{I\sigma}\right]}
+    {\sqrt{n_{I\sigma}(1-n_{I\sigma})}}
+
+Where :math:`M_I` is the matrix representation of the electronic annihilation operator
+:math:`c_{I\sigma}` in the local basis.
+
+
+Embedding Hamiltonian
+---------------------
+
+The embedding Hamiltonian is:
+
+.. math::
+    H^{eb}_{I} = \frac{\Delta_{I}M_I + \Delta^*_{I}M^\dagger_I}{\sqrt{n^0_{I}(1-n^0_{I})}} +
+               \sum_\sigma \mu_{i\sigma} N_{\sigma} + U\mathcal{D}.
+
+where :math:`\Delta_I` is
+
+.. math::
+  \Delta_{I\sigma} = \sum_J t_{IJ} \mathcal{R}_{J\sigma} \rho_{IJ,\sigma}
+
+SCF steps:
+----------
+
+SCF loop afer initializing density matrix, variational parameters, and lambda:
+
+  #. update Renormalization factors :math:`\mathcal{R}_I`
+  #. construct quasiparticle Hamiltonian
+  #. diagonalize qp Hamiltonian and get RDM
+  #. update :math:`\Delta_{I\sigma}`
+  #. update EB Hamiltonian and diagonalize it to update variational parameters, and lambda
+  #. check convergence.
+
+Program references
+------------------
 """
 
 import sys
@@ -465,7 +528,11 @@ class GASCF(lib.StreamObject): # (hf.RHF):
 
 
     def get_deltas(self, dm):
-        r"""Compute the Detal (for embedding Hamiltonain)
+        r"""Compute the :math:`\Delta_{I\sigma}` (for embedding Hamiltonain)
+
+        .. math::
+            \Delta_{I\sigma} = \sum_J t_{IJ} \mathcal{R}_{J\sigma} \rho_{IJ,\sigma}
+
         """
         # go through the neighbors of site i to update the delta
 

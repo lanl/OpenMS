@@ -13,6 +13,30 @@
 # Author: Yu Zhang <zhy@lanl.gov>
 #
 
+r"""
+
+Quasiparticle Hamiltonian
+-------------------------
+
+.. math::
+    H^{qp} = \sum_{IJ}\sum_{\alpha\beta} T^{IJ}_{\alpha\beta}
+             \mathcal{R}_{I\alpha}\mathcal{R}_{J\beta} c^\dagger_{I\alpha} c_{J\beta}
+             + \sum_I \mu_i \hat{n}_{I\alpha}.
+
+
+Embedding Hamiltonian
+---------------------
+
+The embedding Hamiltonian is:
+
+.. math::
+    H^{eb}_{I} =
+
+
+Program reference
+-----------------
+"""
+
 import sys
 import tempfile
 import scipy

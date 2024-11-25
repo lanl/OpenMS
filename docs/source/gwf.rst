@@ -1,7 +1,13 @@
 
-******************
-Gutzwiller solvers
-******************
+*******************************
+Gutzwiller Wavefunction methods
+*******************************
+
+
+.. automodule:: openms.gwf
+   :members:
+   :undoc-members:
+   :show-inheritance:
 
 Theoretical background
 ======================
@@ -9,7 +15,7 @@ Theoretical background
 Gutzwiller Wavefunction is defiend as
 
 .. math::
-    \ket{\Psi_G} = \mathcal{P} \ket{\Psi_0}
+    \ket{\Psi_G} = \mathcal{P} \ket{\Psi_0} = \prod_I \mathcal{P}_I \ket{\Psi_0}
 
 where :math:`\mathcal{P}` is the local projector operator that improves the
 noninteracting wave function :math:`\ket{\Psi_0}` according to the on-site
@@ -30,11 +36,6 @@ Gutzwiller constraints:
 
 where :math:`\hat{n}_I` is the local single-particle density-matrix operator.
 
-.. automodule:: openms.gwf
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 
 Symbols used in the documents:
 
@@ -47,6 +48,9 @@ Symbols used in the documents:
   - :math:`\hat{H}^{loc}_I` represents the local Hamiltonain of site :math:`I`.
   - :math:`c_{Ip}, c^\dagger_{Iq}` represents the original fermonic operator
   - :math:`f_{Ia}` represents the auxiliary operator
+
+Gutzwiller approximation (GA):
+------------------------------
 
 
 

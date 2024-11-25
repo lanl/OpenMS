@@ -15,9 +15,6 @@
 #
 
 r"""
-Gutzwiller Waevefunction methods
-================================
-
 This is the collection of GWF solvers for both local, non-local electron-electron correlations
 and electron-boson interactions
 

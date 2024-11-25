@@ -14,24 +14,24 @@
 # Author: Yu Zhang <zhy@lanl.gov>
 #
 
-r"""
-A collection of libraries
 
-Low-level libraries, including:
+r"""Extended GA method for eleectron-boson interaction and non-local correlation
 
-  - internal FDTD code,
-  - math libs
-  - Backends
+Brief introduction to the theoretical background:
+
+The Hamiltonain is
+
+.. math::
+
+   \hat{H} = &  \\
+           = &
 """
-import sys
 
-from openms.lib.misc import *
-from openms.lib import logger
-from openms.lib import backend
-from openms.lib.mathlib import *
+from openms.gwf import ga_nonlocal
 
-try:
-    from openms.lib.fdtd import fdtdc as FDTD
-    FDTD_AVAILABLE = True
-except ImportError:
-    FDTD_AVAILABLE = False
+class GASCF(ga_nonlocal.GASCF):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def update_renormalizations(self, dm):
+        pass

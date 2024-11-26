@@ -67,3 +67,11 @@ Propagators
    :members:
    :undoc-members:
    :show-inheritance:
+
+Other tools
+-----------
+
+.. automodule:: openms.qmc.tools
+   :members:
+   :undoc-members:
+   :show-inheritance:

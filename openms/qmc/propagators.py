@@ -120,6 +120,7 @@ class PropagatorBase(object):
     def dump_flags(self):
         r"""dump flags (TBA)"""
         logger.note(self, task_title("Flags of propagator"))
+        logger.note(self, f" Propagator:            :  {self.__class__.__name__}")
         logger.note(self, f"Time step is            :  {self.dt:.4f}")
         logger.note(self, f"Energy scheme is        :  {self.energy_scheme}")
         logger.note(self, f"Taylor order is         :  {self.taylor_order}")
@@ -473,6 +474,55 @@ class PhaselessElecBoson(Phaseless):
                       + \frac{1}{2}\sum_\alpha \hat{L}^2_{D, \alpha}
                       + \sum_\alpha \omega_\alpha \hat{\boldsymbol{g}}^\alpha \hat{X}_\alpha
                       + \hat{H}_p.
+
+
+    **Propagation in the first quantization:** The advantage of propagation in the first quantization is that
+    it avoids the necessity of truncating the bosonic Hilbert space.
+
+    The random walker is:
+
+    .. math::
+      \ket{\Psi_k(\tau)} =\ket{\phi_k(\tau), Q_k(\tau)}.
+
+
+    One-body propagator: the action of :math:`e^{-\Delta\tau\hat{H}_1(Q_b)}` on the random walker is
+
+       - :math:`\ket{Q'} = \ket{Q}`
+       - :math:`\ket{\phi'_k} = e^{-\Delta\tau\hat{H}_1}\ket{\phi_k}`
+       - :math:`w'_n =\frac{\bra{\Psi_T}\phi'_k, Q'_k\rangle}{\bra{\Psi_T}\phi_k, Q_k\rangle} w_n(\tau)`
+
+    Note the bilinear coupling term is diagonal in the :math:`\ket{Q}` representation, so the one-body propagator
+    will leave :math:`\ket{Q}` invariant.
+
+    Two-body propagator: the two-body propagator is independent of bosonic DOF, the :math:`\ket{Q}` will be invariant:
+
+       - :math:`\ket{Q'} = \ket{Q}`
+       - :math:`\ket{\phi'_k} = e^{\sqrt{-\Delta\tau}(x-F)(\hat{L}_\gamma - \bar{L}_\gamma)}\ket{\phi_k(\tau)}`.
+       - :math:`w' = \frac{\bra{\Psi_T}\phi'_k, Q'_k\rangle}{\bra{\Psi_T}\phi_k, Q_k\rangle}e^{xF - F^2}w(\tau)`
+
+    Bosonic propagator:
+
+
+    **Propagation in the second quantization:**
+
+    The random walker is:
+
+    .. math::
+      \ket{\Psi_k(\tau)} =\ket{\phi_k(\tau), n_k(\tau)}.
+
+
+    One-body propagator:
+
+       - :math:`\ket{n'_k} =  e^{-\Delta\tau\hat{H}_1} \ket{n_k(\tau)}`
+       - :math:`\ket{\phi'_k} = e^{-\Delta\tau\hat{H}_1}\ket{\phi_k}`
+       - :math:`w'_n =\frac{\bra{\Psi_T}\phi'_k, Q'_k\rangle}{\bra{\Psi_T}\phi_k, Q_k\rangle} w_n(\tau)`
+
+    Two-body propagator: Same as above.
+
+    Bosonic propagator:
+
+
+
     """
 
     def __init__(self, dt, **kwargs):
@@ -961,3 +1011,6 @@ class PhaselessElecBoson(Phaseless):
         self.update_weight(walkers, ovlp, newovlp, cfb, cmf, eshift)
         if verbose:
             print("test-yz: bosonic WF", abs(backend.sum(walkers.phiw_b, axis=0)) / walkers.nwalkers)
+
+
+# TODO: finite temperature QMC propagators:

@@ -173,16 +173,10 @@ class AFQMC(qmc.QMCbase):
         self.exp_h1e = None
 
     def dump_flags(self):
-        r"""
-        Dump flags
+        r""" Dump flags
         """
-        logger.note(self, f"\n========  AFQMC simulation using OpenMS package ========\n")
-        logger.note(self, f" Time:              ")
-        logger.note(self, f" Time step :        ")
-        logger.note(self, f" Trial state:       ")
-        logger.note(self, f" Number of walkers: ")
-        logger.note(self, f" Propagator:        ")
-        logger.note(self, f" Energy scheme:     ")
+        super().dump_flags()
+
 
     def hs_transform(self, h1e):
         r"""

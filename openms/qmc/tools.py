@@ -1,10 +1,33 @@
 
 from functools import reduce
 import numpy
+import scipy
 import time
 
-def get_h1e_chols(mol):
 
+
+def get_h1e_chols(mol, thresh=1.e-6):
+    r"""
+    Calculate the one-electron Hamiltonian (h1e) in the orthogonal atomic orbital (OAO) basis
+    and the Cholesky decomposition tensor for a molecular system.
+
+    Parameters
+    ----------
+    mol : object
+        A molecular object used for integral calculations (e.g., PySCF's Mole object).
+    thresh : float, optional
+        Threshold for truncation in the Cholesky decomposition. Defaults to 1.e-6.
+
+    Returns
+    -------
+    h1e : numpy.ndarray
+        The one-electron Hamiltonian matrix in the OAO basis.
+    chols : numpy.ndarray
+        The Cholesky decomposition tensor for the molecular integrals.
+    nuc : float
+        The nuclear repulsion energy of the molecule.
+
+    """
     overlap = mol.intor("int1e_ovlp")
     Xmat = lo.orth.lowdin(overlap)
     norb = Xmat.shape[0]
@@ -17,21 +40,80 @@ def get_h1e_chols(mol):
     nuc = mol.energy_nuc()
 
     # get chols from sub block
-    chols = chols_blocked(mol, thresh=1.e-6, fac=10)
+    ltensors = chols_blocked(mol, thresh=thresh, max_chol_fac=10)
+
+    # TODO: transfer ltensor into OAO
+
+    return h1e, ltensors, nuc
 
 
-def chols_blocked(mol, thresh=1.e-6, fac=15):
+def chols_full(mol, eri=None, thresh=1.e-12, aosym="s1"):
+    r"""
+    Get Cholesky decomposition from the SVD of the full ERI.
+
+    Parameters
+    ----------
+    mol : object
+        Molecular object used for integral calculations.
+    eri : numpy.ndarray, optional
+        Electron repulsion integrals. If None, will be computed.
+    thresh : float, optional
+        Threshold for truncation. Defaults to 1.e-12.
+    aosym : str, optional
+        Symmetry in the ERI tensor. Defaults to "s1".
+
+    Returns
+    -------
+    numpy.ndarray
+        Cholesky tensor (in AO basis) from decomposition.
+    """
+
+    if eri is None:
+        eri = mol.intor('int2e_sph', aosym='s1')
+    nao = eri.shape[0]
+    eri = eri.reshape((nao**2, -1))
+    u, s, v = scipy.linalg.svd(eri)
+    del eri
+    # print("u.shape", u.shape)
+    # print("v.shape", v.shape)
+    # print("s.shape", s.shape)
+    # print(s>1.e-12)
+
+    idx = (s > thresh)
+    ltensor = (u[:,idx] * numpy.sqrt(s[idx])).T
+    ltensor = ltensor.reshape(ltensor.shape[0], nao, nao)
+
+    return ltensor
+
+def chols_blocked(mol, thresh=1.e-6, max_chol_fac=15):
+    r"""
+    Get Cholesky decomposition from the block decomposition of ERI.
+
+    Parameters
+    ----------
+    mol : object
+        Molecular object used for integral calculations.
+    thresh : float, optional
+        Threshold for truncation. Defaults to 1.e-6.
+    max_chol_fac : int, optional
+        Factor to control the maximum number of L tensors.
+
+    Returns
+    -------
+    numpy.ndarray
+        Cholesky tensor from decomposition.
+    """
+    print(f"{'*' * 50}\n Block decomposition of ERI on the fly\n{'*' * 50}")
+
     nao = mol.nao_nr()
-    max_chols = fac * nao
-
+    max_chols = max_chol_fac * nao
+    ltensor = numpy.zeros((max_chols, nao * nao))
     diag = numpy.zeros(nao * nao)
-    Ltensor = numpy.zeros((max_chols, nao * nao))
 
+    # Compute basis indices
     indices4bas = [0]
     end_index = 0
-    print("\ntest-yz: total number of AOs = ", nao)
-    print("test-yz: numbar of basis     = ", mol.nbas, "\n")
-    for i in range(0, mol.nbas):
+    for i in range(mol.nbas):
         l = mol.bas_angular(i)
         nc = mol.bas_nctr(i)
         end_index += (2 * l + 1) * nc
@@ -39,89 +121,108 @@ def chols_blocked(mol, thresh=1.e-6, fac=15):
         # print("test-yz:  end index            = ", end_index)
         indices4bas.append(end_index)
 
+    # Compute initial diagonal
     ndiag = 0
-    for i in range(0, mol.nbas):
+    for i in range(mol.nbas):
         shls = (i, i + 1, 0, mol.nbas, i, i + 1, 0, mol.nbas)
         buf = mol.intor("int2e_sph", shls_slice=shls)
-        di, _, _, _ = buf.shape
-        diag[ndiag : ndiag + di * nao] = buf.reshape(di * nao, di * nao).diagonal()
+        di = buf.shape[0]
+        diag[ndiag:ndiag + di * nao] = buf.reshape(di * nao, di * nao).diagonal()
         ndiag += di * nao
-    # buf = mol.intor("int2e_sph", shls_slice=shls)
 
+    # Find initial maximum diagonal element
     nu = numpy.argmax(diag)
     delta_max = diag[nu]
 
-    print("\nindex of maximum elements:", nu)
-    print("\nmax diagonal element    = ", delta_max, numpy.max(diag))
 
-    if True:
-        print("# Generating Cholesky decomposition of ERIs." % max_chols)
-        print("# max number of cholesky vectors = %d" % max_chols)
-        print("# iteration %5d: delta_max = %f" % (0, delta_max))
-    j = nu // nao
-    l = nu % nao
-    sj = numpy.searchsorted(indices4bas, j)
-    sl = numpy.searchsorted(indices4bas, l)
-    if indices4bas[sj] != j and j != 0:
-        sj -= 1
-    if indices4bas[sl] != l and l != 0:
-        sl -= 1
+    # Compute initial Cholesky vector
+    j, l = divmod(nu, nao)
+    sj, sl = _find_shell(indices4bas, j, l)
+
     Mapprox = numpy.zeros(nao * nao)
-    # ERI[:,jl]
-    eri_col = mol.intor("int2e_sph", shls_slice=(0, mol.nbas, 0, mol.nbas, sj, sj + 1, sl, sl + 1))
-    cj, cl = max(j - indices4bas[sj], 0), max(l - indices4bas[sl], 0)
-    Ltensor[0] = numpy.copy(eri_col[:, :, cj, cl].reshape(nao * nao)) / delta_max**0.5
+    # compute eri block
+    ltensor[0] = _compute_eri_chunk(mol, nao, sj, sl, indices4bas, j, l, delta_max)
 
     nchol = 0
     while abs(delta_max) > thresh:
         # Update cholesky vector
         start = time.time()
         # M'_ii = L_i^x L_i^x
-        Mapprox += (Ltensor[nchol] * Ltensor[nchol])
+        Mapprox += (ltensor[nchol] * ltensor[nchol])
         # D_ii = M_ii - M'_ii
-        print("diag.shape. Mapprox.shape", diag.shape, Mapprox.shape)
 
         delta = diag - Mapprox
         nu = numpy.argmax(numpy.abs(delta))
         delta_max = numpy.abs(delta[nu])
-        # Compute ERI chunk.
-        # shls_slice computes shells of integrals as determined by the angular
-        # momentum of the basis function and the number of contraction
-        # coefficients. Need to search for AO index within this shell indexing
-        # scheme.
-        # AO index.
-        j = nu // nao
-        l = nu % nao
-        # Associated shell index.
-        sj = numpy.searchsorted(indices4bas, j)
-        sl = numpy.searchsorted(indices4bas, l)
-        if indices4bas[sj] != j and j != 0:
-            sj -= 1
-        if indices4bas[sl] != l and l != 0:
-            sl -= 1
-        # Compute ERI chunk.
-        eri_col = mol.intor(
-            "int2e_sph", shls_slice=(0, mol.nbas, 0, mol.nbas, sj, sj + 1, sl, sl + 1)
-        )
-        # Select correct ERI chunk from shell.
-        cj, cl = max(j - indices4bas[sj], 0), max(l - indices4bas[sl], 0)
-        Munu0 = eri_col[:, :, cj, cl].reshape(nao * nao)
-        # Updated residual = \sum_x L_i^x L_nu^x
-        R = numpy.dot(Ltensor[: nchol + 1, nu], Ltensor[: nchol + 1, :])
-        Ltensor[nchol + 1] = (Munu0 - R) / (delta_max) ** 0.5
+
+        # Search for AO index within this shell indexing scheme.
+        j, l = divmod(nu, nao)
+        sj, sl = _find_shell(indices4bas, j, l)
+
+        # Compute ERI chunk and select correct ERI chunk from shell.
+        Munu0 = _compute_eri_chunk(mol, nao, sj, sl, indices4bas, j, l, 1.0)
+
+        # Updated residual = \sum_x L_i^x L_nu^x and Cholesky tensor
+        R = numpy.dot(ltensor[: nchol + 1, nu], ltensor[: nchol + 1, :])
+        ltensor[nchol + 1] = (Munu0 - R) / numpy.sqrt(delta_max)
 
         nchol += 1
-        if True:
-            step_time = time.time() - start
-            info = (nchol, delta_max, step_time)
-            print("# iteration %5d: delta_max = %13.8e: time = %13.8e" % info)
+        step_time = time.time() - start
+        if mol.verbose > 3:
+            print(f"# Iteration {nchol:5d}: delta_max = {delta_max:13.8e}: time = {step_time:13.8e}")
 
-        if nchol > max_chols: break
+        # Stop if maximum number of Cholesky vectors is reached
+        if nchol >= max_chols:
+            print("Warning: Maximum number of Cholesky vectors reached.")
+            break
 
-    return Ltensor[:nchol]
+    # Reshape and truncate the Cholesky tensor
+    ltensor = ltensor[:nchol].reshape(nchol, nao, nao)
+    print(f"{'*' * 50}\n Block decomposition of ERI on the fly ... Done!\n{'*' * 50}\n")
+
+    return ltensor
+
+
+def _find_shell(indices4bas, j, l):
+    r"""
+    Find shell indices for given AO indices.
+    """
+    sj = numpy.searchsorted(indices4bas, j, side="right") - 1
+    sl = numpy.searchsorted(indices4bas, l, side="right") - 1
+    return sj, sl
+
+
+def _compute_eri_chunk(mol, nao, sj, sl, indices4bas, j, l, delta_max):
+    r"""
+    Compute the initial Cholesky vector.
+    """
+    shls = (0, mol.nbas, 0, mol.nbas, sj, sj + 1, sl, sl + 1)
+    eri_col = mol.intor("int2e_sph", shls_slice=shls)
+    cj, cl = j - indices4bas[sj], l - indices4bas[sl]
+    return eri_col[:, :, cj, cl].reshape(nao * nao) / numpy.sqrt(delta_max)
 
 
 def get_mean_std(energies, N=10):
+    r"""
+    Calculate the mean and standard deviation of the real parts of the last subset of qmc energies.
+
+    Parameters
+    ----------
+    energies : list or numpy.ndarray
+        A list or array of energy values (can be complex).
+    N : int, optional
+        Factor determining the size of the subset for calculations.
+        Defaults to 10. The subset size is `len(energies) // N`, with a minimum size of 1.
+
+    Returns
+    -------
+    tuple
+        A tuple (mean, std_dev), where:
+        - mean : float
+            The mean of the real parts of the selected energy subset.
+        - std_dev : float
+            The standard deviation of the real parts of the selected energy subset.
+    """
     m = max(1, len(energies) // N)
     last_m_real = numpy.asarray(energies[-m:]).real
     mean = numpy.mean(last_m_real)

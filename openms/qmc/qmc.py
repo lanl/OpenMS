@@ -174,6 +174,9 @@ class QMCbase(object):
            nblocks:     Number of blocks
            nsteps:      Number of steps per block
         """
+        # import openms
+        # logger.info(self, openms.__logo__)
+
         if "pra2024" not in runtime_refs:
             runtime_refs.append("pra2024")
 
@@ -285,27 +288,52 @@ class QMCbase(object):
         # FIXME: need to decide how to handle access system from the propagation
         self.propagator.system = self.system
 
-        self.propagator.dump_flags()
         # self.propagator.build(self.h1e, self.ltensor, self.geb)
 
     def dump_flags(self):
-        r"""dump flags (TBA)"""
-        pass
+        r"""dump flags (TBA)
+
+        """
+        title = f"{self.__class__.__name__} simulation using OpenMS package"
+        logger.note(self, task_title(title, level=0))
+
+        logger.note(self, f" Time:              {self.total_time:9.3f}")
+        logger.note(self, f" Time step :        {self.dt:6.3f}")
+        logger.note(self, f" Energy scheme:     {self.energy_scheme}")
+        logger.note(self, f" Number of walkers: {self.num_walkers:5d}")
+
+        # flags of propagators (walkers)
+        self.propagator.dump_flags()
+
+        # flags of trial WF (TBA)
+        logger.note(self, f" Trial state:       ")
+
 
     def get_integrals(self):
-        r"""return oei and eri in MO"""
+        r"""return oei, eri, and cholesky tensors in OAO
+
+        .. note::
+
+           this part will be replaced by the code in tools which provide
+           either full of block decomposition of the eri.
+        """
 
         # with h5py.File("input.h5") as fa:
         #    ao_coeff = fa["ao_coeff"][()]
 
-        overlap = self.mol.intor("int1e_ovlp")
         # Lowdin orthogonizaiton S^{-/2} -> X
+        overlap = self.mol.intor("int1e_ovlp")
         Xmat = lo.orth.lowdin(overlap)
         norb = Xmat.shape[0]
 
         import tempfile
 
         # get h1e, and ori in OAO representation
+
+        # ---------------------------------------
+        # TODO: replace it with the block decomposition in tools
+        # ---------------------------------------
+
         ftmp = tempfile.NamedTemporaryFile()
         tools.fcidump.from_mo(self.mol, ftmp.name, Xmat)
         h1e, eri, self.nuc_energy = read_fcidump(ftmp.name, norb)
@@ -325,6 +353,7 @@ class QMCbase(object):
         ltensor = u * backend.sqrt(s)
         ltensor = ltensor.T
         ltensor = ltensor.reshape(ltensor.shape[0], norb, norb)
+
         # with h5py.File("input.h5", "r+") as fa:
         #    fa["h1e"] = h1e
         #    fa["nuc_energy"] = self.nuc_energy
@@ -498,6 +527,8 @@ class QMCbase(object):
 
         """
 
+        self.dump_flags()
+
         # Note of the rename
         # rename precomputed_ltensor -> TL_tensor
         # rename ltheta -> TL_theta
@@ -510,7 +541,7 @@ class QMCbase(object):
         # print("YZ: walkers weights =", self.walkers.weights)
 
         h1e = self.h1e
-        eri = self.eri
+        # eri = self.eri
         ltensor = self.ltensor
         propagator = self.propagator
 

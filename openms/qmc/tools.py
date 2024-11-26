@@ -28,6 +28,8 @@ def get_h1e_chols(mol, thresh=1.e-6):
         The nuclear repulsion energy of the molecule.
 
     """
+    from pyscf import scf, lo
+
     overlap = mol.intor("int1e_ovlp")
     Xmat = lo.orth.lowdin(overlap)
     norb = Xmat.shape[0]
@@ -40,9 +42,11 @@ def get_h1e_chols(mol, thresh=1.e-6):
     nuc = mol.energy_nuc()
 
     # get chols from sub block
-    ltensors = chols_blocked(mol, thresh=thresh, max_chol_fac=10)
+    ltensors = chols_blocked(mol, thresh=thresh, max_chol_fac=15)
 
-    # TODO: transfer ltensor into OAO
+    # transfer ltensor into OAO
+    for i, chol in enumerate(ltensors):
+        ltensors[i] = reduce(numpy.dot, (Xmat.conj().T, chol, Xmat))
 
     return h1e, ltensors, nuc
 

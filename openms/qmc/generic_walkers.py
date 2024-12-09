@@ -73,6 +73,7 @@ class BaseWalkers(object):
 
         # variables for weights and weights control
         self.weights = backend.ones(self.nwalkers)
+        self.weights_org = self.weights.copy()
         self.weight_min = 0.1
         self.weight_max = 10.0
         #
@@ -144,6 +145,7 @@ class BaseWalkers(object):
             )
 
         self.total_weight = total_weight
+        self.weights_org = self.weights
         self.weights /= ratio
 
 

@@ -2,6 +2,48 @@ import numpy as backend
 import scipy
 
 
+# for each observables, we may save several quantities using a small class
+#  to handle the these data
+
+class observables(object):
+    def __init__(self, name, *args, **kargs):
+        self.name = name
+
+        self._expectation = {}
+        self.build()
+
+    def build(self):
+
+        if self.name == "energy":
+            # etot = unscaled_etot / total_weights
+            self._expectation = {
+                "etot": 0.0 + 0.0j,  # scaled total energy sum(weight * e) / sum(weights)
+                "total_weights": 0.0 + 0.0j,  # sum(wights)
+                "unscaled_etot": 0.0 + 0.0j,  # sum(weight* e), unscaled total energy
+                "unscaled_e1": 0.0 + 0.0,  # sum(weight * E1), unscaled one-body energy
+                "unscaled_e2": 0.0 + 0.0,  # sum(weight * E2), unscaled two-body energy
+            }
+         # quantities to be stored for occupation analysis
+
+    def update(self, values):
+        r"""update the data
+        """
+        pass
+
+
+    @property
+    def size(self):
+        return len(self._expectation)
+
+
+    def reset(self):
+        r"""reset the value to zero"""
+        for key, value in self._expectation:
+            if isinstance(v, np.ndarray):
+                self._expectation[key] = np.zeros_like(value)
+            else:
+                self._expectation[key] = 0.0 + 0.0j
+
 
 def get_wfn(weights, psiw):
     r"""
@@ -293,13 +335,14 @@ def local_eng_elec(h1e, eri, Gf, spin_fac=0.5):
 local_eng_elec_spin = local_eng_elec
 
 
+#
+
 _available_observables = {
     "energy": measure_energy,  # total ground state energy
+    # "local_energy": measure_local_energy,  # local energy per site
     # "occupation": measure_occupation,  # Fermionic occupation
     # "boson_occ": measure_bosonic_occupation,  # occupation of boson
-    # "occupation": measure_occupation,
 }
-
 
 
 if __name__ == "__main__":

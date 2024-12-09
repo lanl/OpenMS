@@ -252,16 +252,18 @@ class QMCbase(object):
             self.propagator_options.update(propagator_options)
 
         # property calculations
+        self.property_calc_freq = kwargs.get("property_calc_freq", 10)
         self.default_properties = ["energy"]  # TODO: more property calculators
         self.stacked_variables = [
             "weights",
             "unscaled_weights",
-            "hybrid_energies",
+            "walker_hybrid_energies",
+            "walker_local_energies",
         ]  # may add more variables
-        self.property_calc_freq = kwargs.get("property_calc_freq", 10)
         self.property_buffer = backend.zeros(
             (len(self.stacked_variables),), dtype=backend.complex128
         )
+        self.eshift = 0.0
 
         # set up calculations
         self.build()  # setup calculations
@@ -399,8 +401,9 @@ class QMCbase(object):
         self.walkers.dump_flags()
 
 
-    def measurements(self):
+    def measurements(self, walkers, step):
         r"""masurement of physical observables, e.g., energies"""
+
         pass
 
 
@@ -676,38 +679,64 @@ class QMCbase(object):
     # we use the following function to deal with property calculations
     def property_stack(self, walkers, step):
         r"""
-        accumulate variables for computing the properties
+        The function handles the accumulation and periodic reduction of properties.
 
-        # TODO:
+        Parameters:
+            walkers: object
+                Contains the walker states and associated properties.
+            step: int
+                The current simulation step.
+
         """
         # property_list = self.default_properties
         if step < 0:
+            # Initial setup for the property buffer
             logger.debug(
-                self,
-                f"Debug: initial buffer shape (in accumulator) is {self.property_buffer.shape}",
+                self, f"Debug: initial buffer shape (in accumulator) is {self.property_buffer.shape}"
             )
             # TODO: compute the initial values of the properties
             return
 
-        # use a dict to link the name and variables, like {"weights": walker.weights}
-        # data_dict = {"weights": walkers.weights, "unscaled_weights": walkers.weights, "hybrid_energies": walkers.hybrid_energies}
+        # Dictionary linking property names to their computed values
+        _data_dict = {
+            "weights": backend.sum(walkers.weights),
+            "unscaled_weights": backend.sum(walkers.weights_org),
+            "walker_hybrid_energies": backend.sum(walkers.ehybrid * walkers.weights),
+            "walker_local_energies": backend.sum(walkers.eloc * walkers.weights),
+        }
 
-        tmp = []
-        for name in self.stacked_variables:
-            # TODO: append the variables to the list
-            value = 1.0
-            # value = backend.sum(data_dict[name])
-            tmp.append(value)
+        # Accumulate values for the specified properties
+        tmp = [
+            _data_dict.get(key, 0.0 + 0.0j) for key in self.stacked_variables
+        ]
         self.property_buffer += backend.array(tmp)
 
-        logger.debug(
-            self,
-            f"Debug: updated buffer shape (in accumulator) is {self.property_buffer.shape}",
-        )
+        # logger.debug(self, f"Debug: updated buffer shape is {self.property_buffer.shape}")
+        logger.debug(self, f"Debug: updated buffer is {self.property_buffer}")
 
-        if step % self.property_calc_freq == 0:
-            # compute properties and reset property_buffer
+        # Perform periodic property reduction and normalization
+        if (step + 1) % self.property_calc_freq == 0:
+            # Normalize energies by weights
+            weights_idx = self.stacked_variables.index("weights")
+            norm = self.property_buffer[weights_idx]
 
+            for idx, name in enumerate(self.stacked_variables):
+                if "energies" in name:
+                    self.property_buffer[idx] /= norm
+
+            # Note: dont' combine the following loop with above one, for energies,
+            # we only need to normalized it against weights
+            # Normalize weights over the calculation frequency
+            for idx, name in enumerate(self.stacked_variables):
+                if "weights" in name:
+                    self.property_buffer[idx] /= self.property_calc_freq
+
+            # Update the energy shift using normalized hybrid energies
+            idx = self.stacked_variables.index("walker_hybrid_energies")
+            self.eshift = self.property_buffer[idx]
+            logger.debug(self, f"Debug: update eshift = {self.eshift}")
+
+            # Reset the property buffer for the next accumulation cycle
             self.property_buffer.fill(0.0 + 0.0j)
 
 
@@ -789,7 +818,7 @@ class QMCbase(object):
             # step 3): propagate walkers and update weights
             # self.propagate_walkers(walkers, xbar, ltensor)
             propagator.propagate_walkers(
-                trial, walkers, vbias, ltensor, verbose=int(dump_result)
+                trial, walkers, vbias, ltensor, eshift=self.eshift, verbose=int(dump_result)
             )
 
             # step 2) weight control
@@ -802,8 +831,10 @@ class QMCbase(object):
                 logger.debug(self, f"local_energy:   {walkers.eloc}")
 
             # print energy and time
+            self.property_stack(walkers, step)
+
             # step 4): estimate energies and other properties if needed
-            self.measurements()
+            self.measurements(walkers, step)
 
             """
             # compute local energy for each walker
@@ -818,7 +849,6 @@ class QMCbase(object):
             energy = energy / backend.sum(walkers.weights)
             """
 
-            # determine the eshift (TODO)
 
             if dump_result:
                 logger.debug(self, f"Debug: compute estimators at step {step}")

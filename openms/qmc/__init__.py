@@ -27,3 +27,8 @@ A collection of QMC solvers for electron-boson interactions.
 #def AFQMC(mol, *args):
 #    return afqmc.AFQMC(mol, *args)
 
+# symbols used in this folder
+# i, j, k, l: molecular orbitals
+# p, q, r, s: atomic/spin orbital (either AO or OAO)
+# n: index for cholesky
+# z: index for walker

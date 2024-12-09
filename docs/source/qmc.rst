@@ -9,69 +9,13 @@ Quantum Monte Carlo (QMC)
    :undoc-members:
    :show-inheritance:
 
+.. toctree::
+   :maxdepth: 1
 
-Auxiliary-Field Quantum Monte Carlo
------------------------------------
+   qmc_afqmc
+   qmc_trial
+   qmc_walker
+   qmc_propagator
+   qmc_estimator
+   qmc_tools
 
-.. automodule:: openms.qmc.afqmc
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Trial Wavefunction
-------------------
-
-.. automodule:: openms.qmc.trial
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Trial Wavefunction (Boson)
---------------------------
-
-.. automodule:: openms.qmc.trial_boson
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-
-Walker function
----------------
-
-.. automodule:: openms.qmc.generic_walkers
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-
-Estimators
-----------
-
-.. automodule:: openms.qmc.estimators
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-QMC base class
---------------
-
-.. automodule:: openms.qmc.qmc
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Propagators
------------
-
-.. automodule:: openms.qmc.propagators
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Other tools
------------
-
-.. automodule:: openms.qmc.tools
-   :members:
-   :undoc-members:
-   :show-inheritance:

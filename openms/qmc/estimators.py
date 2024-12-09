@@ -1,4 +1,6 @@
 import numpy as backend
+import scipy
+
 
 
 def get_wfn(weights, psiw):
@@ -22,8 +24,9 @@ def get_wfn(weights, psiw):
 # Gf estimators
 # -------------------------------
 
+
 def bosonic_GF(T, W):
-    r""" compute the bosonic green's function"""
+    r"""compute the bosonic green's function"""
 
     # T shape is nfock
     # W shape is (nwalker, nfock)
@@ -79,6 +82,29 @@ def GF_so(T, W, na, nb):
 # energy estimators for coupled electron-boson interactions
 # -----------------------------------------------------------
 
+#
+# TODO: make a dict to map different combinaiton of trial and walkers
+# to specific function for computing energy and other properties
+# To do so, we have two steps:
+#    1): generate trial_walker header:
+#    2): map the trial_walker header to certian function according
+# to the dict below
+
+# function to handle different energy measurement case
+def measure_energy(trial, walkers, h1e, ltensors, enuc):
+    r"""Measure ground state energy based on walker weights and GF
+
+    According to the type of walkers, the energy measurement is
+    directed to different functions.
+    """
+
+    # TODO:
+
+    pass
+
+
+# local energy for coupled fermion-boson system
+
 def local_eng_eb_2nd(h1e, chols, geb, freq, Gf, Gb, spin_fac=0.5):
     r"""compute the local enegy of the coupled electron-boson system
     in the second quantizaiton format
@@ -131,6 +157,7 @@ def local_eng_eb_1st(h1e, eri, gmat, mass, freq, Gf, Q, laplacian, spin_fac=0.5)
 # bosonic energy estimators
 # -----------------------------
 
+
 def local_eng_boson_2nd(omega, nboson_states, Gb):
     r"""compute the local bosonic energies with bosonic GF (Gb) in
     compute local energy of bosons in 2nd quantizaiton
@@ -139,16 +166,18 @@ def local_eng_boson_2nd(omega, nboson_states, Gb):
     nboson_states: ndarray [nfock, ..., nfock_n]
     Gb: ndarray, bosonic green function
     """
-     # bosonc energy
+    # bosonc energy
     basis = backend.asarray(
         [backend.arange(mdim) for mdim in nboson_states]
     )
 
     waTa = backend.einsum("m, mF->mF", omega, basis).ravel()
-    eb = backend.einsum( "F,zFF->z", waTa, Gb)
+    eb = backend.einsum("F,zFF->z", waTa, Gb)
     return eb
 
+
 local_eng_boson = local_eng_boson_2nd
+
 
 def local_eng_boson_1st(nao, mass, freq, Q):
     r"""Compute local energy of bosons in 1st quantization"""
@@ -157,9 +186,11 @@ def local_eng_boson_1st(nao, mass, freq, Q):
     pot = 0.5 * freq**2 * mass * backend.sum(Q * Q)
     return kin + pot
 
+
 # -------------------------------
 # electronic energy estimators
 # -------------------------------
+
 
 def local_eng_elec_chol_new(h1e, ltensor, Gf):
     r"""Computing local energy Using L tensor and G
@@ -258,7 +289,17 @@ def local_eng_elec(h1e, eri, Gf, spin_fac=0.5):
 
     return kin + pot
 
+
 local_eng_elec_spin = local_eng_elec
+
+
+_available_observables = {
+    "energy": measure_energy,  # total ground state energy
+    # "occupation": measure_occupation,  # Fermionic occupation
+    # "boson_occ": measure_bosonic_occupation,  # occupation of boson
+    # "occupation": measure_occupation,
+}
+
 
 
 if __name__ == "__main__":

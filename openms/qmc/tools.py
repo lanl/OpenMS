@@ -5,16 +5,52 @@ import scipy
 import time
 
 
+def read_fcidump(fname, norb):
+    """
+    :param fname: electron integrals dumped by pyscf
+    :param norb: number of orbitals
+    :return: electron integrals for 2nd quantization with chemist's notation
+    """
+    eri = numpy.zeros((norb, norb, norb, norb))
+    h1e = numpy.zeros((norb, norb))
 
-def get_h1e_chols(mol, thresh=1.e-6):
+    with open(fname, "r") as f:
+        lines = f.readlines()
+        for line, info in enumerate(lines):
+            if line < 4:
+                continue
+            line_content = info.split()
+            integral = float(line_content[0])
+            p, q, r, s = [int(i_index) for i_index in line_content[1:5]]
+            if r != 0:
+                # eri[p,q,r,s] is with chemist notation (pq|rs)=(qp|rs)=(pq|sr)=(qp|sr)
+                eri[p - 1, q - 1, r - 1, s - 1] = integral
+                eri[q - 1, p - 1, r - 1, s - 1] = integral
+                eri[p - 1, q - 1, s - 1, r - 1] = integral
+                eri[q - 1, p - 1, s - 1, r - 1] = integral
+            elif p != 0:
+                h1e[p - 1, q - 1] = integral
+                h1e[q - 1, p - 1] = integral
+            else:
+                nuc = integral
+    return h1e, eri, nuc
+
+
+
+def get_h1e_chols(mol, Xmat=None, thresh=1.e-6):
     r"""
     Calculate the one-electron Hamiltonian (h1e) in the orthogonal atomic orbital (OAO) basis
     and the Cholesky decomposition tensor for a molecular system.
+
+    .. note::
+        May move this function to qmc class.
 
     Parameters
     ----------
     mol : object
         A molecular object used for integral calculations (e.g., PySCF's Mole object).
+    Xmat: ndarray
+        a matrix use to rotate the h1e and eri (or chols)
     thresh : float, optional
         Threshold for truncation in the Cholesky decomposition. Defaults to 1.e-6.
 
@@ -30,8 +66,9 @@ def get_h1e_chols(mol, thresh=1.e-6):
     """
     from pyscf import scf, lo
 
-    overlap = mol.intor("int1e_ovlp")
-    Xmat = lo.orth.lowdin(overlap)
+    if Xmat is None:
+        overlap = mol.intor("int1e_ovlp")
+        Xmat = lo.orth.lowdin(overlap)
     norb = Xmat.shape[0]
 
     # h1e in OAO
@@ -44,6 +81,8 @@ def get_h1e_chols(mol, thresh=1.e-6):
     # get chols from sub block
     ltensors = chols_blocked(mol, thresh=thresh, max_chol_fac=15)
 
+    if mol.verbose > 3:
+        print(f"Debug: norm of ltensor in AO = {numpy.linalg.norm(ltensors)}")
     # transfer ltensor into OAO
     for i, chol in enumerate(ltensors):
         ltensors[i] = reduce(numpy.dot, (Xmat.conj().T, chol, Xmat))
@@ -91,7 +130,12 @@ def chols_full(mol, eri=None, thresh=1.e-12, aosym="s1"):
 
 def chols_blocked(mol, thresh=1.e-6, max_chol_fac=15):
     r"""
-    Get Cholesky decomposition from the block decomposition of ERI.
+    Get modified Cholesky decomposition from the block decomposition of ERI.
+    See Ref. :cite:`Henrik:2003rs, Nelson:1977si`.
+
+    Initially, we calcualte the diagonal element, :math:`M_{pp}=(pq|pq)`.
+
+    More details TBA.
 
     Parameters
     ----------
@@ -125,7 +169,7 @@ def chols_blocked(mol, thresh=1.e-6, max_chol_fac=15):
         # print("test-yz:  end index            = ", end_index)
         indices4bas.append(end_index)
 
-    # Compute initial diagonal
+    # Compute initial diagonal block
     ndiag = 0
     for i in range(mol.nbas):
         shls = (i, i + 1, 0, mol.nbas, i, i + 1, 0, mol.nbas)

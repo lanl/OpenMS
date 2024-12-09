@@ -39,7 +39,9 @@ it means that the :math:`L` is effectively decomposed into :math:`X`
 """
 
 import sys
-from pyscf import tools, lo, scf, fci
+from abc import abstractmethod
+from pyscf import lo, scf, fci
+from pyscf import tools as pyscftools
 from pyscf.gto import mole
 import numpy as backend
 import scipy
@@ -51,6 +53,8 @@ import warnings
 
 from openms import runtime_refs, _citations
 from . import generic_walkers as gwalker
+from . import tools
+
 from pyscf.lib import logger
 from openms.lib.logger import task_title
 from openms.lib.boson import Boson
@@ -61,12 +65,36 @@ from openms.qmc.estimators import local_eng_elec_chol_new
 from openms.qmc.propagators import Phaseless, PhaselessElecBoson
 
 
-def kernel(mc, propagator, trial=None):
-    r"""An universal kernel for qmc propagations
+def qr_ortho(phiw):
+    r"""
+    phiw size is [nao, nalpha/nbeta]
     """
+    Qmat, Rmat = backend.linalg.qr(phiw)
+    Rdiag = backend.diag(Rmat)
+    ## don't need to work on the sign
+    # signs = backend.sign(Rdiag)
+    # Qmat = backend.dot(Qmat, backend.diag(signs))
+    log_det = backend.sum(backend.log(backend.abs(Rdiag)))
+
+    return Qmat, log_det
+
+
+def qr_ortho_batch(phiw):
+    r"""
+    phiw size is [nwalker, nao, nalpha/nbeta]
+    """
+    Qmat, Rmat = backend.linalg.qr(phiw)
+    Rdiag = backend.einsum("wii->wi", Rmat)
+    log_det = backend.einsum("wi->w", backend.log(abs(Rdiag)))
+    return Qmat, log_det
+
+
+def kernel(mc, propagator, trial=None):
+    r"""An universal kernel for qmc propagations"""
 
     # prepare propagation
     backend.random.seed(mc.random_seed)
+    logger.note(self, task_title(" Entering the main kernel of AFQMC"))
 
     # integrals
     h1e = mc.h1e
@@ -109,37 +137,6 @@ def kernel(mc, propagator, trial=None):
     return time_list, energy_list
 
 
-def read_fcidump(fname, norb):
-    """
-    :param fname: electron integrals dumped by pyscf
-    :param norb: number of orbitals
-    :return: electron integrals for 2nd quantization with chemist's notation
-    """
-    eri = backend.zeros((norb, norb, norb, norb))
-    h1e = backend.zeros((norb, norb))
-
-    with open(fname, "r") as f:
-        lines = f.readlines()
-        for line, info in enumerate(lines):
-            if line < 4:
-                continue
-            line_content = info.split()
-            integral = float(line_content[0])
-            p, q, r, s = [int(i_index) for i_index in line_content[1:5]]
-            if r != 0:
-                # eri[p,q,r,s] is with chemist notation (pq|rs)=(qp|rs)=(pq|sr)=(qp|sr)
-                eri[p - 1, q - 1, r - 1, s - 1] = integral
-                eri[q - 1, p - 1, r - 1, s - 1] = integral
-                eri[p - 1, q - 1, s - 1, r - 1] = integral
-                eri[q - 1, p - 1, s - 1, r - 1] = integral
-            elif p != 0:
-                h1e[p - 1, q - 1] = integral
-                h1e[q - 1, p - 1] = integral
-            else:
-                nuc = integral
-    return h1e, eri, nuc
-
-
 class QMCbase(object):
     r"""
     Basic QMC class
@@ -150,7 +147,7 @@ class QMCbase(object):
         system,  # or molecule
         mf=None,
         dt=0.005,
-        nsteps=25,
+        # nsteps=25,
         total_time=5.0,
         num_walkers=100,
         renorm_freq=5,
@@ -158,7 +155,7 @@ class QMCbase(object):
         taylor_order=6,
         energy_scheme=None,
         batched=False,
-        propagator_options = None,
+        propagator_options=None,
         *args,
         **kwargs,
     ):
@@ -173,6 +170,7 @@ class QMCbase(object):
            renorm_freq: renormalization frequency
            nblocks:     Number of blocks
            nsteps:      Number of steps per block
+           OAO:         use OAO representation or not
         """
         # import openms
         # logger.info(self, openms.__logo__)
@@ -180,44 +178,63 @@ class QMCbase(object):
         if "pra2024" not in runtime_refs:
             runtime_refs.append("pra2024")
 
+        # io params
+        self.stdout = sys.stdout
+        self.verbose = kwargs.get("verbose", 1)
+        self.print_freq = 10
+
+        # system parameters
         self.system = self.mol = system
+        self.uhf = kwargs.get("uhf", False)
+        self.OAO = kwargs.get("OAO", True)
+        self.use_so = kwargs.get("use_so", False)
+        if "use_so" not in kwargs:
+            self.use_so = kwargs.get("use_spinorbital", False)
+        if self.uhf:
+            self.use_so = True  # set use_so true if uhf is used.
 
         # propagator params
         self.dt = dt
         self.total_time = total_time
+        # FIXME: in the future, we will use nsteps to control the propagation,
+        # and deprecate the total_time
+        self.nsteps = int(total_time / dt)  # nsteps
         self.propagator = None
-        self.nsteps = nsteps  #
         self.nblocks = 500  #
-        self.pop_control_freq = 5  # population control frequency
-        self.pop_control_method = "pair_brach"  # populaiton control method
         self.eq_time = 2.0  # time of equilibration phase
         self.eq_steps = int(
             self.eq_time / self.dt
         )  # Number of time steps for the equilibration phase
         self.stablize_freq = 5  # Frequency of stablization(re-normalization) steps
         self.energy_scheme = energy_scheme
-        self.verbose = 1
-        self.stdout = sys.stdout
 
+        # trial parameters
         self.trial = kwargs.get("trial", None)
+
+        self.chol_thresh = kwargs.get("chol_thresh", 1.0e-6)
         self.mf = mf
 
         # walker parameters
         # TODO: move these variables into walker object
         self.__dict__.update(kwargs)
+
         self.taylor_order = taylor_order
         self.num_walkers = num_walkers
-        self.renorm_freq = renorm_freq
         self.random_seed = random_seed
+        self.renorm_freq = renorm_freq
+        self.stablize_freq = self.renorm_freq
 
         # walker_tensors/coeff are moved into walkers class (phiw, weights) respectively
         # self.walker_coeff = None
         # self.walker_tensors = None
 
-        self.print_freq = 10
         self.hybrid_energy = None
         self.batched = batched
 
+        # parameters for walker weight control
+        self.pop_control_freq = 5  # weight control frequency
+
+        # other variables for Hamiltonian
         self.geb = None  # TODO: optimize the handling of geb
         self.chol_Xa = None  # TODO: optimize the handling of this term
         self.chol_bilinear = None  # TODO: optimize the handling of this term
@@ -225,47 +242,100 @@ class QMCbase(object):
         # update propagator options
         self.propagator_options = {
             "verbose": self.verbose,
-            "stdout" : self.stdout,
+            "stdout": self.stdout,
             "quantizaiton": "first",
-            "energy_scheme" : self.energy_scheme,
-            "talor_order" : self.taylor_order,
+            "energy_scheme": self.energy_scheme,
+            "taylor_order": self.taylor_order,
         }
 
         if propagator_options is not None:
             self.propagator_options.update(propagator_options)
 
+        # property calculations
+        self.default_properties = ["energy"]  # TODO: more property calculators
+        self.stacked_variables = [
+            "weights",
+            "unscaled_weights",
+            "hybrid_energies",
+        ]  # may add more variables
+        self.property_calc_freq = kwargs.get("property_calc_freq", 10)
+        self.property_buffer = backend.zeros(
+            (len(self.stacked_variables),), dtype=backend.complex128
+        )
+
+        # set up calculations
         self.build()  # setup calculations
 
     def build(self):
         r"""
-        Build up the afqmc calculations
+        Build up the afqmc calculations, including:
+
+        1) setup trial WF
+        2) setup integrals
+        3) setup walkers
+        4) setup propagators
+
+        TODO: add the options to get integrals and trials from files
         """
-        # set up trial wavefunction
+        # 1) set up trial wavefunction
         logger.note(self, task_title("Initialize Trial WF and Walker"))
 
+        # number of spin components
+        self.ncomponents = 1
+        if self.uhf or self.use_so:
+            self.ncomponents = 2
+        self.spin_fac = 1.0 / self.ncomponents
+
+        # FIXME: determine how to better handle trial options from qmc kwargs
+        #        may directly make trial_options as a qmc class argument.
         # make a trial_options for creating trail WF.
         trial_options = {
             "verbose": self.verbose,
             "stdout": self.stdout,
             "trail_type": "RHF",
             "numdets": 1,
+            "OAO": self.OAO,
+            "uhf": self.uhf,
+            "ncomponents": self.ncomponents,
         }
 
-        self.spin_fac = 1.0
+        # TODO: 1) simplify this the construction of trial
+        #      2) handle different trial, RHF, UHF, GHF, ROHF, and MCSCF.
         if self.trial is None:
             self.trial = make_trial(self.mol, mf=self.mf, **trial_options)
+            if self.mf is None:
+                self.mf = self.trial.mf
+            logger.debug(self, f"Debug: self.mf = {self.mf}")
+            logger.debug(self, f"Debug: trail.mf = {self.trial.mf}")
 
-        # set up walkers
+        # 2) make h1e in Spin orbital
+        t0 = time.time()
+        logger.note(self, task_title("Get integrals"))
+        self.h1e, self.ltensor = self.get_integrals()
+
+        # half-rotate integrals
+        self.trial.half_rotate_integrals(self.h1e, self.ltensor)
+        logger.note(
+            self,
+            task_title(f"Get integrals ... Done! Time used: {time.time()-t0: 7.3f} s"),
+        )
+
+        # 3) set up walkers
+        t0 = time.time()
         logger.note(self, task_title("Set up walkers"))
         self.walkers = gwalker.Walkers_so(nwalkers=self.num_walkers, trial=self.trial)
-        logger.note(self, "Done!")
 
-        logger.note(self, task_title("Get integrals"))
-        self.h1e, self.eri, self.ltensor = self.get_integrals()
-        logger.note(self, "Done!")
+        # calculate green's function
+        ovlp = self.trial.ovlp_with_walkers_gf(self.walkers)
+        logger.debug(self, f"Debug: initial trial_walker overlap is\n {ovlp}")
+        logger.note(
+            self, f"Setup walkers ... Done! Time used: {time.time()-t0: 7.3f} s"
+        )
 
-        # prepare the propagator
-        logger.note(self, task_title("preparing  propagator"))
+        # 4) prepare the propagator
+        # TODO: may use a dict to switch different propagator
+        t0 = time.time()
+        logger.note(self, task_title("Prepare propagator"))
         if isinstance(self.system, Boson):
             logger.note(
                 self,
@@ -274,7 +344,7 @@ class QMCbase(object):
             )
             self.propagator = PhaselessElecBoson(self.dt, **self.propagator_options)
             self.propagator.chol_bilinear = self.chol_bilinear
-            self.propagator.chol_Xa  = self.chol_Xa
+            self.propagator.chol_Xa = self.chol_Xa
         else:
             logger.note(
                 self,
@@ -282,35 +352,60 @@ class QMCbase(object):
                 + "\nPhaseless propagator is to be used!\n",
             )
             self.propagator = Phaseless(dt=self.dt, **self.propagator_options)
-        logger.info(self, "Done!")
-
         # FIXME: temporarily assign system to propgator as well
         # FIXME: need to decide how to handle access system from the propagation
         self.propagator.system = self.system
 
-        # self.propagator.build(self.h1e, self.ltensor, self.geb)
+        self.propagator.build(self.h1e, self.ltensor, self.trial, self.geb)
+
+        logger.note(
+            self,
+            task_title(
+                f"Prepare propagator ... Done! Time used: {time.time()-t0: 7.3f} s"
+            ),
+        )
+
+    @abstractmethod
+    def cast2backend(self):
+        r"""cast the tensors to backend for following simulation"""
+        raise NotImplementedError
 
     def dump_flags(self):
-        r"""dump flags (TBA)
-
-        """
+        r"""dump flags (TBA)"""
         title = f"{self.__class__.__name__} simulation using OpenMS package"
         logger.note(self, task_title(title, level=0))
 
-        logger.note(self, f" Time:              {self.total_time:9.3f}")
-        logger.note(self, f" Time step :        {self.dt:6.3f}")
-        logger.note(self, f" Energy scheme:     {self.energy_scheme}")
-        logger.note(self, f" Number of walkers: {self.num_walkers:5d}")
+        representation = "OAO" if self.OAO else "MO"
+        logger.note(self, f" {representation} representation is used")
+        logger.note(self, f" Time step              : {self.dt:7.3f}")
+        logger.note(self, f" Total time             : {self.total_time:7.3f}")
+        logger.note(self, f" Number of steps        : {self.nsteps:7d}")
+        logger.note(self, f" Energy scheme          : {self.energy_scheme}")
+        logger.note(self, f" Number of walkers      : {self.num_walkers:7d}")
+        logger.note(self, f" Number of chols        : {self.ltensor.shape[0]:5d}")
+        logger.note(self, f" Threshold of chols     : {self.chol_thresh:7.3e}")
+        logger.note(self, f" Use Spin orbital?      : {self.use_so}")
+        logger.note(self, f" Unrestricted spin?     : {self.uhf}")
+        logger.note(self, f" No. of spin components : {self.ncomponents:5d}")
 
         # flags of propagators (walkers)
+        logger.note(
+            self, f" Propagator is        : {self.propagator.__class__.__name__}"
+        )
         self.propagator.dump_flags()
 
-        # flags of trial WF (TBA)
-        logger.note(self, f" Trial state:       ")
+        # flags of trial WF and walkers
+        self.trial.dump_flags()
+        self.walkers.dump_flags()
+
+
+    def measurements(self):
+        r"""masurement of physical observables, e.g., energies"""
+        pass
 
 
     def get_integrals(self):
-        r"""return oei, eri, and cholesky tensors in OAO
+        r"""return oei, eri, and cholesky tensors in OAO or MO
 
         .. note::
 
@@ -321,22 +416,26 @@ class QMCbase(object):
         # with h5py.File("input.h5") as fa:
         #    ao_coeff = fa["ao_coeff"][()]
 
-        # Lowdin orthogonizaiton S^{-/2} -> X
-        overlap = self.mol.intor("int1e_ovlp")
-        Xmat = lo.orth.lowdin(overlap)
+        hcore = self.mf.get_hcore()
+        logger.debug(self, f"Debug: norm of hcore = {backend.linalg.norm(hcore)}")
+        if self.OAO:
+            # Lowdin orthogonizaiton S^{-/2} -> X
+            overlap = self.mol.intor("int1e_ovlp")
+            Xmat = lo.orth.lowdin(overlap)
+        else:
+            Xmat = self.mf.mo_coeff
+        logger.debug(self, f"Debug: basis_transform_matrix = \n{Xmat}")
         norb = Xmat.shape[0]
 
+        """
+        # old code, will remove this part, as we don't need the eri
         import tempfile
 
         # get h1e, and ori in OAO representation
 
-        # ---------------------------------------
-        # TODO: replace it with the block decomposition in tools
-        # ---------------------------------------
-
         ftmp = tempfile.NamedTemporaryFile()
-        tools.fcidump.from_mo(self.mol, ftmp.name, Xmat)
-        h1e, eri, self.nuc_energy = read_fcidump(ftmp.name, norb)
+        pyscftools.fcidump.from_mo(self.mol, ftmp.name, Xmat)
+        h1e, eri, self.nuc_energy = tools.read_fcidump(ftmp.name, norb)
 
         # Cholesky decomposition of eri
         # here eri uses chemist's notation
@@ -353,6 +452,24 @@ class QMCbase(object):
         ltensor = u * backend.sqrt(s)
         ltensor = ltensor.T
         ltensor = ltensor.reshape(ltensor.shape[0], norb, norb)
+
+        """
+        # ---------------------------------------
+        #  use block decomposition of eri in tools
+        # ---------------------------------------
+        # get h1e, eri, ltensors in OAO/MO representation
+        hcore, ltensor, self.nuc_energy = tools.get_h1e_chols(
+            self.mol, Xmat=Xmat, thresh=self.chol_thresh
+        )
+        # shape of h1e [nspin, nao, nao]
+        h1e = backend.array([hcore for _ in range(self.ncomponents)])
+        logger.debug(self, f"\nDebug: h1e.shape = {h1e.shape}")
+        logger.debug(
+            self, f"Debug: norm of hcore in OAO/MO = {backend.linalg.norm(h1e[0])}"
+        )
+        logger.debug(
+            self, f"Debug: norm of ltensor in OAO/MO = {backend.linalg.norm(ltensor)}"
+        )
 
         # with h5py.File("input.h5", "r+") as fa:
         #    fa["h1e"] = h1e
@@ -381,22 +498,31 @@ class QMCbase(object):
 
             # add terms due to decoupling of bilinear term
             if self.propagator_options["decouple_bilinear"]:
-                logger.debug(self, f"creating chol due to decomposition of bilinear term")
+                logger.debug(
+                    self, f"creating chol due to decomposition of bilinear term"
+                )
 
                 # (1 + 1j) * \sqrt{\omega} (\lambda\cdot D)
                 self.chol_bilinear = self.geb * (1.0 + 1j)
                 self.chol_Xa = (system.omega) ** 0.5 * (1.0 + 1j)
 
         self.nfields = ltensor.shape[0]
-        return h1e, eri, ltensor
+        return h1e, ltensor
 
 
     def propagate_walkers(self, walkers, xbar, ltensor):
         pass
 
+
     def measure_observables(self, operator):
+        r"""Placeholder for measure_observables.
+        According to the operator, we measure the expectation values
+
+        TODO: may not used this one!
+        """
         observables = None
         return observables
+
 
     def walker_trial_overlap(self):
         r"""
@@ -428,21 +554,49 @@ class QMCbase(object):
     def orthogonalization(self):
         r"""
         Renormalizaiton and orthogonaization of walkers
+
+        .. note::
+
+            Since the orthogonaization depends on the type of walkers, we are moving
+            this function into walkers. Hence, the function here is to be deprecated!
         """
 
-        ortho_walkers = backend.zeros_like(self.walkers.phiw)
-        for idx in range(self.walkers.phiw.shape[0]):
-            ortho_walkers[idx] = backend.linalg.qr(self.walkers.phiw[idx])[0]
-        self.walkers.phiw = ortho_walkers
+        # 1) old code
+        # ortho_walkers = backend.zeros_like(self.walkers.phiwa)
+        detR = backend.zeros(self.walkers.nwalkers, dtype=backend.complex128)
+        for idx in range(self.walkers.phiwa.shape[0]):
+            self.walkers.phiwa[idx], log_det = qr_ortho(self.walkers.phiwa[idx])
 
-        if self.walkers.phiw_b is not None:
-            ortho_walkers = backend.zeros_like(self.walkers.phiw_b)
-            #for idx in range(self.walkers.phiw_b.shape[0]):
-            #    ortho_walkers[idx] = backend.linalg.qr(self.walkers.phiw_b[idx])[0]
-            #self.walkers.phiw_b = ortho_walkers
+            if self.walkers.ncomponents > 1:
+                self.walkers.phiwb[idx], log_det_b = qr_ortho(self.walkers.phiwa[idx])
+                log_det += log_det_b
+
+            detR[idx] = backend.exp(log_det - self.walkers.detR_shift[idx])
+            self.walkers.log_detR[idx] += backend.log(detR[idx])
+            self.walkers.detR[idx] = detR[idx]
+            self.walkers.ovlp[idx] = self.walkers.ovlp[idx] / detR[idx]
+
+        """
+        # 2) batched code
+        self.walkers.phiwa, log_det = qr_ortho_batch(self.walkers.phiwa)
+        if self.walkers.ncomponents > 1:
+            self.walkers.phiwb, log_det_b = qr_ortho_batch(self.walkers.phiwb)
+            log_det += log_det_b
+
+        self.walkers.detR = backend.exp(log_det - self.walkers.detR_shift)
+        self.walkers.ovlp = self.walkers.ovlp / self.walkers.detR
+        """
+
+        print(f"Debug(reortho): detR= {self.walkers.detR};\novlp= {self.walkers.ovlp}")
+
+        if self.walkers.boson_phiw is not None:
+            ortho_walkers = backend.zeros_like(self.walkers.boson_phiw)
+            # for idx in range(self.walkers.boson_phiw.shape[0]):
+            #    ortho_walkers[idx] = backend.linalg.qr(self.walkers.boson_phiw[idx])[0]
+            # self.walkers.boson_phiw = ortho_walkers
 
     # renormalization is to be deprecated
-    renormalization = orthogonalization
+    orthonormalization = orthogonalization
 
     def local_energy_spin(self, h1e, eri, G1p):
         r"""Compute local energy
@@ -519,6 +673,44 @@ class QMCbase(object):
         energy = e1 + e2 + self.nuc_energy
         return energy
 
+    # we use the following function to deal with property calculations
+    def property_stack(self, walkers, step):
+        r"""
+        accumulate variables for computing the properties
+
+        # TODO:
+        """
+        # property_list = self.default_properties
+        if step < 0:
+            logger.debug(
+                self,
+                f"Debug: initial buffer shape (in accumulator) is {self.property_buffer.shape}",
+            )
+            # TODO: compute the initial values of the properties
+            return
+
+        # use a dict to link the name and variables, like {"weights": walker.weights}
+        # data_dict = {"weights": walkers.weights, "unscaled_weights": walkers.weights, "hybrid_energies": walkers.hybrid_energies}
+
+        tmp = []
+        for name in self.stacked_variables:
+            # TODO: append the variables to the list
+            value = 1.0
+            # value = backend.sum(data_dict[name])
+            tmp.append(value)
+        self.property_buffer += backend.array(tmp)
+
+        logger.debug(
+            self,
+            f"Debug: updated buffer shape (in accumulator) is {self.property_buffer.shape}",
+        )
+
+        if step % self.property_calc_freq == 0:
+            # compute properties and reset property_buffer
+
+            self.property_buffer.fill(0.0 + 0.0j)
+
+
     def kernel(self, trial_wf=None):
         r"""main function for QMC time-stepping
 
@@ -535,6 +727,7 @@ class QMCbase(object):
         # trace_ltheta -> trace_tltheta -> vbias
 
         # prepare propagation
+        logger.info(self, f"\n Random seed is {self.random_seed}\n")
         backend.random.seed(self.random_seed)
 
         # print("YZ: walkers WF      =", self.walkers.phiw)
@@ -552,25 +745,67 @@ class QMCbase(object):
         # self.build_propagator(h1e, eri, ltensor)
         propagator.build(h1e, ltensor, self.trial, self.geb)
 
+        logger.debug(self, f"Debug: the initial orthogonalise in walker")
+        self.orthogonalization()
+
+        # initialize property calculations
+        self.property_stack(walkers, -1)
 
         # start the propagation
         tt = 0.0
         energy_list = []
         time_list = []
         wall_t0 = time.time()
-        while tt <= self.total_time:
-            dump_result = int(tt / self.dt) % self.print_freq == 0
+        # while tt <= self.total_time:
+        for step in range(self.nsteps):
+            tt = self.dt * step
+            dump_result = step % self.print_freq == 0
+            logger.debug(
+                self, f"\nDebug: -------------- qmc step {step} -----------------"
+            )
+            # step 3): periodic re-orthogonalization
+            # (FIXME: whether put this at the begining or end, in principle, should not matter)
+            if (step + 1) % self.renorm_freq == 0:
+                self.orthogonalization()
+                logger.debug(self, f"Debug: orthogonalise at step {step}")
 
+            vbias = None
             # step 1): get force bias (note: TL_tensor and mf_shift moved into propagator.atrributes)
             # store Gf in walkers in order to recycle it in the propagators
             # gf, vbias = trial.get_vbias(walkers, ltensor, verbose=dump_result)
+            """
             gf, TL_theta = trial.force_bias(
                 walkers, propagator.TL_tensor, verbose=dump_result
             )
+
             # trace[TL_theta] is the force_bias
             vbias = backend.einsum("znpp->zn", TL_theta)
 
-            # step 2): property calculations
+            # imaginary time propagation
+            # TODO: may apply bias bounding
+            xbar = -backend.sqrt(self.dt) * (1j * 2 * vbias - propagator.mf_shift)
+            """
+
+            # step 3): propagate walkers and update weights
+            # self.propagate_walkers(walkers, xbar, ltensor)
+            propagator.propagate_walkers(
+                trial, walkers, vbias, ltensor, verbose=int(dump_result)
+            )
+
+            # step 2) weight control
+            self.walkers.weight_control(step)
+
+            # moved phaseless approximation to propagation
+            # since it is associated with propagation type
+            # self.update_weight(overlap, cfb, cmf)
+            if dump_result:
+                logger.debug(self, f"local_energy:   {walkers.eloc}")
+
+            # print energy and time
+            # step 4): estimate energies and other properties if needed
+            self.measurements()
+
+            """
             # compute local energy for each walker
             # local_energy = self.local_energy(TL_theta, h1e, eri, vbias, gf)
 
@@ -581,43 +816,30 @@ class QMCbase(object):
 
             energy = backend.dot(walkers.weights, walkers.eloc)
             energy = energy / backend.sum(walkers.weights)
+            """
 
-            # imaginary time propagation
-            # TODO: may apply bias bounding
-            xbar = -backend.sqrt(self.dt) * (1j * 2 * vbias - propagator.mf_shift)
+            # determine the eshift (TODO)
 
-            # step 3): propagate walkers and update weights
-            # self.propagate_walkers(walkers, xbar, ltensor)
-            propagator.propagate_walkers(trial, walkers, vbias, ltensor, verbose=int(dump_result))
-
-            # moved phaseless approximation to propagation
-            # since it is associated with propagation type
-            # self.update_weight(overlap, cfb, cmf)
             if dump_result:
-                logger.debug(self, f"local_energy:   {walkers.eloc}")
-
-            # step 4): periodic re-orthogonalization
-            if int(tt / self.dt) == self.renorm_freq:
-                self.orthogonalization()
-
-            # print energy and time
-            if dump_result:
+                logger.debug(self, f"Debug: compute estimators at step {step}")
                 time_list.append(tt)
-                energy_list.append(energy)
-                logger.info(self, f" Time: {tt:9.3f}    Energy: {energy:15.8f}")
+                # energy_list.append(energy)
+                # logger.info(self, f" Time: {tt:9.3f}    Energy: {energy:15.8f}")
 
-            tt += self.dt
+            # step 5): TODO: code of checkpoint
+
+        # TODO: code of analysis, post processing, etc.
 
         self.post_kernel()
         return time_list, energy_list
 
     def _finalize(self):
-        '''Hook for dumping results and clearing up the object.'''
+        """Hook for dumping results and clearing up the object."""
         pass
 
     def post_kernel(self):
         r"""Prints relevant citation information for calculation."""
-        breakline = '='*80
+        breakline = "=" * 80
         logger.note(self, f"\n{breakline}")
         logger.note(self, f"*  Hoollary, the job is done!\n")
 

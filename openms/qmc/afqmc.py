@@ -223,6 +223,7 @@ class AFQMC(qmc.QMCbase):
             self, "norm of TL_tensor:   %15.8f", backend.linalg.norm(self.TL_tensor)
         )
 
+
     def propagation_onebody(self, phi_w):
         r"""Propgate one-body term"""
         return backend.einsum("pq, zqr->zpr", self.exp_h1e, phi_w)

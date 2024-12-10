@@ -632,6 +632,21 @@ class RHF(qedhf.RHF):
         return eri
 
 
+    def testing_ph_exp_val(self, imode):
+
+        mdim = self.qed.nboson_states[imode]
+        idx = sum(self.qed.nboson_states[:imode])
+
+        ci = self.qed.boson_coeff[idx : idx + mdim, 0]
+
+        pdm = numpy.outer(numpy.conj(ci), ci)
+        #pdm = numpy.einsum("ij, ji-> ", numpy.conj(ci), ci)
+        #print (f"dm = {pdm}")
+
+        ph_exp_val = numpy.sum((2.0 * numpy.arange(mdim)) * pdm)
+        return ph_exp_val
+
+
     def FC_factor(self, eta, imode, onebody=True):
         r"""Compute Franck-Condon (or renormalization) factor
 
@@ -654,10 +669,9 @@ class RHF(qedhf.RHF):
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
 
-        ph_exp_val = 0.0 # self.qed.get_bdag_plus_b_sq_expval(imode) # to be checked
-        ph_exp_val_test = self.qed.get_FC_factor_ph_expval(imode)
-        print (f"{ph_exp_val_test:12f}")
-
+        #ph_exp_val = 0.0
+        ph_exp_val = self.testing_ph_exp_val(imode)
+        #print (f"ph_exp_val = {ph_exp_val_test:15f}")
         factor = numpy.exp((-0.5 * (tmp * diff_eta) ** 2) * (ph_exp_val + 1))
 
         if onebody:
@@ -678,7 +692,9 @@ class RHF(qedhf.RHF):
 
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
-        ph_exp_val = 0.0 # self.qed.get_bdag_plus_b_sq_expval(imode)
+
+        #ph_exp_val = 0.0
+        ph_exp_val = self.testing_ph_exp_val(imode)
 
         # Apply the derivative formula
         derivative = numpy.exp((-0.5 * (tmp * diff_eta) ** 2) * (ph_exp_val + 1)) \

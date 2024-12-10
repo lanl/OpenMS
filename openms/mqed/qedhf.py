@@ -160,7 +160,7 @@ def kernel(
     logger.info(mf, 'init E= %.15g', e_tot)
 
     # Create initial photonic eigenvector guess(es)
-    mf.qed.update_boson_coeff(e_tot, dm)
+    mf.qed.update_boson_coeff(dm)
 
     scf_conv = False
     mo_energy = mo_coeff = mo_occ = None
@@ -222,7 +222,7 @@ def kernel(
         e_tot = mf.energy_tot(dm, h1e, vhf)
 
         # construct Hp matrix and diagonalize
-        mf.qed.update_boson_coeff(e_tot, dm)
+        mf.qed.update_boson_coeff(dm)
 
         # Check SCF convergence
         fock = mf.get_fock(h1e, s1e, vhf, dm)  # = h1e + vhf, no DIIS
@@ -260,7 +260,7 @@ def kernel(
 
         # Final update of photonic coefficients and energy
         mf.qed.update_cs(dm) # Update coherent state values
-        mf.qed.update_boson_coeff(e_tot, dm)
+        mf.qed.update_boson_coeff(dm)
 
         # Final update of h1e, vhf, e_tot, fock
         h1e = mf.get_hcore(mol, dm)

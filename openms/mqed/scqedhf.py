@@ -637,13 +637,11 @@ class RHF(qedhf.RHF):
         mdim = self.qed.nboson_states[imode]
         idx = sum(self.qed.nboson_states[:imode])
 
-        ci = self.qed.boson_coeff[idx : idx + mdim, 0]
-
+        ci = self.qed.boson_coeff[idx : idx + mdim, idx]
         pdm = numpy.outer(numpy.conj(ci), ci)
-        #pdm = numpy.einsum("ij, ji-> ", numpy.conj(ci), ci)
-        #print (f"dm = {pdm}")
+        #print (pdm)
 
-        ph_exp_val = numpy.diag(2.0 * numpy.arange(mdim))
+        ph_exp_val = 2.0 * numpy.arange(mdim)
         return numpy.sum(ph_exp_val * pdm)
 
 
@@ -669,10 +667,10 @@ class RHF(qedhf.RHF):
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
 
-        ph_exp_val2 = self.testing_ph_exp_val(imode)
-        print (f"ph_exp_val = {ph_exp_val2:15f}")
 
         ph_exp_val = 0.0
+        #ph_exp_val = self.testing_ph_exp_val(imode)
+        #print (f"ph_exp_val = {ph_exp_val2}")
 
         factor = numpy.exp((-0.5 * (tmp * diff_eta) ** 2) * (ph_exp_val + 1))
 
@@ -695,8 +693,8 @@ class RHF(qedhf.RHF):
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
 
-        #ph_exp_val = self.testing_ph_exp_val(imode)
         ph_exp_val = 0.0
+        #ph_exp_val = self.testing_ph_exp_val(imode)
 
         # Apply the derivative formula
         derivative = numpy.exp((-0.5 * (tmp * diff_eta) ** 2) * (ph_exp_val + 1)) \

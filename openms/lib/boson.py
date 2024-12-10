@@ -67,7 +67,6 @@ def get_bosonic_Ham(nmodes, nboson_states, omega, za, Fa):
     Hb = numpy.zeros((boson_size, boson_size))
     idx = 0
     for imode in range(nmodes):
-        jmode = imode
         cosh2r = numpy.cosh(2.0 * Fa[imode])
         sinhr = numpy.sinh(Fa[imode])
         mdim = nboson_states[imode]
@@ -81,6 +80,8 @@ def get_bosonic_Ham(nmodes, nboson_states, omega, za, Fa):
 
         Hb[idx:idx+mdim, idx:idx+mdim] = H0
         idx += mdim
+
+    print (Hb)
     return Hb
 
 
@@ -536,10 +537,14 @@ class Boson(object):
         # Boson info
         self.boson_type = self.__class__.__name__
         self.cavity_type = None
+        self.e_boson = 0.0
+
         boson_size = sum(self.nboson_states)
         self.boson_coeff = numpy.zeros((boson_size, boson_size))
-        self.boson_coeff[:, 0] = 1.0/numpy.sqrt(boson_size)
-        self.e_boson = 0.0
+        for imode in range(self.nmodes):
+            mdim = self.nboson_states[imode]
+            idx = sum(self.nboson_states[:imode])
+            self.boson_coeff[idx : idx + mdim, idx : idx + mdim] = numpy.eye(mdim)
 
         # Mean-field info
         self._mf = mf
@@ -1404,6 +1409,7 @@ class Photon(Boson):
 
         return lib.einsum("X, Xuv-> Xuv", (self.couplings ** 2), q_lambda_ao)
 
+
     def get_q_dot_lambda(self):
         r"""same as get_q_lambda_ao, one of them will be deprecated!!!"""
         # Tensor:  <u|r_i * r_y> * v_x * v_y
@@ -1464,6 +1470,7 @@ class Photon(Boson):
 
         return lib.einsum("X, Xuv-> Xuv", self.couplings, gmat)
 
+
     def get_gmatao(self):
         r"""Compute interaction matrix for all modes in AO basis.
 
@@ -1516,16 +1523,6 @@ class Photon(Boson):
             Interaction matrix of mode scaled by frequency term.
         """
         return (numpy.sqrt(0.5 * self.omega[mode]) * self.gmat[mode])
-
-
-    def get_FC_factor_ph_expval(self, mode):
-
-        mdim = self.nboson_states[mode]
-
-        h_diag = numpy.diag(2.0 * numpy.arange(mdim, dtype=float)) + 1.0
-        pdm = self.get_boson_dm(mode)
-
-        return numpy.sum(h_diag * pdm)
 
 
     def get_bdag_minus_b_expval(self, mode):

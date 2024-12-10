@@ -643,8 +643,8 @@ class RHF(qedhf.RHF):
         #pdm = numpy.einsum("ij, ji-> ", numpy.conj(ci), ci)
         #print (f"dm = {pdm}")
 
-        ph_exp_val = numpy.sum((2.0 * numpy.arange(mdim)) * pdm)
-        return ph_exp_val
+        ph_exp_val = numpy.diag(2.0 * numpy.arange(mdim))
+        return numpy.sum(ph_exp_val * pdm)
 
 
     def FC_factor(self, eta, imode, onebody=True):
@@ -669,9 +669,11 @@ class RHF(qedhf.RHF):
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
 
-        #ph_exp_val = 0.0
-        ph_exp_val = self.testing_ph_exp_val(imode)
-        #print (f"ph_exp_val = {ph_exp_val_test:15f}")
+        ph_exp_val2 = self.testing_ph_exp_val(imode)
+        print (f"ph_exp_val = {ph_exp_val2:15f}")
+
+        ph_exp_val = 0.0
+
         factor = numpy.exp((-0.5 * (tmp * diff_eta) ** 2) * (ph_exp_val + 1))
 
         if onebody:
@@ -693,8 +695,8 @@ class RHF(qedhf.RHF):
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
 
-        #ph_exp_val = 0.0
-        ph_exp_val = self.testing_ph_exp_val(imode)
+        #ph_exp_val = self.testing_ph_exp_val(imode)
+        ph_exp_val = 0.0
 
         # Apply the derivative formula
         derivative = numpy.exp((-0.5 * (tmp * diff_eta) ** 2) * (ph_exp_val + 1)) \

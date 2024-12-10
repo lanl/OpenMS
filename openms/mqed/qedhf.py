@@ -381,13 +381,13 @@ def get_fock(
     if s1e is None: s1e = mf.get_ovlp()
 
     if 0 <= cycle < diis_start_cycle - 1 and abs(damp_factor) > 1e-4:
-        f = damping(s1e, dm * 0.5, f, damp_factor)
+        f = damping(s1e, dm * 0.5, f, damp_factor) # TODO: will produce error if damping is used
     if diis is not None and cycle >= diis_start_cycle:
         variables, gradients = mf.pre_update_var_params()
         params = diis.update(s1e, dm, f, mf, h1e, vhf, var=variables, var_grad=gradients)
         f = mf.set_params(params, fock_shape=f.shape)
     if abs(level_shift_factor) > 1e-4:
-        f = level_shift(s1e, dm * 0.5, f, level_shift_factor)
+        f = level_shift(s1e, dm * 0.5, f, level_shift_factor) # TODO: will produce error if level_shift is used
     return f
 
 

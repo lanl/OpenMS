@@ -810,7 +810,6 @@ class RHF(qedhf.RHF):
                                          mean_value
          -D_{qp}\tidle{g}_{pq} * \tilde{g}_{qq} (diagonal element is then g_pq(p)**2)
         """
-        # we also need to update hcore as it's dressed by photon displacement
 
         if mol is None: mol = self.mol
         if dm is None: dm = self.make_rdm1()
@@ -853,12 +852,11 @@ class RHF(qedhf.RHF):
 
 
     def norm_var_params(self):
-        var_norm = linalg.norm(self.eta_grad) / numpy.sqrt(self.eta.size)
-        return var_norm
+        return linalg.norm(self.eta_grad) / numpy.sqrt(self.eta.size)
 
 
     def init_var_params(self, dm=None):
-        r"""Initialize additional variational parameters"""
+        r"""Initialize eta variational parameters."""
         if self.eta is None:
             self.initialize_eta(dm)
         return self

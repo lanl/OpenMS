@@ -643,10 +643,8 @@ class RHF(hf.RHF):
             :math:`V^{\tt{QED}}_{\tt{HF}}`.
         """
 
-        if mol is None:
-            mol = self.mol
-        if dm is None:
-            dm = self.make_rdm1()
+        if mol is None: mol = self.mol
+        if dm is None: dm = self.make_rdm1()
 
         if self.qed.use_cs: # TODO: Necessary?
             self.qed.update_cs(dm)

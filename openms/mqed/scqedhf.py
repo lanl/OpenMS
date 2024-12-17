@@ -584,7 +584,7 @@ class RHF(qedhf.RHF):
             onebody_deta = numpy.zeros(self.nao)
             twobody_deta = numpy.zeros(self.nao)
 
-            tau = numpy.exp(self.qed.squeezed_var[imode])
+            tau = numpy.exp(self.qed.squeezed_var[imode]) # TODO: not used yet
             # 1) diagonal part due to [(gtmp - eta)^2 \rho]
             for p in range(self.nao):
                 onebody_deta[p] -= 2.0 * dm_do[imode, p,p] * g_DO[imode, p] / self.qed.omega[imode]
@@ -667,8 +667,8 @@ class RHF(qedhf.RHF):
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
 
-        ph_exp_val = 0.0
-        #ph_exp_val = self.testing_ph_exp_val(imode)
+        #ph_exp_val = 0.0
+        ph_exp_val = self.testing_ph_exp_val(imode)
         #print (f"PHOTONIC EXPECTATION VALUE:\n{ph_exp_val}\n")
 
         factor = numpy.exp((-0.5 * (tmp * diff_eta) ** 2) * (ph_exp_val + 1))
@@ -691,8 +691,8 @@ class RHF(qedhf.RHF):
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
 
-        ph_exp_val = 0.0
-        #ph_exp_val = self.testing_ph_exp_val(imode)
+        #ph_exp_val = 0.0
+        ph_exp_val = self.testing_ph_exp_val(imode)
 
         # Apply the derivative formula
         derivative = numpy.exp((-0.5 * (tmp * diff_eta) ** 2) * (ph_exp_val + 1)) \

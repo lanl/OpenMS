@@ -65,16 +65,18 @@ def get_bosonic_Ham(nmodes, nboson_states, omega, za, Fa, sc=None):
 
     boson_size = sum(nboson_states)
     Hb = numpy.zeros((boson_size, boson_size))
+
     idx = 0
     for imode in range(nmodes):
+
         mdim = nboson_states[imode]
         cosh2r = numpy.cosh(2.0 * Fa[imode])
         sinhr = numpy.sinh(Fa[imode])
 
-        # diagonal term, didn't include ZPE
+        # diagonal term, doesn't include ZPE
         H0 = numpy.diag(numpy.arange(mdim) * cosh2r + sinhr * sinhr) * omega[imode]
 
-        # off-diaognal term
+        # off-diagonal term
         h_od = numpy.diag(numpy.sqrt(numpy.arange(1, mdim)), k = 1) \
             + numpy.diag(numpy.sqrt(numpy.arange(1, mdim)), k = -1)
         H0 += h_od * za[imode]
@@ -86,8 +88,6 @@ def get_bosonic_Ham(nmodes, nboson_states, omega, za, Fa, sc=None):
         Hb[idx:idx+mdim, idx:idx+mdim] = H0
         idx += mdim
 
-    #print (f"PHOTONIC HAMILTONIAN:\n{Hb}\n")
-    #exit()
     return Hb
 
 
@@ -671,22 +671,21 @@ class Boson(object):
         za = lib.einsum("pq, Xpq ->X", dm, self.gmat) - self.z_alpha
         za *= self.couplings_res * numpy.sqrt(self.omega/2.0) # only consider the residual part
 
-        #if hasattr(self._mf, "eta"):
-            #print (self._mf.eta)
-        #else:
-            #print ("None, basically")
-        #exit()
-        #eta_tmp = self.eta[0]
-        #dm_do_diag = numpy.diag(self.dm_do[0])
-        #product = eta_tmp * dm_do_diag
-        #print (f"sum_p (eta_p * dm_do_pp) = {numpy.sum(product)}")
+        # Bilinear SC-/VT-QED terms (nphoton > 1)
+        bilinear = numpy.zeros(self.nmodes)
+        if hasattr(self._mf, "eta"):
+            bilinear = numpy.einsum("ap, app-> a", self._mf.eta, self._mf.dm_do)
+            bilinear *= (self.couplings * self.couplings_var)
+        else:
+            bilinear = None
 
+        # Squeezing parameter values
         Fa = self.squeezed_var
-        # use the new get_bosonic_Ham to get the matrix
-        hmat = get_bosonic_Ham(self.nmodes, self.nboson_states, self.omega, za, Fa)
+
+        # Bosonic Hamiltonian matrix
+        hmat = get_bosonic_Ham(self.nmodes, self.nboson_states, self.omega, za, Fa, sc=bilinear)
 
         # Photon cavity mode eigenvectors
-        # h_evec = self._mf.eig(hmat, numpy.eye(sum(nboson_states)))[1]
         e, c = scipy.linalg.eigh(hmat)
         idx = numpy.argmax(abs(c.real), axis=0)
         e = e[idx]
@@ -694,7 +693,7 @@ class Boson(object):
 
         # Photon ground state energy
         Etot = 0.0
-        # we did't include ZPE here
+        # we did't include ZPE here # TODO: Double-check
         idx = 0
         for imode in range(self.nmodes):
             mdim = self.nboson_states[imode]

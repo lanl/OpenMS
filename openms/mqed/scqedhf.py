@@ -217,6 +217,7 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
     # Create initial photonic eigenvector guess(es)
     mf.qed.update_boson_coeff(dm=dm)
 
+    # Initial electronic energy
     h1e = mf.get_hcore(mol, dm, dress=True)
     vhf = mf.get_veff(mol, dm)
     e_tot = mf.energy_tot(dm, h1e, vhf)
@@ -225,7 +226,7 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
     scf_conv = False
     mo_energy = mo_coeff = mo_occ = None
 
-    s1e = mf.get_ovlp(mol)
+    s1e = mf.get_ovlp(mol) # TODO: Check, redundant?
     cond = lib.cond(s1e)
     logger.debug(mf, 'cond(S) = %s', cond)
     if numpy.max(cond)*1e-17 > conv_tol:
@@ -432,8 +433,8 @@ class RHF(qedhf.RHF):
         self._eigh may be modified by self.get_cholesky method.
         """
 
-        s1e = self.get_ovlp(self.mol)
         fock = self.initialize_bare_fock(dm)
+        s1e = self.get_ovlp(self.mol)
         mo_energy, mo_coeff = self._eigh(fock, s1e)
 
         return mo_energy, mo_coeff
@@ -621,13 +622,12 @@ class RHF(qedhf.RHF):
             self._eri = self.mol.intor("int2e", aosym="s1")
             logger.debug(self, f"First build of two-body integral! eri.shape= {self._eri.shape}")
 
-        nao = self.mol.nao_nr()
         from pyscf.ao2mo.addons import restore
-        self._eri = restore(1, self._eri, nao)
+        self._eri = restore(1, self._eri, self.nao)
 
         eri = self._eri.copy()
-        if eri.size == nao**4:
-            eri = eri.reshape((nao,)*4)
+        if eri.size == self.nao**4:
+            eri = eri.reshape((self.nao,)*4)
 
         eri = numpy.einsum("pu, qv, rw, st, pqrs->uvwt", U, U, U, U, eri, optimize=True)
 
@@ -659,12 +659,11 @@ class RHF(qedhf.RHF):
         Here :math:`\tau= exp(F_\alpha)` and :math:`F_\alpha` are the VSQ prameters.
         """
 
-        nao = self.qed.gmat[imode].shape[0]
         if onebody:
-            p, q = numpy.ogrid[:nao, :nao]
+            p, q = numpy.ogrid[:self.nao, :self.nao]
             diff_eta = eta[imode, p] - eta[imode, q]
         else:
-            p, q, r, s = numpy.ogrid[:nao, :nao, :nao, :nao]
+            p, q, r, s = numpy.ogrid[:self.nao, :self.nao, :self.nao, :self.nao]
             diff_eta = eta[imode, p] - eta[imode, q] +  eta[imode, r] - eta[imode, s]
 
         tau = numpy.exp(self.qed.squeezed_var[imode])
@@ -677,19 +676,18 @@ class RHF(qedhf.RHF):
         factor = numpy.exp((-0.5 * (tmp * diff_eta) ** 2) * (ph_exp_val + 1))
 
         if onebody:
-            return factor.reshape(nao, nao)
+            return factor.reshape(self.nao, self.nao)
         else:
-            return factor.reshape(nao, nao, nao, nao)
+            return factor.reshape(self.nao, self.nao, self.nao, self.nao)
 
 
     def gaussian_derivative_vectorized(self, eta, imode, onebody=True):
 
-        nao = eta.shape[1]
         if onebody:
-            p, q = numpy.ogrid[:nao, :nao]
+            p, q = numpy.ogrid[:self.nao, :self.nao]
             diff_eta = eta[imode, q] - eta[imode, p]
         else:
-            p, q, r, s = numpy.ogrid[:nao, :nao, :nao, :nao]
+            p, q, r, s = numpy.ogrid[:self.nao, :self.nao, :self.nao, :self.nao]
             diff_eta = eta[imode, q] - eta[imode, p] +  eta[imode, s] - eta[imode, r]
 
         tau = numpy.exp(self.qed.squeezed_var[imode])
@@ -703,9 +701,9 @@ class RHF(qedhf.RHF):
                      * (tmp ** 2) * diff_eta
 
         if onebody:
-            return derivative.reshape(nao, nao)
+            return derivative.reshape(self.nao, self.nao)
         else:
-            return derivative.reshape(nao, nao, nao, nao)
+            return derivative.reshape(self.nao, self.nao, self.nao, self.nao)
 
 
     def get_h1e_DO(self, mol=None, dm=None):
@@ -733,9 +731,8 @@ class RHF(qedhf.RHF):
         if self.bare_h1e is None:
             self.bare_h1e = self.get_bare_hcore(mol)
 
-        nmode, nao, nao = self.qed.gmat.shape
         if self.g_dipole is None:
-            self.g_dipole = numpy.zeros((nmode,nao))
+            self.g_dipole = numpy.zeros((self.qed.nmodes, self.nao))
 
         for a in range(self.qed.nmodes):
 
@@ -746,9 +743,9 @@ class RHF(qedhf.RHF):
             # h1e in dipole basis
             self.h1e_DO = unitary_transform(self.ao2dipole[a], self.bare_h1e)
 
-            tau = numpy.exp(self.qed.squeezed_var[a])
+            tau = numpy.exp(self.qed.squeezed_var[a]) # TODO: not used yet
             # one-body operator h1e_pq = h1e_pq + g_pq(p, l) * g_pq(l, p)
-            for p in range(nao):
+            for p in range(self.nao):
                 # For the diagonal part, the FC factor is 1.0, i.e., independent  of tau and f
                 self.g_dipole[a, p] = gtmp[p, p] - self.eta[a, p]
                 self.h1e_DO[p, p] += self.g_dipole[a, p] ** 2 / self.qed.omega[a]
@@ -787,8 +784,7 @@ class RHF(qedhf.RHF):
         else:
             # only works for one mode at this moment
             h1e_DO = self.h1e_DO.copy()
-            nmodes, nao, nao = self.qed.gmat.shape
-            for imode in range(nmodes):
+            for imode in range(self.qed.nmodes):
                 # update the renormalization/FC factors
                 # and dress h1e : h_pq  * G_{pq}
                 factor = self.FC_factor(self.eta, imode)
@@ -820,7 +816,6 @@ class RHF(qedhf.RHF):
 
         if mol is None: mol = self.mol
         if dm is None: dm = self.make_rdm1()
-        nao = self.mol.nao_nr()
 
         # work for single mode only at this moment
         imode = 0
@@ -831,8 +826,8 @@ class RHF(qedhf.RHF):
         # Tr[g_pq * D] in DO
         g_dot_D = numpy.diagonal(dm_do) @ self.g_dipole[imode, :]
 
-        p_indices = numpy.arange(nao)
-        vhf_do = numpy.zeros((nao,nao))
+        p_indices = numpy.arange(self.nao)
+        vhf_do = numpy.zeros((self.nao, self.nao))
         vhf_do[p_indices, p_indices] += (2.0 * self.g_dipole[imode, p_indices] * g_dot_D -
                                          numpy.square(self.g_dipole[imode, p_indices]) \
                                          * dm_do[p_indices, p_indices]) / self.qed.omega[0]
@@ -840,7 +835,7 @@ class RHF(qedhf.RHF):
         vhf_do_offdiag = numpy.zeros_like(vhf_do)
 
         # Calculate off-diagonal elements
-        p, q = numpy.triu_indices(nao, k=1)
+        p, q = numpy.triu_indices(self.nao, k=1)
         vhf_do_offdiag[p, q] -= self.g_dipole[imode, p] * self.g_dipole[imode, q] * dm_do[q, p] / self.qed.omega[0]
         vhf_do_offdiag[q, p] = vhf_do_offdiag[p, q]  # Exploit symmetry
         vhf_do += vhf_do_offdiag

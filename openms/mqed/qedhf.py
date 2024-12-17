@@ -144,23 +144,24 @@ def kernel(
     else:
         dm = dm0
 
+    # Initialize parameters (used in SC/VT-QEDHF)
+    mf.init_var_params(dm)
+
+    # construct h1e, gmat in DO representation (used in SC/VT-QEDHF)
+    mf.get_h1e_DO(mol, dm=dm)
+
+    # Coherent-state z_alpha values
     if mf.qed.use_cs:
         mf.qed.update_cs(dm)
 
-    # Initialize additional variational parameters,
-    # construct 'h1e' 'gmat' in dipole (DO) basis
-    # (used by SC-QED-HF/VT-QED-HF subclasses)
-    mf.init_var_params(dm)
-    mf.get_h1e_DO(mol, dm=dm)
+    # Create initial photonic eigenvector guess(es)
+    mf.qed.update_boson_coeff(dm)
 
     # Initial electronic energy
     h1e = mf.get_hcore(mol, dm)
     vhf = mf.get_veff(mol, dm)
     e_tot = mf.energy_tot(dm, h1e, vhf)
     logger.info(mf, 'init E= %.15g', e_tot)
-
-    # Create initial photonic eigenvector guess(es)
-    mf.qed.update_boson_coeff(dm)
 
     scf_conv = False
     mo_energy = mo_coeff = mo_occ = None

@@ -27,7 +27,7 @@ from openms.lib.ov_blocks import two_e_blocks, two_e_blocks_full
 from openms.mqed import qedhf, scqedhf, vtqedhf
 
 
-def get_bosonic_Ham(nmodes, nboson_states, omega, za, Fa):
+def get_bosonic_Ham(nmodes, nboson_states, omega, za, Fa, sc=None):
     r"""Construct Bosonic Hamiltonian in different representation
     after integrating out the electronic DOF.
 
@@ -78,6 +78,10 @@ def get_bosonic_Ham(nmodes, nboson_states, omega, za, Fa):
         h_od = numpy.diag(numpy.sqrt(numpy.arange(1, mdim)), k = 1) \
             + numpy.diag(numpy.sqrt(numpy.arange(1, mdim)), k = -1)
         H0 += h_od * za[imode]
+
+        # SC-QEDHF off-diagonal term (nboson > 1)
+        if sc is not None:
+            H0 += h_od * sc[imode]
 
         Hb[idx:idx+mdim, idx:idx+mdim] = H0
         idx += mdim
@@ -666,12 +670,11 @@ class Boson(object):
         za = lib.einsum("pq, Xpq ->X", dm, self.gmat) - self.z_alpha
         za *= self.couplings_res * numpy.sqrt(self.omega/2.0) # only consider the residual part
 
-        if hasattr(self._mf, "eta"):
-            print (self._mf.eta)
-        else:
-            print ("None, basically")
+        #if hasattr(self._mf, "eta"):
+            #print (self._mf.eta)
+        #else:
+            #print ("None, basically")
         #exit()
-
         #eta_tmp = self.eta[0]
         #dm_do_diag = numpy.diag(self.dm_do[0])
         #product = eta_tmp * dm_do_diag
@@ -1103,7 +1106,7 @@ class Photon(Boson):
             shift = numpy.eye(self.gmat.shape[1]) * self.z_alpha[imode] #/ mol.nelectron
             shift = s1e * self.z_alpha[imode]
             gtmp = (self.gmat[imode] - shift) * self.couplings_res[imode]
-            gtmp *= numpy.sqrt(0.5*self.omega[imode])
+            gtmp *= numpy.sqrt(0.5 * self.omega[imode])
 
             ci = self.boson_coeff[idx : idx + self.nboson_states[imode], 0]
             pdm = numpy.outer(numpy.conj(ci), ci)
@@ -1114,143 +1117,144 @@ class Photon(Boson):
             oei += gtmp * ph_exp_val
 
             idx += self.nboson_states[imode]
+
         return oei
 
 
-    def get_dse_hcore(self, dm=None, s1e=None, residue=False):
-        r"""Compute QED-RHF boson-mediated 1e- integrals.
+    # def get_dse_hcore(self, dm=None, s1e=None, residue=False):
+    #     r"""Compute QED-RHF boson-mediated 1e- integrals.
 
-        Deprecation warning:
-        this function will be deprecated as it same as add_oei_ao and
-        this term include bilinear as well. the function name is misleading
+    #     Deprecation warning:
+    #     this function will be deprecated as it same as add_oei_ao and
+    #     this term include bilinear as well. the function name is misleading
 
-        Regardless of Fock basis or coherent-state (CS) representation,
-        return quadrupole-modified OEI contribution, which arises
-        from the DSE term of the PF Hamiltonian:
+    #     Regardless of Fock basis or coherent-state (CS) representation,
+    #     return quadrupole-modified OEI contribution, which arises
+    #     from the DSE term of the PF Hamiltonian:
 
-        .. math::
-            \bm{h}_{\tt{DSE}} &= \bm{h}_{\tt{bare}} - \frac{1}{2}
-                                 \sum_\al \sum_{\mu\nu} \rho_{\mu\nu}
-                                 \cdot \bm{\tilde{q}}^\al_{\mu\nu} \\
-            \bm{\tilde{q}}^\al_{\mu\nu} &= \la_{\al}^2
-                                           \cdot \bm{Q}^\al_{\mu\nu}
-        where :math:`\bm{Q}^\al` is the polarized quadrupole moment matrix
-        in the AO basis.
+    #     .. math::
+    #         \bm{h}_{\tt{DSE}} &= \bm{h}_{\tt{bare}} - \frac{1}{2}
+    #                              \sum_\al \sum_{\mu\nu} \rho_{\mu\nu}
+    #                              \cdot \bm{\tilde{q}}^\al_{\mu\nu} \\
+    #         \bm{\tilde{q}}^\al_{\mu\nu} &= \la_{\al}^2
+    #                                        \cdot \bm{Q}^\al_{\mu\nu}
+    #     where :math:`\bm{Q}^\al` is the polarized quadrupole moment matrix
+    #     in the AO basis.
 
-        In CS representation, when :attr:`use_cs` ``= True``, additional
-        DSE-mediated contribution to the OEI is included:
+    #     In CS representation, when :attr:`use_cs` ``= True``, additional
+    #     DSE-mediated contribution to the OEI is included:
 
-        .. math::
-            \bm{h}_{\tt{CS}} &= \bm{h}_{\tt{DSE}} - \bm{\tilde{d}}^\al
-                                \sum_\al \sum_{\mu\nu} \rho_{\mu\nu}
-                                \cdot \mel*{\mu}{\hat{D}}{\nu} \\
-            \bm{\tilde{d}}^\al_{\mu\nu} &= \la_\al
-                                           \cdot \bm{D}^\al_{\mu\nu}
-        where :math:`\bm{D}^\al` is the polarized dipole moment matrix in
-        the AO basis.
+    #     .. math::
+    #         \bm{h}_{\tt{CS}} &= \bm{h}_{\tt{DSE}} - \bm{\tilde{d}}^\al
+    #                             \sum_\al \sum_{\mu\nu} \rho_{\mu\nu}
+    #                             \cdot \mel*{\mu}{\hat{D}}{\nu} \\
+    #         \bm{\tilde{d}}^\al_{\mu\nu} &= \la_\al
+    #                                        \cdot \bm{D}^\al_{\mu\nu}
+    #     where :math:`\bm{D}^\al` is the polarized dipole moment matrix in
+    #     the AO basis.
 
-        Also in CS representation, :math:`E_{\tt{QED-HF}}` includes DSE
-        term:
+    #     Also in CS representation, :math:`E_{\tt{QED-HF}}` includes DSE
+    #     term:
 
-        .. math::
-            E_{\tt{QED-HF}} = E_{\tt{HF}}
-                            + \frac{1}{2} \sum_\al
-                              \langle
-                              [ \la_\al \cdot
-                                (\hat{D} - \ev*{\hat{D}}_{\mu\nu})
-                              ]^2
-                              \rangle
-        that can also be included via the OEI, since:
+    #     .. math::
+    #         E_{\tt{QED-HF}} = E_{\tt{HF}}
+    #                         + \frac{1}{2} \sum_\al
+    #                           \langle
+    #                           [ \la_\al \cdot
+    #                             (\hat{D} - \ev*{\hat{D}}_{\mu\nu})
+    #                           ]^2
+    #                           \rangle
+    #     that can also be included via the OEI, since:
 
-        .. math::
-            \langle
-            [ \la_\al
-            \cdot (\hat{D} - \ev*{\hat{D}}_{\mu\nu})]^2
-            \rangle
-            &= \langle [ \la_\al
-               \cdot (\hat{D} - \ev*{\hat{D}}_{\mu\nu})]^2
-               \rangle
-               \cdot \frac{\Tr[\bm{S} \cdot \bm{\rho}]}
-               {N_{\tt{elec}}} \\
-            &= \tt{Tr}
-               \left[
-               \frac{[ \la_\al \cdot
-               (\hat{D} - \ev*{\hat{D}}_{\mu\nu})]^2}
-               {N_{\tt{elec}}} \bm{S} \cdot \bm{\rho}
-               \right]
-        where :math:`\bm{\rho}` is the provided electronic density matrix,
-        ``dm``.
+    #     .. math::
+    #         \langle
+    #         [ \la_\al
+    #         \cdot (\hat{D} - \ev*{\hat{D}}_{\mu\nu})]^2
+    #         \rangle
+    #         &= \langle [ \la_\al
+    #            \cdot (\hat{D} - \ev*{\hat{D}}_{\mu\nu})]^2
+    #            \rangle
+    #            \cdot \frac{\Tr[\bm{S} \cdot \bm{\rho}]}
+    #            {N_{\tt{elec}}} \\
+    #         &= \tt{Tr}
+    #            \left[
+    #            \frac{[ \la_\al \cdot
+    #            (\hat{D} - \ev*{\hat{D}}_{\mu\nu})]^2}
+    #            {N_{\tt{elec}}} \bm{S} \cdot \bm{\rho}
+    #            \right]
+    #     where :math:`\bm{\rho}` is the provided electronic density matrix,
+    #     ``dm``.
 
-        Parameters
-        ----------
-        dm : :class:`~numpy.ndarray`
-            Density matrix.
-        s1e : :class:`~numpy.ndarray`
-            Overlap matrix, **optional**
-            (computed if not provided).
-        residue : bool
-            Multiply by pre-factor if ``True``.
+    #     Parameters
+    #     ----------
+    #     dm : :class:`~numpy.ndarray`
+    #         Density matrix.
+    #     s1e : :class:`~numpy.ndarray`
+    #         Overlap matrix, **optional**
+    #         (computed if not provided).
+    #     residue : bool
+    #         Multiply by pre-factor if ``True``.
 
-              - used by VT-QED-HF solver
-              - **optional,** ``default = False``
+    #           - used by VT-QED-HF solver
+    #           - **optional,** ``default = False``
 
-        Return
-        ------
-        dse_oei : :class:`~numpy.ndarray`
-            DSE-mediated OEI for all photon modes.
-        """
+    #     Return
+    #     ------
+    #     dse_oei : :class:`~numpy.ndarray`
+    #         DSE-mediated OEI for all photon modes.
+    #     """
 
-        warnings.warn(
-            "The 'get_dse_hcore' function is deprecated, please use add_oei_ao" +
-            "instead because since boson-mediated oei part includes both DSE and bilinear term",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+    #     warnings.warn(
+    #         "The 'get_dse_hcore' function is deprecated, please use add_oei_ao" +
+    #         "instead because since boson-mediated oei part includes both DSE and bilinear term",
+    #         DeprecationWarning,
+    #         stacklevel=2,
+    #     )
 
-        if s1e is None:
-            s1e = self._mf.get_ovlp(self._mol)
+    #     if s1e is None:
+    #         s1e = self._mf.get_ovlp(self._mol)
 
-        # Always shift OEI with photon ground state energy
-        dse_oei = self.e_boson * s1e / self.nelectron
+    #     # Always shift OEI with photon ground state energy
+    #     dse_oei = self.e_boson * s1e / self.nelectron
 
-        # DSE contribution
-        g_dse = numpy.ones(self.nmodes) if not residue else \
-                (self.couplings_res ** 2)
+    #     # DSE contribution
+    #     g_dse = numpy.ones(self.nmodes) if not residue else \
+    #             (self.couplings_res ** 2)
 
-        if self.complete_basis:
-            dse_oei -= 0.5 * lib.einsum("X, Xpq-> pq", g_dse, self.q_lambda_ao)
-        else:
-            s_eval, s_evec = scipy.linalg.eigh(s1e)
-            idx = s_eval > 1e-15
-            s_inv = numpy.dot(s_evec[:, idx] / s_eval[idx], s_evec[:, idx].conj().T)
+    #     if self.complete_basis:
+    #         dse_oei -= 0.5 * lib.einsum("X, Xpq-> pq", g_dse, self.q_lambda_ao)
+    #     else:
+    #         s_eval, s_evec = scipy.linalg.eigh(s1e)
+    #         idx = s_eval > 1e-15
+    #         s_inv = numpy.dot(s_evec[:, idx] / s_eval[idx], s_evec[:, idx].conj().T)
 
-            tmp_term = lib.einsum("Xpr, rs, Xsq-> Xpq", self.gmat, s_inv, self.gmat)
-            dse_oei += 0.5 * lib.einsum("X, Xpq-> pq", g_dse, tmp_term)
-            del (tmp_term)
+    #         tmp_term = lib.einsum("Xpr, rs, Xsq-> Xpq", self.gmat, s_inv, self.gmat)
+    #         dse_oei += 0.5 * lib.einsum("X, Xpq-> pq", g_dse, tmp_term)
+    #         del (tmp_term)
 
-        # DSE contributions to OEI and total energy from coherent-state representation
-        if self.use_cs == True:
-            dse_oei += 0.5 * numpy.sum(self.z_alpha**2 * g_dse) * s1e / self.nelectron
-            dse_oei -= lib.einsum("X, Xpq-> pq", g_dse * self.z_alpha, self.gmat)
+    #     # DSE contributions to OEI and total energy from coherent-state representation
+    #     if self.use_cs == True:
+    #         dse_oei += 0.5 * numpy.sum(self.z_alpha**2 * g_dse) * s1e / self.nelectron
+    #         dse_oei -= lib.einsum("X, Xpq-> pq", g_dse * self.z_alpha, self.gmat)
 
-        # E-P bilinear coupling contribution
-        g_ep = numpy.ones(self.nmodes) if not residue else \
-               self.couplings_res
+    #     # E-P bilinear coupling contribution
+    #     g_ep = numpy.ones(self.nmodes) if not residue else \
+    #            self.couplings_res
 
-        ep_term = numpy.zeros((self.nao, self.nao))
-        for a in range(self.nmodes):
+    #     ep_term = numpy.zeros((self.nao, self.nao))
+    #     for a in range(self.nmodes):
 
-            shift = s1e * self.z_alpha[a]
-            gtmp = (self.gmat[a] - shift) * numpy.sqrt(0.5 * self.omega[a])
-            gtmp *= g_ep[a]
+    #         shift = s1e * self.z_alpha[a]
+    #         gtmp = (self.gmat[a] - shift) * numpy.sqrt(0.5 * self.omega[a])
+    #         gtmp *= g_ep[a]
 
-            ph_exp_val = self.get_bdag_minus_b_expval(a)
-            ep_term += (gtmp * ph_exp_val)
+    #         ph_exp_val = self.get_bdag_minus_b_expval(a)
+    #         ep_term += (gtmp * ph_exp_val)
 
-        dse_oei -= ep_term
-        del (g_ep, shift, gtmp, ph_exp_val, ep_term)
+    #     dse_oei -= ep_term
+    #     del (g_ep, shift, gtmp, ph_exp_val, ep_term)
 
-        return dse_oei
+    #     return dse_oei
 
 
     def get_dse_jk(
@@ -1393,10 +1397,11 @@ class Photon(Boson):
         r"""same as get_q_lambda_ao, one of them will be deprecated!!!"""
         # Tensor:  <u|r_i * r_y> * v_x * v_y
         if self.q_lambda_ao is None:
-            nao = self._mol.nao_nr()
-            self.q_lambda_ao = numpy.empty((self.nmodes, nao, nao))
+            self.q_lambda_ao = numpy.empty((self.nmodes, self.nao, self.nao))
+
             if self.quadrupole_ao is None:
                 self.quadrupole_ao = self.get_quadrupole_ao()
+
             for mode in range(self.nmodes):
                 x_out_y = numpy.outer(self.vec[mode], self.vec[mode]).reshape(-1)
                 x_out_y *= self.couplings[mode] ** 2

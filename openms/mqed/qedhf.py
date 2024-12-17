@@ -29,6 +29,7 @@ from openms import __config__
 
 TIGHT_GRAD_CONV_TOL = getattr(__config__, "TIGHT_GRAD_CONV_TOL", True)
 
+
 r"""
 Theoretical background of QEDHF
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -63,6 +64,7 @@ With the ansatz, the QEDHF energy is
   E_{QEDHF}= E_{HF} + \frac{1}{2}\langle \boldsymbol{lambda}\cdot [\boldsymbol{D}-\langle \boldsymbol{D}\rangle)]^2\rangle,
 
 """
+
 
 def kernel(
     mf, conv_tol=1e-10, conv_tol_grad=None,
@@ -395,14 +397,13 @@ def get_fock(
 class RHF(hf.RHF):
     r"""Non-relativistic QED-RHF class."""
     def __init__(self, mol, **kwargs):
-        # print headers
 
+        # print headers
         logger.info(self, openms.__logo__)
         if "pccp2023" not in openms.runtime_refs:
             openms.runtime_refs.append("pccp2023")
 
         xc = kwargs.get("xc", None)
-
         if xc is not None:
             raise NotImplementedError("RKS object currently not supported.")
         else:
@@ -440,20 +441,19 @@ class RHF(hf.RHF):
             qed._mf = self
 
         # Update QED object
-        # qed.update_mean_field(self, **kwargs)
+        self.qed = qed
+        # qed.update_mean_field(self, **kwargs) # TODO: Remove eventually
 
         # update the setting according to each specific MF
         # couplings_var should be zero in QEDHF
         qed.couplings_var = numpy.zeros(qed.nmodes)
         qed.update_couplings()
-        qed._mf = self
-        self.qed = qed
 
         # make dipole matrix in AO
-        #self.make_dipolematrix() # replaced by qed functions
-
         self.qed.get_gmatao()
         self.qed.get_q_dot_lambda()
+
+        return
 
 
     def get_oei_AO(self):
@@ -461,15 +461,12 @@ class RHF(hf.RHF):
         """
         pass
 
+
     def get_eri_AO(sefl, Ltensor=True):
         r"""return the effective eri (or chols) in AO for usage in QMC
         """
         pass
 
-    def get_bare_hcore(self, mol=None):
-        r"""return the bare hcore"""
-        if mol is None: mol = self.mol
-        return hf.get_hcore(mol)
 
     def get_hcore(self, mol=None, dm=None):
         r"""
@@ -525,19 +522,19 @@ class RHF(hf.RHF):
         """
 
         dm_shape = dm.shape
-        nao = dm_shape[-1]
-        dm = dm.reshape(-1,nao,nao)
+        dm = dm.reshape(-1, self.nao, self.nao)
         n_dm = dm.shape[0]
         logger.debug(self, "No. of dm is %d", n_dm)
 
-        vj_dse = numpy.zeros((n_dm,nao,nao))
-        vk_dse = numpy.zeros((n_dm,nao,nao))
+        vj_dse = numpy.zeros((n_dm, self.nao, self.nao))
+        vk_dse = numpy.zeros((n_dm, self.nao, self.nao))
 
         gtmp = self.qed.gmat
         if residue: gtmp = self.qed.gmat * self.qed.couplings_res
+
         for i in range(n_dm):
-            # DSE-medaited J
-            scaled_mu = lib.einsum("pq, Xpq ->X", dm[i], gtmp)# <\lambada * D>
+            # DSE-mediated J
+            scaled_mu = lib.einsum("pq, Xpq ->X", dm[i], gtmp) # <\lambda * D>
             vj_dse[i] += lib.einsum("Xpq, X->pq", gtmp, scaled_mu)
 
             # DSE-mediated K
@@ -547,12 +544,12 @@ class RHF(hf.RHF):
         vk = vk_dse.reshape(dm_shape)
         return vj, vk
 
+
     def get_jk(self, mol=None, dm=None, hermi=1, with_j=True, with_k=True, omega=None):
+        if mol is None: mol = self.mol
+        if dm is None: dm = self.make_rdm1()
+
         # Note the incore version, which initializes an _eri array in memory.
-        if mol is None:
-            mol = self.mol
-        if dm is None:
-            dm = self.make_rdm1()
         if not omega and (
             self._eri is not None or mol.incore_anyway or self._is_mem_enough()
         ):
@@ -569,13 +566,19 @@ class RHF(hf.RHF):
         return vj, vk
 
 
-    # keep a bare get_jk and get_veff function
-    # to make the bare ones can be easily overwritten by custom Hamiltonian
-    def get_bare_jk(self, mol=None, dm=None, hermi=1, with_j=True, with_k=True,
-               omega=None):
-        # Note the incore version, which initializes an _eri array in memory.
+    # keep bare get_hcore, get_jk and get_veff functions
+    # can be easily overwritten by custom Hamiltonian
+    def get_bare_hcore(self, mol=None):
+        if mol is None: mol = self.mol
+        return hf.get_hcore(mol)
+
+
+    def get_bare_jk(self, mol=None, dm=None, hermi=1,
+                    with_j=True, with_k=True, omega=None):
         if mol is None: mol = self.mol
         if dm is None: dm = self.make_rdm1()
+
+        # Note the incore version, which initializes an _eri array in memory.
         if (not omega and
             (self._eri is not None or mol.incore_anyway or self._is_mem_enough())):
             if self._eri is None:
@@ -585,9 +588,11 @@ class RHF(hf.RHF):
             vj, vk = hf.SCF.get_jk(self, mol, dm, hermi, with_j, with_k, omega)
         return vj, vk
 
+
     def get_bare_veff(self, mol=None, dm=None, dm_last=0, vhf_last=0, hermi=1):
         if mol is None: mol = self.mol
         if dm is None: dm = self.make_rdm1()
+
         if self._eri is not None or not self.direct_scf:
             vj, vk = self.get_bare_jk(mol, dm, hermi)
             vhf = vj - vk * .5
@@ -638,17 +643,12 @@ class RHF(hf.RHF):
             :math:`V^{\tt{QED}}_{\tt{HF}}`.
         """
 
-        # vj_dse and vk_dse are moved into get_jk
-        # bare_vhf = super().get_veff(mol, dm, dm_last, vhf_last, hermi)
-        # vj_dse, vk_dse = self.qed.get_dse_jk(dm)
-        # vhf = bare_vhf + (vj_dse - vk_dse * .5)
-
         if mol is None:
             mol = self.mol
         if dm is None:
             dm = self.make_rdm1()
 
-        if self.qed.use_cs:
+        if self.qed.use_cs: # TODO: Necessary?
             self.qed.update_cs(dm)
 
         if self._eri is not None or not self.direct_scf:
@@ -661,6 +661,7 @@ class RHF(hf.RHF):
             vhf += numpy.asarray(vhf_last)
 
         return vhf
+
 
     get_fock = get_fock
 
@@ -755,33 +756,39 @@ class RHF(hf.RHF):
         return self.e_tot
     kernel = lib.alias(scf, alias_name='kernel')
 
+
     def _finalize(self):
-        '''Hook for dumping results and clearing up the object.'''
+        r"""Hook for dumping results and clearing up the object."""
         if self.converged:
             logger.note(self, 'converged SCF energy = %.15g', self.e_tot)
             logger.note(self, 'converged z = [%s]', ', '.join(f'{z:.15g}' for z in self.qed.z_alpha))
             logger.note(self, 'converged f = [%s]', ', '.join(f'{f:.15g}' for f in self.qed.couplings_var))
             logger.note(self, 'converged F = [%s]', ', '.join(f'{f:.15g}' for f in self.qed.squeezed_var))
+
         else:
             logger.note(self, 'SCF not converged.')
             logger.note(self, 'SCF energy = %.15g', self.e_tot)
+
         return self
+
 
     def post_kernel(self, envs):
         r"""Prints relevant citation information for calculation."""
         breakline = '='*80
         logger.note(self, f"\n{breakline}")
         logger.note(self, f"*  Hooray, the job is done!\n")
+
         logger.note(self, f"Citations:\n")
         for i, key in enumerate(openms.runtime_refs):
             logger.note(self, f"[{i+1}]. {openms._citations[key]}")
         logger.note(self, f"{breakline}\n")
+
         return self
 
+
     def make_rdm1_org(self, mo_coeff, mo_occ, nfock=2, **kwargs):
-        r"""
-        """
-        import math
+
+        from math import factorial
 
         mocc = mo_coeff[:,mo_occ>0]
         rho = (mocc*mo_occ[mo_occ>0]).dot(mocc.conj().T)
@@ -796,8 +803,8 @@ class RHF(hf.RHF):
                 zalpha = self.qed.z_alpha[imode]
 
                 z0 = numpy.exp(-0.5 * zalpha ** 2)
-                zm = z0 * zalpha ** m * numpy.sqrt(math.factorial(m))
-                zn = z0 * zalpha ** n * numpy.sqrt(math.factorial(n))
+                zm = z0 * zalpha ** m * numpy.sqrt(factorial(m))
+                zn = z0 * zalpha ** n * numpy.sqrt(factorial(n))
                 rho_tmp = rho * zm * zn
                 # back to AO
                 rho_tot[m, :, n, :] = rho_tmp
@@ -806,6 +813,7 @@ class RHF(hf.RHF):
         rho_b = numpy.einsum("mpnp->mn", rho_tot) / numpy.trace(rho)
 
         return rho_tot, rho_e, rho_b
+
 
     def dump_flags(self, verbose=None):
         r"""Parent method overwritten to include :class:`~lib.boson.Boson` flags."""
@@ -862,8 +870,6 @@ class RKS(rks.KohnShamDFT, RHF):
     get_veff = rks.get_veff
     get_vsap = rks.get_vsap
     energy_elec = rks.energy_elec
-
-
 
 
 if __name__ == "__main__":

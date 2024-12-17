@@ -579,12 +579,13 @@ class Boson(object):
         self.energy_nuc = mol.energy_nuc
         self.nelec = mol.nelec
         # ------------------------------------
+        return
 
     # ---------------------
     # General boson methods
     # ---------------------
 
-    def get_boson_dm(self, mode=None):
+    def get_boson_dm(self, mode=None): # TODO: Remove eventually?
         r"""Return photon ``mode`` density matrix.
 
         Parameters
@@ -840,9 +841,9 @@ class Boson(object):
 
 
     def update_couplings(self):
-        """Update :attr:`couplings_res` by ``1.0 - couplings_var``."""
+        r"""Update :attr:`couplings_res` by ``1.0 - couplings_var``."""
         self.couplings_res = numpy.ones(self.nmodes) - self.couplings_var
-
+        return self
 
     def dump_flags(self):
         if self.verbose < logger.INFO:
@@ -871,6 +872,7 @@ class Boson(object):
             logger.info(self, '== %s ==', ("SC/VT-QED-HF"))
             logger.info(self, 'couplings_var[%s] = %.10f', *(a, self.couplings_var[a]))
             logger.info(self, 'couplings_res[%s] = %.10f', *(a, self.couplings_res[a]))
+
         return self
 
     # ----------------------
@@ -917,12 +919,9 @@ class Boson(object):
         r"""Template method to construct dipole moment matrix in AO basis."""
         raise NotImplementedError("Subclasses must implement this method.")
 
-
     def construct_g_dse_JK(self):
-        r"""
-        DSE-mediated JK matrix
-        """
-        raise NotImplementedError
+        r"""DSE-mediated JK matrix"""
+        raise NotImplementedError("Subclasses must implement this method.")
 
 
 class Photon(Boson):
@@ -939,6 +938,8 @@ class Photon(Boson):
         self.ca = self.cb = None
         self.na = self.nb = None
         self.const = None
+
+        return
 
     # --------------
     # QED-HF methods
@@ -973,6 +974,7 @@ class Photon(Boson):
 
         if self.use_cs:
             self.z_alpha = lib.einsum("pq, Xpq ->X", dm, self.gmat)
+        return self
 
 
     def add_oei_ao(self, dm, s1e=None, residue=False):
@@ -1067,14 +1069,12 @@ class Photon(Boson):
         ------
         dse_oei : :class:`~numpy.ndarray`
             DSE-mediated OEI for all photon modes.
-
         """
+
+        if s1e is None: s1e = self._mf.get_ovlp(self._mol)
 
         self.get_q_dot_lambda()
         self.get_gmatao()
-        if s1e is None:
-            s1e = self._mf.get_ovlp(self._mol)
-
         if self.use_cs:
             self.update_cs(dm)
 
@@ -1257,8 +1257,7 @@ class Photon(Boson):
     #     return dse_oei
 
 
-    def get_dse_jk(
-        self, dm, residue=False):
+    def get_dse_jk(self, dm, residue=False): # TODO: Check if this is also depreciated?
         r"""
         Return DSE-mediated :math:`J` and :math:`K` matrices.
 
@@ -1406,8 +1405,8 @@ class Photon(Boson):
                 x_out_y = numpy.outer(self.vec[mode], self.vec[mode]).reshape(-1)
                 x_out_y *= self.couplings[mode] ** 2
                 self.q_lambda_ao[mode] = numpy.einsum("J,Juv->uv", x_out_y, self.quadrupole_ao)
-
         logger.debug(self, f" Norm of Q_ao {numpy.linalg.norm(self.q_lambda_ao)}")
+        return self
 
 
     def get_dipole_ao(self):
@@ -1425,8 +1424,8 @@ class Photon(Boson):
 
         if self.dipole_ao is None:
             self.dipole_ao = self.get_dipole_ao()
-        x_dot_mu_ao = numpy.einsum("x,xuv->uv", self.vec[mode], self.dipole_ao)
-        return x_dot_mu_ao
+
+        return numpy.einsum("x,xuv->uv", self.vec[mode], self.dipole_ao)
 
 
     def get_gmat_ao(self):
@@ -1475,14 +1474,17 @@ class Photon(Boson):
         """
 
         if self.gmat is None:
-            nao = self._mol.nao_nr()
-            gmat = numpy.empty((self.nmodes, nao, nao))
+            gmat = numpy.empty((self.nmodes, self.nao, self.nao))
+
             for mode in range(self.nmodes):
                 gmat[mode] = self.get_polarized_dipole_ao(mode) #* self.couplings[mode]
                 logger.debug(self, f" Norm of gao without w {numpy.linalg.norm(gmat[mode])}")
+
                 gmat[mode] *= self.couplings[mode]
                 #gmat = numpy.einsum("Jx,J,xuv->Juv", self.vec, self.gfac, self.dipole_ao)
             self.gmat = gmat
+
+        return self
 
 
     def get_geb_ao(self, mode):
@@ -1509,7 +1511,7 @@ class Photon(Boson):
         return (numpy.sqrt(0.5 * self.omega[mode]) * self.gmat[mode])
 
 
-    def get_bdag_minus_b_expval(self, mode):
+    def get_bdag_minus_b_expval(self, mode): # TODO: Probably remove this eventually
 
         mdim = self.nboson_states[mode]
 
@@ -1606,7 +1608,6 @@ class Photon(Boson):
         if self.ca is None: self.get_mos()
 
         na, nb = self.na, self.nb
-        va, vb = self.nmo // 2 - na, self.nmo // 2 - nb
         Co = block_diag(self.ca[:, :na], self.cb[:, :nb])
         Cv = block_diag(self.ca[:, na:], self.cb[:, nb:])
 
@@ -1639,12 +1640,11 @@ class Photon(Boson):
         from pyscf import ao2mo
         if self.ca is None: self.get_mos()
 
-        na, nb = self.na, self.nb
-        va, vb = self.nmo // 2 - na, self.nmo // 2 - nb
         nao = self.nmo // 2
+        na, nb = self.na, self.nb
         C = numpy.hstack((self.ca, self.cb))
 
-        if False:
+        if False: # TODO: potential error? if full==False?
             # don't add DSE-mediated eri
             eri = ao2mo.general(self._mol, [C,]*4, compact=False).reshape([self.nmo,]*4)
         else:
@@ -1658,7 +1658,9 @@ class Photon(Boson):
 
         Ua_mo = eri.transpose(0, 2, 1, 3) - eri.transpose(0, 2, 3, 1)
         logger.debug(self, f" -YZ: Norm of I with DSE eri {numpy.linalg.norm(Ua_mo)}")
-        if full: return Ua_mo
+
+        if full:
+            return Ua_mo
 
         temp = [i for i in range(self.nmo)]
         oidx = temp[:na] + temp[self.nmo // 2 : self.nmo // 2 + nb]
@@ -1688,18 +1690,17 @@ class Photon(Boson):
                vvoo=vvoo, oovv=oovv,
                vovo=vovo, vooo=vooo,
                ooov=ooov, oooo=oooo)
-
-
     g_aint = get_I
 
 
     def mfG(self):
         if self.pa is None: self.get_mos()
+
         ptot = block_diag(self.pa, self.pb)
-        g = self.gmatso
         if self.shift:
             mfG = numpy.zeros(self.nmodes)
         else:
+            g = self.gmatso
             mfG = numpy.einsum("Ipq,qp->I", g, ptot)
 
         return (mfG, mfG)
@@ -1707,12 +1708,13 @@ class Photon(Boson):
 
     def gint(self):
         if self.ca is None: self.get_mos()
-        g = self.gmatso.copy()
+
         na = self.na
         nb = self.nb
         Co = block_diag(self.ca[:, :na], self.cb[:, :nb])
         Cv = block_diag(self.ca[:, na:], self.cb[:, nb:])
 
+        g = self.gmatso.copy()
         oo = numpy.einsum("Ipq,pi,qj->Iij", g, Co, Co)
         ov = numpy.einsum("Ipq,pi,qa->Iia", g, Co, Cv)
         vo = numpy.einsum("Ipq,pa,qi->Iai", g, Cv, Co)
@@ -1723,18 +1725,13 @@ class Photon(Boson):
 
 
     def get_gmat_so(self):
-        r"""
-        e-photon coupling matrix
-        """
-
-        if self.dipole_ao is None:
-            self.get_dipole_ao()
-        if self.quadrupole_ao is None:
-            self.get_quadrupole_ao()
+        r"""e-photon coupling matrix in SO basis."""
+        if self.dipole_ao is None: self.get_dipole_ao()
+        if self.quadrupole_ao is None: self.get_quadrupole_ao()
         if self.pa is None: self.get_mos()
 
-        self.get_gmat_ao()
 
+        self.get_gmat_ao()
         # gmatso
         #gmatso = [
         #    block_diag(self.gmat[i], self.gmat[i]) for i in range(len(self.gmat))
@@ -1753,7 +1750,7 @@ class Photon(Boson):
             self.xi = numpy.einsum("Iab,ab->I", self.gmatso, self.ptot) / self.omega
             self.const = -numpy.einsum("I,I->", self.omega, self.xi**2)
 
-
+        return self
     kernel = get_gmat_so
 
 
@@ -1761,12 +1758,11 @@ class Photon(Boson):
 class Phonon(Boson):
     r"""Phonon subclass."""
     def __init__(self, *args, **kwargs):
-
         super().__init__(*args, **kwargs)
-
 
     def relax(self):
         raise NotImplementedError("Method not implemented!")
+
 
 if __name__ == "__main__":
     import numpy

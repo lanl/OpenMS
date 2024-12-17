@@ -397,7 +397,7 @@ class RHF(qedhf.RHF):
 
         self.precond = 0.1
 
-        # Parameters for dipole moment basis set degeneracy
+        # Parameters for dipole moment basis set degeneracy # TODO: Check if being used?
         self.dipole_degen_thresh = 1.0e-8
         self.dipole_fock_shift = 1.0e-3
 
@@ -435,9 +435,8 @@ class RHF(qedhf.RHF):
 
         fock = self.initialize_bare_fock(dm)
         s1e = self.get_ovlp(self.mol)
-        mo_energy, mo_coeff = self._eigh(fock, s1e)
 
-        return mo_energy, mo_coeff
+        return self._eigh(fock, s1e)
 
 
     def get_cholesky(self):
@@ -449,7 +448,7 @@ class RHF(qedhf.RHF):
         self.P, self.L = mathlib.full_cholesky_orth(s1e, threshold=1.e-7)
         self.n_oao = self.P.shape[1]
 
-        return
+        return self
 
 
     def init_guess_by_1e(self, mol=None):
@@ -457,8 +456,7 @@ class RHF(qedhf.RHF):
         logger.info(self, '\nInitial guess from hcore in scqedhf.')
 
         h1e = self.get_bare_hcore(mol)
-        if self.P is None:
-            self.get_cholesky()
+        if self.P is None: self.get_cholesky()
 
         mo_energy, mo_coeff = cholesky_diag_fock_rao(self, h1e)
         mo_occ = self.get_occ(mo_energy, mo_coeff)
@@ -863,42 +861,35 @@ class RHF(qedhf.RHF):
         r"""Initialize additional variational parameters"""
         if self.eta is None:
             self.initialize_eta(dm)
-        return
+        return self
 
 
     def update_var_params(self):
         self.eta -= self.precond * self.eta_grad
-        return
+        return self
 
 
     def pre_update_var_params(self):
-        variables = self.eta
-        gradients = self.eta_grad
-
-        return variables, gradients
+        return self.eta, self.eta_grad
 
 
     def set_var_params(self, params):
-        r"""set the additional variaitonal params"""
-
+        r"""Set the additional variational params."""
         params = numpy.hstack(params)
-
-        etasize = self.eta.size
         if params.size > 0:
+            etasize = self.eta.size
             self.eta = params[:etasize].reshape(self.eta_grad.shape)
-        return
+        return self
 
 
     def set_params(self, params, fock_shape=None):
-
         fsize = 0
         if fock_shape is not None:
             fsize = numpy.prod(fock_shape)
             f = params[:fsize].reshape(fock_shape)
 
-        etasize = self.eta.size
-
         if params.size > fsize:
+            etasize = self.eta.size
             self.eta = params[fsize:fsize+etasize].reshape(self.eta_grad.shape)
 
         if fock_shape is not None:
@@ -917,10 +908,10 @@ class RHF(qedhf.RHF):
                  = & \sum_\mu c_\mu U^\dagger\exp[-\tilde{g}(b-b^\dagger)]U \ket{\mu}\otimes\ket{0}
 
         where :math:`\tilde{g}` is the diagonal matrix.
-        It is obvious that the VT-QEDHF WF is no longer the single produc state
-
+        It is obvious that the VT-QEDHF WF is no longer the single product state.
         """
-        import math
+
+        from math import factorial
 
         mocc = mo_coeff[:,mo_occ>0]
         rho = (mocc*mo_occ[mo_occ>0]).dot(mocc.conj().T)
@@ -928,9 +919,9 @@ class RHF(qedhf.RHF):
         nao = rho.shape[0]
         imode = 0
 
+        # transform rho into dipole basis
         U = self.ao2dipole[imode]
         Uinv = linalg.inv(U)
-        # transform into Dipole
         rho_DO = unitary_transform(U, rho)
 
         rho_tot = numpy.zeros((nfock, nao, nfock, nao))
@@ -941,11 +932,11 @@ class RHF(qedhf.RHF):
                 zalpha /= self.qed.omega[imode]
 
                 z0 = numpy.exp(-0.5 * zalpha ** 2)
-                zm = z0 * zalpha ** m * numpy.sqrt(math.factorial(m))
-                zn = z0 * (-zalpha) ** n * numpy.sqrt(math.factorial(n))
+                zm = z0 * zalpha ** m * numpy.sqrt(factorial(m))
+                zn = z0 * (-zalpha) ** n * numpy.sqrt(factorial(n))
 
-                rho_tmp = rho_DO * numpy.outer(zm, zn)
                 # back to AO
+                rho_tmp = rho_DO * numpy.outer(zm, zn)
                 rho_tmp = unitary_transform(Uinv, rho_tmp)
                 rho_tot[m, :, n, :] = rho_tmp
 
@@ -980,10 +971,6 @@ class RHF(qedhf.RHF):
         self._finalize()
         return self.e_tot
     kernel = lib.alias(scf, alias_name='kernel')
-
-    # ===============================
-    # below are deprecated functions
-    # ===============================
 
 
 if __name__ == "__main__":

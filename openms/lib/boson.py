@@ -67,10 +67,11 @@ def get_bosonic_Ham(nmodes, nboson_states, omega, za, Fa):
     Hb = numpy.zeros((boson_size, boson_size))
     idx = 0
     for imode in range(nmodes):
+        mdim = nboson_states[imode]
         cosh2r = numpy.cosh(2.0 * Fa[imode])
         sinhr = numpy.sinh(Fa[imode])
-        mdim = nboson_states[imode]
-        # diaognal term, didn't include ZPE
+
+        # diagonal term, didn't include ZPE
         H0 = numpy.diag(numpy.arange(mdim) * cosh2r + sinhr * sinhr) * omega[imode]
 
         # off-diaognal term
@@ -82,6 +83,7 @@ def get_bosonic_Ham(nmodes, nboson_states, omega, za, Fa):
         idx += mdim
 
     #print (f"PHOTONIC HAMILTONIAN:\n{Hb}\n")
+    #exit()
     return Hb
 
 
@@ -663,6 +665,17 @@ class Boson(object):
         # we assume noninteracting bosons at this moment
         za = lib.einsum("pq, Xpq ->X", dm, self.gmat) - self.z_alpha
         za *= self.couplings_res * numpy.sqrt(self.omega/2.0) # only consider the residual part
+
+        if hasattr(self._mf, "eta"):
+            print (self._mf.eta)
+        else:
+            print ("None, basically")
+        #exit()
+
+        #eta_tmp = self.eta[0]
+        #dm_do_diag = numpy.diag(self.dm_do[0])
+        #product = eta_tmp * dm_do_diag
+        #print (f"sum_p (eta_p * dm_do_pp) = {numpy.sum(product)}")
 
         Fa = self.squeezed_var
         # use the new get_bosonic_Ham to get the matrix

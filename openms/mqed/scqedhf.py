@@ -402,7 +402,7 @@ class RHF(qedhf.RHF):
 
         self.qed.couplings_var = numpy.ones(self.qed.nmodes)
         self.qed.update_couplings()
-        if type(self) is scqedhf.RHF:
+        if type(self) is scqedhf.RHF: # Don't need this check, since this is SC __init__?
             self.qed.use_cs = False
 
         # Cholesky
@@ -420,7 +420,7 @@ class RHF(qedhf.RHF):
         if dm is None:
             dm = super(qedhf.RHF, self).get_init_guess(mol, self.init_guess)
 
-        h1e = self.get_bare_hcore(self.mol) # bare HF function
+        h1e = self.get_bare_hcore(self.mol)
         vhf = self.get_bare_veff(self.mol, dm)
 
         return h1e + vhf
@@ -541,15 +541,12 @@ class RHF(qedhf.RHF):
 
     def initialize_eta(self, dm):
         r"""Initialize the eta parameters and dipole basis sets."""
-
         self.eta = numpy.zeros((self.qed.nmodes, self.nao))
         self.eta_grad = numpy.zeros((self.qed.nmodes, self.nao))
 
+        # diagonalize the gmat in MO; then get ao2dipole basis transformation
         self.mo_coeff = self.get_bare_mo_coeff(dm)[1]
-
-        # diagonalize the gmat in MO; then get ao2dipole basis transformaiton
         gmo = numpy.zeros_like(self.qed.gmat)  # gmat*sqrt(w/2) in MO
-
         for a in range(self.qed.nmodes):
 
             gmo[a] = self.qed.gmat[a] * numpy.sqrt(self.qed.omega[a] / 2.0) \
@@ -582,17 +579,15 @@ class RHF(qedhf.RHF):
 
              \frac{E}{d\eta} = &  \\
                              = &
-
         """
-        nao = self.nao
 
         for imode in range(self.qed.nmodes):
-            onebody_deta = numpy.zeros(nao)
-            twobody_deta = numpy.zeros(nao)
+            onebody_deta = numpy.zeros(self.nao)
+            twobody_deta = numpy.zeros(self.nao)
 
             tau = numpy.exp(self.qed.squeezed_var[imode])
-            # 1) diaognal part due to [(gtmp - eta)^2 \rho]
-            for p in range(nao):
+            # 1) diagonal part due to [(gtmp - eta)^2 \rho]
+            for p in range(self.nao):
                 onebody_deta[p] -= 2.0 * dm_do[imode, p,p] * g_DO[imode, p] / self.qed.omega[imode]
 
             fc_derivative = self.gaussian_derivative_vectorized(self.eta, imode)
@@ -612,6 +607,7 @@ class RHF(qedhf.RHF):
             del fc_derivative, tmp
 
             self.eta_grad[imode] = onebody_deta + twobody_deta
+
         return self
 
 
@@ -824,7 +820,6 @@ class RHF(qedhf.RHF):
 
         if mol is None: mol = self.mol
         if dm is None: dm = self.make_rdm1()
-
         nao = self.mol.nao_nr()
 
         # work for single mode only at this moment
@@ -832,13 +827,12 @@ class RHF(qedhf.RHF):
         U = self.ao2dipole[imode]
         dm_do = self.get_dm_do(dm, U)
 
+        ## vectorized code
         # Tr[g_pq * D] in DO
         g_dot_D = numpy.diagonal(dm_do) @ self.g_dipole[imode, :]
 
-        vhf_do = numpy.zeros((nao,nao))
-
-        # vectorized code
         p_indices = numpy.arange(nao)
+        vhf_do = numpy.zeros((nao,nao))
         vhf_do[p_indices, p_indices] += (2.0 * self.g_dipole[imode, p_indices] * g_dot_D -
                                          numpy.square(self.g_dipole[imode, p_indices]) \
                                          * dm_do[p_indices, p_indices]) / self.qed.omega[0]
@@ -874,10 +868,12 @@ class RHF(qedhf.RHF):
         r"""Initialize additional variational parameters"""
         if self.eta is None:
             self.initialize_eta(dm)
+        return
 
 
     def update_var_params(self):
         self.eta -= self.precond * self.eta_grad
+        return
 
 
     def pre_update_var_params(self):
@@ -895,6 +891,8 @@ class RHF(qedhf.RHF):
         etasize = self.eta.size
         if params.size > 0:
             self.eta = params[:etasize].reshape(self.eta_grad.shape)
+        return
+
 
     def set_params(self, params, fock_shape=None):
 
@@ -910,6 +908,7 @@ class RHF(qedhf.RHF):
 
         if fock_shape is not None:
             return f
+
 
     def make_rdm1_org(self, mo_coeff, mo_occ, nfock=2, **kwargs):
         r"""One-particle density matrix in original AO-Fock representation

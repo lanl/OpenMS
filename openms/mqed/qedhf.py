@@ -418,12 +418,12 @@ class RHF(hf.RHF):
         cavity_options = kwargs
         if qed is None:
             if "cavity_mode" in kwargs:
-                cavity_options["vec"] = cavity_mode = kwargs["cavity_mode"]
+                cavity_options["vec"] = kwargs["cavity_mode"]
             elif not "vec" in kwargs:
                 raise ValueError("The required keyword argument 'cavity_mode or vec' is missing")
 
             if "cavity_freq" in kwargs:
-                cavity_options["omega"] = cavity_freq = kwargs["cavity_freq"]
+                cavity_options["omega"] = kwargs["cavity_freq"]
             elif not "omega" in kwargs:
                 raise ValueError("The required keyword argument 'cavity_freq' is missing")
 

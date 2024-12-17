@@ -81,7 +81,7 @@ def get_bosonic_Ham(nmodes, nboson_states, omega, za, Fa):
         Hb[idx:idx+mdim, idx:idx+mdim] = H0
         idx += mdim
 
-    print (Hb)
+    #print (f"PHOTONIC HAMILTONIAN:\n{Hb}\n")
     return Hb
 
 
@@ -351,6 +351,7 @@ class Boson(object):
             self.verbose = mol.verbose
             self.stdout = mol.stdout
             self.nelectron = mol.nelectron
+            self.nao = mol.nao_nr()
 
         # Default: Include nuclear component in dipole/quadrupole
         self.add_nuc_dipole = add_nuc_dipole
@@ -485,7 +486,7 @@ class Boson(object):
         if "z_alpha" in kwargs and kwargs["z_alpha"] is not None:
 
             z_a = kwargs["z_alpha"].copy()
-            if isinstance(z_a, list):
+            if isinstance(z_a, list): # List to NumPy array
                 z_a = numpy.asarray(z_a, dtype=float)
 
             if (not isinstance(z_a, numpy.ndarray) or z_a.size != self.nmodes):
@@ -514,8 +515,8 @@ class Boson(object):
         self.optimize_vsq = kwargs.get("optimize_vsq", False)
         self.squeezed_var = numpy.zeros(self.nmodes)
         if "squeezed_var" in kwargs:
-            self.optimize_vsq = False
             self.squeezed_var = kwargs["squeezed_var"]
+            self.optimize_vsq = False
 
         # Pre-factors of PF Hamiltonian components from coupling strengths
         self.couplings = numpy.asarray(self.gfac, dtype=float)
@@ -548,14 +549,12 @@ class Boson(object):
 
         # Mean-field info
         self._mf = mf
-        self.nao = self._mol.nao_nr()
         self.dipole_ao = None
         self.quadrupole_ao = None
 
         # Values used by 'post-hf integrals' methods
         # whether to shfit the h1 in post-hf integral with DSE_oei
         self.shift = kwargs.get("shift", False)
-        # self.shift = shift
 
         # ------------------------------------
         self.spin = mol.spin
@@ -661,46 +660,12 @@ class Boson(object):
             Eigenvalues and eigenvectors of the photonic Hamiltonian.
         """
 
-        # use the new get_bosonic_Ham to get the matrix
-
-        # # Total photon energy
-        # ph_e_tot = 0.0
-
-        # for a in range(self.nmodes):
-        #     mdim = self.nboson_states[a]
-
-        #     # Diagonal terms
-        #     hmat = numpy.diag(self.omega[a] * numpy.arange(mdim))
-
-        #     # Off diagonal terms, scaled by bilinear-coupling term and residual
-        #     # coupling values, if the cavity mode has non-zero photon occupation
-        #     # Also, photonic Hamiltonian is diagonal in CS representation
-        #     if mdim > 1 and self.use_cs == False:
-
-        #         h_od = numpy.diag(numpy.sqrt(numpy.arange(1, mdim)), k = 1) \
-        #                 + numpy.diag(numpy.sqrt(numpy.arange(1, mdim)), k = -1)
-
-        #         za = lib.einsum("pq, qp-> ", self.get_geb_ao(a), dm)
-        #         za *= self.couplings_res[a]
-
-        #         hmat -= (h_od * za)
-
-        #     # Photon cavity mode eigenvectors
-        #     self.boson_coeff[a] = h_evec = self._mf.eig(hmat, numpy.eye(mdim))[1]
-
-        #     # Photon mode energy
-        #     mode_e_tot = 0.0
-        #     for n in range(mdim):
-        #         coeff_term = numpy.conj(h_evec[n, 0]) * h_evec[n, 0]
-        #         mode_e_tot += self.omega[a] * n * coeff_term
-        #     ph_e_tot += mode_e_tot # add to total photon energy
-        # self.e_boson = ph_e_tot
-
         # we assume noninteracting bosons at this moment
         za = lib.einsum("pq, Xpq ->X", dm, self.gmat) - self.z_alpha
         za *= self.couplings_res * numpy.sqrt(self.omega/2.0) # only consider the residual part
 
         Fa = self.squeezed_var
+        # use the new get_bosonic_Ham to get the matrix
         hmat = get_bosonic_Ham(self.nmodes, self.nboson_states, self.omega, za, Fa)
 
         # Photon cavity mode eigenvectors
@@ -728,6 +693,7 @@ class Boson(object):
 
         self.e_boson = Etot
         self.boson_coeff = c
+
         return self
 
 

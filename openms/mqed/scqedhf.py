@@ -189,7 +189,6 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
     if dm0 is None:
         dm = mf.get_init_guess(mol, mf.init_guess)
 
-        #"""
         # get a initial dm without qed terms
         h1e = mf.get_bare_hcore(mol)
         vhf = mf.get_bare_veff(mol, dm)
@@ -203,18 +202,20 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
     else:
         dm = dm0
 
-    # Create initial photonic eigenvector guess(es)
-    if mf.qed.use_cs:
-        mf.qed.update_cs(dm)
-
+    # Initialize parameters or copy provided input
     mf.init_var_params(dm)
-
-    # update initial_params according to the input
     if init_params is not None:
         mf.set_var_params(init_params)
 
     # construct h1e, gmat in DO representation (used in SC/VT-QEDHF)
     mf.get_h1e_DO(mol, dm=dm)
+
+    # Coherent-state z_alpha values
+    if mf.qed.use_cs:
+        mf.qed.update_cs(dm)
+
+    # Create initial photonic eigenvector guess(es)
+    mf.qed.update_boson_coeff(dm=dm)
 
     h1e = mf.get_hcore(mol, dm, dress=True)
     vhf = mf.get_veff(mol, dm)
@@ -269,8 +270,8 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
         dm_last = dm
         last_hf_e = e_tot
 
-        time1 = time.time()
         # update h1e in DO
+        time1 = time.time()
         mf.get_h1e_DO(mol, dm=dm)
         time_h1e_do = time.time() - time1
 
@@ -300,8 +301,8 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
         h1e = mf.get_hcore(mol, dm, dress=True)
         e_tot = mf.energy_tot(dm, h1e, vhf)
 
-        # Update photonic coefficients and compute photonic energy
-        mf.qed.update_cs(dm) # Update coherent state values
+        # Update photonic component
+        mf.qed.update_cs(dm)
         mf.qed.update_boson_coeff(dm)
 
         # Here Fock matrix is h1e + vhf, without DIIS.  Calling get_fock
@@ -347,8 +348,8 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
         dm, dm_last = mf.make_rdm1(mo_coeff, mo_occ), dm
         vhf = mf.get_veff(mol, dm, dm_last, vhf)
 
-        # Final update of photonic coefficients and energy
-        mf.qed.update_cs(dm) # Update coherent state values
+        # Final update of photonic component
+        mf.qed.update_cs(dm)
         mf.qed.update_boson_coeff(dm)
 
         h1e = mf.get_hcore(mol, dm, dress=True)
@@ -404,36 +405,42 @@ class RHF(qedhf.RHF):
         if type(self) is scqedhf.RHF:
             self.qed.use_cs = False
 
+        # Cholesky
         self.P = self.L = None
 
-        # will replace it with our general DIIS
+        # TODO: replace it with our general DIIS
         self.diis_space = 20
         self.DIIS = diis.SCF_DIIS
-        # self.dump_flags()
+
+        return
 
 
     def initialize_bare_fock(self, dm=None):
         r"""Return non-QED Fock matrix from provided or initial guess ``dm``."""
-        mol = self.mol
         if dm is None:
-            # dm = hf.get_init_guess(mol, self.init_guess)
             dm = super(qedhf.RHF, self).get_init_guess(mol, self.init_guess)
 
-        h1e = self.get_bare_hcore(mol) # bare HF function
-        vhf = self.get_bare_veff(mol, dm)
+        h1e = self.get_bare_hcore(self.mol) # bare HF function
+        vhf = self.get_bare_veff(self.mol, dm)
 
         return h1e + vhf
 
-    # get bare MO coefficients
+
     def get_bare_mo_coeff(self, dm):
+        r"""Obtain bare/non-QED MO coefficients.
+
+        self._eigh may be modified by self.get_cholesky method.
+        """
 
         s1e = self.get_ovlp(self.mol)
         fock = self.initialize_bare_fock(dm)
         mo_energy, mo_coeff = self._eigh(fock, s1e)
+
         return mo_energy, mo_coeff
 
+
     def get_cholesky(self):
-        #check conditions of overlap and bilinear coupling matrix
+        r"""Check condition number of overlap matrix and bilinear coupling matrix."""
         scipy_helper.remove_linear_dep(self, threshold=1.0e-7, lindep=1.0e-7,
                                          cholesky_threshold=CHOLESKY_THRESHOLD,
                                          force_pivoted_cholesky=FORCE_PIVOTED_CHOLESKY)
@@ -441,18 +448,21 @@ class RHF(qedhf.RHF):
         self.P, self.L = mathlib.full_cholesky_orth(s1e, threshold=1.e-7)
         self.n_oao = self.P.shape[1]
 
+        return
+
+
     def init_guess_by_1e(self, mol=None):
         if mol is None: mol = self.mol
         logger.info(self, '\nInitial guess from hcore in scqedhf.')
+
         h1e = self.get_bare_hcore(mol)
-        s1e = self.get_ovlp(mol)
         if self.P is None:
             self.get_cholesky()
 
         mo_energy, mo_coeff = cholesky_diag_fock_rao(self, h1e)
         mo_occ = self.get_occ(mo_energy, mo_coeff)
-        return self.make_rdm1(mo_coeff, mo_occ)
 
+        return self.make_rdm1(mo_coeff, mo_occ)
 
 
     def ao2mo(self, A):
@@ -467,6 +477,7 @@ class RHF(qedhf.RHF):
 
         Amo = numpy.einsum("uv, vq->uq", A, self.mo_coeff)
         Amo = numpy.einsum("up, uq->pq", self.mo_coeff, Amo)
+
         return Amo
 
 
@@ -603,21 +614,16 @@ class RHF(qedhf.RHF):
             self.eta_grad[imode] = onebody_deta + twobody_deta
         return self
 
+
     # variable gradients, here we only have eta
     grad_var_params = get_eta_gradient
 
 
     def construct_eri_DO(self, U):
-        r"""Repulsion integral modifier according to dipole self-energy terms
-
-        """
-
-        # eri_ao = self.mol.intor("int2e", aosym="s1")
-        # eri = lib.einsum("pu, qv, rw, st, pqrs->uvwt", U, U, U, U, eri_ao)
+        r"""Repulsion integral modifier according to dipole self-energy terms"""
         if self._eri is None:
             self._eri = self.mol.intor("int2e", aosym="s1")
-            logger.debug(self,
-                f" build two-body integral for the first time! eri.shape= {self._eri.shape}")
+            logger.debug(self, f"First build of two-body integral! eri.shape= {self._eri.shape}")
 
         nao = self.mol.nao_nr()
         from pyscf.ao2mo.addons import restore
@@ -639,7 +645,8 @@ class RHF(qedhf.RHF):
 
         ci = self.qed.boson_coeff[idx : idx + mdim, idx]
         pdm = numpy.outer(numpy.conj(ci), ci)
-        #print (pdm)
+
+        #print (f"PHOTONIC DENSITY MATRIX:\n{pdm}")
 
         ph_exp_val = 2.0 * numpy.arange(mdim)
         return numpy.sum(ph_exp_val * pdm)
@@ -667,9 +674,9 @@ class RHF(qedhf.RHF):
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
 
-        #ph_exp_val = 0.0
-        ph_exp_val = self.testing_ph_exp_val(imode)
-        #print (f"ph_exp_val = {ph_exp_val2}")
+        ph_exp_val = 0.0
+        #ph_exp_val = self.testing_ph_exp_val(imode)
+        #print (f"PHOTONIC EXPECTATION VALUE:\n{ph_exp_val}\n")
 
         factor = numpy.exp((-0.5 * (tmp * diff_eta) ** 2) * (ph_exp_val + 1))
 
@@ -692,8 +699,8 @@ class RHF(qedhf.RHF):
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
 
-        #ph_exp_val = 0.0
-        ph_exp_val = self.testing_ph_exp_val(imode)
+        ph_exp_val = 0.0
+        #ph_exp_val = self.testing_ph_exp_val(imode)
 
         # Apply the derivative formula
         derivative = numpy.exp((-0.5 * (tmp * diff_eta) ** 2) * (ph_exp_val + 1)) \

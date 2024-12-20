@@ -58,7 +58,7 @@ from . import tools
 from pyscf.lib import logger
 from openms.lib.logger import task_title
 from openms.lib.boson import Boson
-from openms.qmc.trial import make_trial
+from openms.qmc.trial import make_trial, multiCI
 from openms.qmc.estimators import local_eng_elec_chol
 from openms.qmc.estimators import local_eng_elec_chol_new
 
@@ -154,7 +154,6 @@ class QMCbase(object):
         random_seed=1,
         taylor_order=6,
         energy_scheme=None,
-        batched=False,
         propagator_options=None,
         *args,
         **kwargs,
@@ -187,11 +186,19 @@ class QMCbase(object):
         self.system = self.mol = system
         self.uhf = kwargs.get("uhf", False)
         self.OAO = kwargs.get("OAO", True)
+        #
+        # TODO: when uhf is turned offf, check whehter the system is really a closed-shell system
+        #
         self.use_so = kwargs.get("use_so", False)
         if "use_so" not in kwargs:
             self.use_so = kwargs.get("use_spinorbital", False)
-        if self.uhf:
-            self.use_so = True  # set use_so true if uhf is used.
+        if self.uhf:  # set use_so true if uhf is used.
+            self.use_so = True
+
+        # TODO: when the eri size is larger than 50% of the available memory,
+        # turn on the block_decompose_eri anyway!
+        self.block_decompose_eri = kwargs.get("block_decompose_eri", False)
+        self.chol_thresh = kwargs.get("chol_thresh", 1.0e-6)
 
         # propagator params
         self.dt = dt
@@ -199,6 +206,7 @@ class QMCbase(object):
         # FIXME: in the future, we will use nsteps to control the propagation,
         # and deprecate the total_time
         self.nsteps = int(total_time / dt)  # nsteps
+        # self.nsteps = nsteps  #
         self.propagator = None
         self.nblocks = 500  #
         self.eq_time = 2.0  # time of equilibration phase
@@ -210,8 +218,6 @@ class QMCbase(object):
 
         # trial parameters
         self.trial = kwargs.get("trial", None)
-
-        self.chol_thresh = kwargs.get("chol_thresh", 1.0e-6)
         self.mf = mf
 
         # walker parameters
@@ -219,7 +225,7 @@ class QMCbase(object):
         self.__dict__.update(kwargs)
 
         self.taylor_order = taylor_order
-        self.num_walkers = num_walkers
+        # self.num_walkers = num_walkers
         self.random_seed = random_seed
         self.renorm_freq = renorm_freq
         self.stablize_freq = self.renorm_freq
@@ -229,7 +235,7 @@ class QMCbase(object):
         # self.walker_tensors = None
 
         self.hybrid_energy = None
-        self.batched = batched
+        self.batched = kwargs.get("batched", True)
 
         # parameters for walker weight control
         self.pop_control_freq = 5  # weight control frequency
@@ -237,16 +243,24 @@ class QMCbase(object):
         # other variables for Hamiltonian
         self.geb = None  # TODO: optimize the handling of geb
         self.chol_Xa = None  # TODO: optimize the handling of this term
-        self.chol_bilinear = None  # TODO: optimize the handling of this term
 
         # update propagator options
         self.propagator_options = {
             "verbose": self.verbose,
             "stdout": self.stdout,
-            "quantizaiton": "first",
+            "num_fake_fields": 0,
+            "quantizaiton": "second",
             "energy_scheme": self.energy_scheme,
             "taylor_order": self.taylor_order,
         }
+
+        self.walker_options = gwalker.default_walker_options
+        tmp_walker_options = kwargs.get("walker_options", None)
+        print("tmp_walker_options = ", tmp_walker_options)
+        if tmp_walker_options is not None:
+            self.walker_options.update(tmp_walker_options)
+        if num_walkers is not None:
+            self.walker_options["nwalkers"] = num_walkers
 
         if propagator_options is not None:
             self.propagator_options.update(propagator_options)
@@ -268,6 +282,15 @@ class QMCbase(object):
         # set up calculations
         self.build()  # setup calculations
 
+        # wall time analysis variables
+        self.wt_propagator = 0.0
+        self.wt_observables = 0.0
+        self.wt_weight_control = 0.0
+        self.wt_ortho = 0.0
+        self.wt_io = 0.0
+        self.wt_tot = 0.0
+
+
     def build(self):
         r"""
         Build up the afqmc calculations, including:
@@ -286,6 +309,8 @@ class QMCbase(object):
         self.ncomponents = 1
         if self.uhf or self.use_so:
             self.ncomponents = 2
+        # if trial is not None, get ncomponents from trial
+
         self.spin_fac = 1.0 / self.ncomponents
 
         # FIXME: determine how to better handle trial options from qmc kwargs
@@ -309,6 +334,8 @@ class QMCbase(object):
                 self.mf = self.trial.mf
             logger.debug(self, f"Debug: self.mf = {self.mf}")
             logger.debug(self, f"Debug: trail.mf = {self.trial.mf}")
+        else:
+            logger.info(self, "Trial WF is set from the input")
 
         # 2) make h1e in Spin orbital
         t0 = time.time()
@@ -325,7 +352,8 @@ class QMCbase(object):
         # 3) set up walkers
         t0 = time.time()
         logger.note(self, task_title("Set up walkers"))
-        self.walkers = gwalker.Walkers_so(nwalkers=self.num_walkers, trial=self.trial)
+        # self.walkers = gwalker.Walkers_so(self.trial, nwalkers=self.num_walkers)
+        self.walkers = gwalker.make_walkers(self.trial, self.walker_options)
 
         # calculate green's function
         ovlp = self.trial.ovlp_with_walkers_gf(self.walkers)
@@ -345,7 +373,6 @@ class QMCbase(object):
                 + "\nPhaselessElecBoson propagator is to be used!\n",
             )
             self.propagator = PhaselessElecBoson(self.dt, **self.propagator_options)
-            self.propagator.chol_bilinear = self.chol_bilinear
             self.propagator.chol_Xa = self.chol_Xa
         else:
             logger.note(
@@ -372,8 +399,10 @@ class QMCbase(object):
         r"""cast the tensors to backend for following simulation"""
         raise NotImplementedError
 
+
     def dump_flags(self):
-        r"""dump flags (TBA)"""
+        r"""dump flags"""
+
         title = f"{self.__class__.__name__} simulation using OpenMS package"
         logger.note(self, task_title(title, level=0))
 
@@ -383,7 +412,6 @@ class QMCbase(object):
         logger.note(self, f" Total time             : {self.total_time:7.3f}")
         logger.note(self, f" Number of steps        : {self.nsteps:7d}")
         logger.note(self, f" Energy scheme          : {self.energy_scheme}")
-        logger.note(self, f" Number of walkers      : {self.num_walkers:7d}")
         logger.note(self, f" Number of chols        : {self.ltensor.shape[0]:5d}")
         logger.note(self, f" Threshold of chols     : {self.chol_thresh:7.3e}")
         logger.note(self, f" Use Spin orbital?      : {self.use_so}")
@@ -419,10 +447,10 @@ class QMCbase(object):
         # with h5py.File("input.h5") as fa:
         #    ao_coeff = fa["ao_coeff"][()]
 
-        hcore = self.mf.get_hcore()
+        hcore = scf.hf.get_hcore(self.mol)
         logger.debug(self, f"Debug: norm of hcore = {backend.linalg.norm(hcore)}")
         if self.OAO:
-            # Lowdin orthogonizaiton S^{-/2} -> X
+            # Lowdin orthogonalization S^{-/2} -> X
             overlap = self.mol.intor("int1e_ovlp")
             Xmat = lo.orth.lowdin(overlap)
         else:
@@ -430,40 +458,41 @@ class QMCbase(object):
         logger.debug(self, f"Debug: basis_transform_matrix = \n{Xmat}")
         norb = Xmat.shape[0]
 
-        """
+        #
         # old code, will remove this part, as we don't need the eri
-        import tempfile
+        #
 
         # get h1e, and ori in OAO representation
+        mol = self.mol._mol if isinstance(self.mol, Boson) else self.mol
+        if not self.block_decompose_eri:
+            import tempfile
+            ftmp = tempfile.NamedTemporaryFile()
 
-        ftmp = tempfile.NamedTemporaryFile()
-        pyscftools.fcidump.from_mo(self.mol, ftmp.name, Xmat)
-        h1e, eri, self.nuc_energy = tools.read_fcidump(ftmp.name, norb)
+            pyscftools.fcidump.from_mo(mol, ftmp.name, Xmat)
+            hcore, eri, self.nuc_energy = tools.read_fcidump(ftmp.name, norb)
 
-        # Cholesky decomposition of eri
-        # here eri uses chemist's notation
-        # [il|kj]  a^\dag_i a^\dag_j a_k a_l  = <ij|kl> a^\dag_i a^\dag_j a_k a_l
-        # [] -- chemist, <> physicist notations
+            # Cholesky decomposition of eri
+            # here eri uses chemist's notation
+            # [il|kj]  a^\dag_i a^\dag_j a_k a_l  = <ij|kl> a^\dag_i a^\dag_j a_k a_l
+            # [] -- chemist, <> physicist notations
 
-        # Cholesky decomposition of eri (ij|kl) -> L_{\gamma,ij} L_{\gamma,kl}
-        eri_2d = eri.reshape((norb**2, -1))
-        u, s, v = scipy.linalg.svd(eri_2d)
+            # Cholesky decomposition of eri (ij|kl) -> L_{\gamma,ij} L_{\gamma,kl}
+            eri_2d = eri.reshape((norb**2, -1))
+            u, s, v = scipy.linalg.svd(eri_2d)
+            mask = s > self.chol_thresh
+            # ltensor = u * backend.sqrt(s)
+            ltensor = u[:, mask] * backend.sqrt(s[mask])
+            ltensor = ltensor.T
+            ltensor = ltensor.reshape(ltensor.shape[0], norb, norb)
+        else:
+            # ---------------------------------------
+            #  use block decomposition of eri in tools
+            # ---------------------------------------
+            # get h1e, eri, ltensors in OAO/MO representation
+            hcore, ltensor, self.nuc_energy = tools.get_h1e_chols(
+                mol, Xmat=Xmat, thresh=self.chol_thresh
+            )
 
-        # mask = s > 1.e-15
-        # ltensor = u[:, mask] * backend.sqrt(s[mask])
-
-        ltensor = u * backend.sqrt(s)
-        ltensor = ltensor.T
-        ltensor = ltensor.reshape(ltensor.shape[0], norb, norb)
-
-        """
-        # ---------------------------------------
-        #  use block decomposition of eri in tools
-        # ---------------------------------------
-        # get h1e, eri, ltensors in OAO/MO representation
-        hcore, ltensor, self.nuc_energy = tools.get_h1e_chols(
-            self.mol, Xmat=Xmat, thresh=self.chol_thresh
-        )
         # shape of h1e [nspin, nao, nao]
         h1e = backend.array([hcore for _ in range(self.ncomponents)])
         logger.debug(self, f"\nDebug: h1e.shape = {h1e.shape}")
@@ -485,6 +514,8 @@ class QMCbase(object):
             # shape [nm, nao, nao]
 
             chol_eb = system.gmat.copy()
+            nmodes = system.gmat.shape[0]
+
             # transform into OAO
             chol_eb = backend.einsum(
                 "ik, mkj, jl -> mil", Xmat.T, chol_eb, Xmat, optimize=True
@@ -495,19 +526,27 @@ class QMCbase(object):
             self.geb = chol_eb * tmp[:, backend.newaxis, backend.newaxis]
 
             logger.debug(self, f"size of chol before adding DSE: {ltensor.shape[0]}")
-            if backend.linalg.norm(chol_eb) > 1.0e-10:
-                ltensor = backend.concatenate((ltensor, chol_eb), axis=0)
-            logger.debug(self, f"size of chol after adding DSE:  {ltensor.shape[0]}")
-
             # add terms due to decoupling of bilinear term
             if self.propagator_options["decouple_bilinear"]:
                 logger.debug(
                     self, f"creating chol due to decomposition of bilinear term"
                 )
 
+                # TODO: set A_\alpha and O_\alpha operator as input variables
+                decoup_Afactor = backend.ones(nmodes)
+                decoup_Ofactor =  (system.omega * 0.5) ** 0.5
+                # \sqrt{1-A_\alpha} + \sqrt{A_\alpha}
+                tmp = backend.sqrt(backend.ones(nmodes) - decoup_Afactor) + backend.sqrt(decoup_Afactor)
+                Lga = chol_eb * tmp[:, backend.newaxis, backend.newaxis]
+                for imode in range(nmodes):
+                    if backend.linalg.norm(Lga[imode]) > 1.0e-10:
+                        ltensor = backend.concatenate((ltensor, Lga), axis=0)
+
                 # (1 + 1j) * \sqrt{\omega} (\lambda\cdot D)
-                self.chol_bilinear = self.geb * (1.0 + 1j)
-                self.chol_Xa = (system.omega) ** 0.5 * (1.0 + 1j)
+                self.chol_Xa = backend.sqrt(decoup_Afactor) * decoup_Ofactor  * (1.0 + 1j)
+            else:
+                if backend.linalg.norm(chol_eb) > 1.0e-10:
+                    ltensor = backend.concatenate((ltensor, chol_eb), axis=0)
 
         self.nfields = ltensor.shape[0]
         return h1e, ltensor
@@ -590,7 +629,6 @@ class QMCbase(object):
         self.walkers.ovlp = self.walkers.ovlp / self.walkers.detR
         """
 
-        print(f"Debug(reortho): detR= {self.walkers.detR};\novlp= {self.walkers.ovlp}")
 
         if self.walkers.boson_phiw is not None:
             ortho_walkers = backend.zeros_like(self.walkers.boson_phiw)
@@ -624,7 +662,10 @@ class QMCbase(object):
         return energy
 
     def local_energy(self, TL_theta, h1e, eri, vbias, gf):
-        r"""Compute local energy from oei, eri and GF
+        r"""Compute local energy from oei, eri and GF.
+
+        Warning: this function is Deprecaeted and moved to propagator to handle
+        the cases of different trial and walkers.
 
         Args:
             gf: green function
@@ -716,6 +757,7 @@ class QMCbase(object):
 
         # Perform periodic property reduction and normalization
         if (step + 1) % self.property_calc_freq == 0:
+
             # Normalize energies by weights
             weights_idx = self.stacked_variables.index("weights")
             norm = self.property_buffer[weights_idx]
@@ -785,8 +827,13 @@ class QMCbase(object):
         energy_list = []
         time_list = []
         wall_t0 = time.time()
+        logger.info( self,
+            f"{'Step':^8}{'Etot':^17}{'Norm':^17}{'Raw_Etot':^17}{'E1':^17}{'E2':^17}  Wall_time"
+        )
+
         # while tt <= self.total_time:
         for step in range(self.nsteps):
+            t0 = time.time()
             tt = self.dt * step
             dump_result = step % self.print_freq == 0
             logger.debug(
@@ -795,8 +842,10 @@ class QMCbase(object):
             # step 3): periodic re-orthogonalization
             # (FIXME: whether put this at the begining or end, in principle, should not matter)
             if (step + 1) % self.renorm_freq == 0:
+                wall_t1 = time.time()
                 self.orthogonalization()
                 logger.debug(self, f"Debug: orthogonalise at step {step}")
+                self.wt_ortho += time.time() - wall_t1
 
             vbias = None
             # step 1): get force bias (note: TL_tensor and mf_shift moved into propagator.atrributes)
@@ -815,14 +864,18 @@ class QMCbase(object):
             xbar = -backend.sqrt(self.dt) * (1j * 2 * vbias - propagator.mf_shift)
             """
 
+            wall_t1 = time.time()
             # step 3): propagate walkers and update weights
             # self.propagate_walkers(walkers, xbar, ltensor)
             propagator.propagate_walkers(
                 trial, walkers, vbias, ltensor, eshift=self.eshift, verbose=int(dump_result)
             )
+            self.wt_propagator += time.time() - wall_t1
 
             # step 2) weight control
+            wall_t1 = time.time()
             self.walkers.weight_control(step)
+            self.wt_weight_control += time.time() - wall_t1
 
             # moved phaseless approximation to propagation
             # since it is associated with propagation type
@@ -830,52 +883,79 @@ class QMCbase(object):
             if dump_result:
                 logger.debug(self, f"local_energy:   {walkers.eloc}")
 
-            # print energy and time
+            # step 4): estimate energies and other properties if needed
+            # We store weights, energies, and other properties of each estimator in local
+            # buffer_variables and compute the properties at every print_freq
+            wall_t1 = time.time()
             self.property_stack(walkers, step)
 
-            # step 4): estimate energies and other properties if needed
-            self.measurements(walkers, step)
+            # self.measurements(walkers, step)
+            if (step + 1) % self.property_calc_freq == 0:
+                # Compute energies and other observables
+                energies = propagator.local_energy(h1e, ltensor, walkers, trial, enuc=self.nuc_energy)
+                energy = energies[0] / energies[1]
 
-            """
-            # compute local energy for each walker
-            # local_energy = self.local_energy(TL_theta, h1e, eri, vbias, gf)
-
-            # walkers.eloc = local_eng_elec_chol_new(h1e, ltensor, gf)
-            # walkers.eloc = local_eng_elec_chol(TL_theta, h1e, vbias, gf)
-            walkers.eloc = propagator.compute_local_energies(TL_theta, h1e, vbias, gf)
-            walkers.eloc += self.nuc_energy
-
-            energy = backend.dot(walkers.weights, walkers.eloc)
-            energy = energy / backend.sum(walkers.weights)
-            """
-
-
-            if dump_result:
-                logger.debug(self, f"Debug: compute estimators at step {step}")
+                # Append time and energy to respective lists
                 time_list.append(tt)
-                # energy_list.append(energy)
-                # logger.info(self, f" Time: {tt:9.3f}    Energy: {energy:15.8f}")
+                energy_list.append(energy)
+
+                # Log the computed energy and other properties
+                logger.info(
+                    self,
+                    f"{step:6d}  {energy:15.7e}  "
+                    f"{energies[0]:15.7e}  {energies[1]:15.7e}  "
+                    f"{energies[2]:15.7e}  {energies[3]:15.7e}  "
+                    f"{time.time() - t0:10.4f}s"
+                )
+            self.wt_observables += time.time() - wall_t1
 
             # step 5): TODO: code of checkpoint
+            wall_t1 = time.time()
+            # if dump_result:
+            #     self.save_checkpoint()
+            self.wt_io += time.time() - wall_t1
 
         # TODO: code of analysis, post processing, etc.
+        self.wt_tot = time.time() - wall_t0
 
         self.post_kernel()
         return time_list, energy_list
 
     def _finalize(self):
         """Hook for dumping results and clearing up the object."""
-        pass
+
+
+
+        logger.note(self, task_title("Wall time analysis"))
+        logger.note(self, f" Total             : {self.wt_tot: 9.3f}")
+        logger.note(self, f" IO                : {self.wt_io: 9.3f}")
+        logger.note(self, f" Measuremnets      : {self.wt_observables: 9.3f}")
+        logger.note(self, f" Weight control    : {self.wt_weight_control: 9.3f}")
+        logger.note(self, f" Orthogonalization : {self.wt_ortho: 9.3f}")
+        logger.note(self, f" Propagator        : {self.wt_propagator: 9.3f}")
+        logger.note(self, f"\n Breakdown of propagator:")
+        logger.note(self, f"   Overlap & GF    : {self.propagator.wt_ovlp: 9.3f}")
+        logger.note(self, f"   Updte weights   : {self.propagator.wt_weight: 9.3f}")
+        logger.note(self, f"   Onebody term    : {self.propagator.wt_onebody: 9.3f}")
+        logger.note(self, f"   Twobody term    : {self.propagator.wt_twobody: 9.3f}")
+        logger.note(self, f"   Bilinear term   : {self.propagator.wt_bilinear: 9.3f}")
+        logger.note(self, f"   Bosonic term    : {self.propagator.wt_boson: 9.3f}")
+        logger.note(self, f"   Breakdown of twobody:")
+        logger.note(self, f"     Force bias    : {self.propagator.wt_fbias: 9.3f}")
+        logger.note(self, f"     HS of twobody : {self.propagator.wt_hs: 9.3f}")
+        # more wall times TBA.
+        logger.note(self, f"")
+
 
     def post_kernel(self):
         r"""Prints relevant citation information for calculation."""
-        breakline = "=" * 80
+        breakline = "=" * 86
         logger.note(self, f"\n{breakline}")
         logger.note(self, f"*  Hoollary, the job is done!\n")
 
         self._finalize()
 
-        logger.note(self, f"Citations:")
+        logger.note(self, task_title("Citations"))
         for i, key in enumerate(runtime_refs):
             logger.note(self, f"[{i+1}]. {_citations[key]}")
         logger.note(self, f"{breakline}\n")

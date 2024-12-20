@@ -1,5 +1,6 @@
 import numpy as backend
 import scipy
+import time
 
 
 # for each observables, we may save several quantities using a small class
@@ -200,6 +201,89 @@ def local_eng_eb_1st(h1e, eri, gmat, mass, freq, Gf, Q, laplacian, spin_fac=0.5)
 # -----------------------------
 
 
+def local_energy_SD_RHF(trial, walkers, enuc = 0.0):
+    r"""Compute local energy with half-rotated integrals
+    """
+    # Ghalfa/b: [nwalkers, nao, na/nb]
+    # rh1a/b: [nao, na/nb]
+    e1 = 2.0 * backend.einsum("qi, zqi->z", trial.rh1a, walkers.Ghalfa)
+    e1 += enuc
+
+    # coulomb energy
+    LG = backend.einsum("nqi, zqi->zn", trial.rltensora, walkers.Ghalfa)
+    ecoul =  2.0 * backend.einsum("zn, zn->z", LG, LG)
+
+    # exchange
+    exx = 2.0 * exx_rltensor_Ghalf(trial.rltensora, walkers.Ghalfa)
+
+    e2 = ecoul - exx
+
+    return e1, e2
+
+
+def ecoul_rltensor_uhf(rltensora, rltensorb, Ghalfa, Ghalfb):
+    r"""Compute Coulomb energy
+
+    """
+    LG = backend.einsum("nqi, zqi->zn", rltensora, Ghalfa)
+    LG += backend.einsum("nqi, zqi->zn", rltensorb, Ghalfb)
+
+    return 0.5 * backend.einsum("zn, zn->z", LG, LG)
+
+
+def exx_rltensor_Ghalf(rltensor, Ghalf):
+    """Compute exchange contribution for real Choleskies with RHF/UHF trial.
+
+    Parameters
+    ----------
+    rltensor : :class:`numpy.ndarray`
+        Half-rotated cholesky for one spin.
+    Ghalf : :class:`numpy.ndarray`
+        Walker's half-rotated Green's function
+        Shape is (nwalkers, nao, nsigma).
+
+    .. math::
+
+        E_k = & L_{n, pr} * G_{ps} * [L_{n, qs} * G_{qr}] \\
+            = & [LG]_{n,rs} * [LG]_{n, rs}
+
+    Returns
+    -------
+    exx : :class:`numpy.ndarray`
+        Exchange energy for all walkers.
+    """
+
+
+
+    t0 = time.time()
+    LG = backend.einsum('nqi, zqj->znij', rltensor, Ghalf)
+    t2 = time.time() - t0
+    # print(f"Debug: compare wall time {t1} vs {t2}")
+
+    # Compute exchange contribution
+    exx = 0.5 * backend.einsum('znij, znji->z', LG, LG)
+
+    return exx
+
+
+def local_energy_SD_UHF(trial, walkers, enuc = 0.0):
+    r"""Compute local energy with half-rotated integrals
+    """
+    # Ghalfa/b: [nwalkers, nao, na/nb]
+    # rh1a/b: [nao, na/nb]
+    e1 = backend.einsum("qi, zqi->z", trial.rh1a, walkers.Ghalfa)
+    e1 += backend.einsum("qi, zqi->z", trial.rh1b, walkers.Ghalfb)
+    e1 += enuc
+
+    # coulomb energy
+    ecoul = ecoul_rltensor_uhf(trial.rltensora, trial.rltensorb, walkers.Ghalfa, walkers.Ghalfb)
+    exx = exx_rltensor_Ghalf(trial.rltensora, walkers.Ghalfa)
+    exx += exx_rltensor_Ghalf(trial.rltensorb, walkers.Ghalfb)
+
+    e2 = ecoul - exx
+
+    return e1, e2
+
 def local_eng_boson_2nd(omega, nboson_states, Gb):
     r"""compute the local bosonic energies with bosonic GF (Gb) in
     compute local energy of bosons in 2nd quantizaiton
@@ -216,6 +300,31 @@ def local_eng_boson_2nd(omega, nboson_states, Gb):
     waTa = backend.einsum("m, mF->mF", omega, basis).ravel()
     eb = backend.einsum("F,zFF->z", waTa, Gb)
     return eb
+
+
+def local_eng_eboson(omega, nboson_states, geb, Gfermions, Gboson):
+    r"""
+    Gfermions: tuple of Fermionic GFs for up and down spin (if available)
+    Gboson: ndarray
+          bosonic GFs
+    """
+
+    nmodes = len(omega)
+
+    zalpha = backend.einsum("npq, zpq->zn", geb, Gfermions[0])
+    if Gfermions[1] is not None:
+        zalpha += backend.einsum("npq, zpq->zn", geb, Gfermions[1])
+
+    boson_size = sum(nboson_states)
+    Hb = backend.zeros((boson_size, boson_size), dtype=backend.complex128)
+    idx = 0
+    for imode in range(nmodes):
+        mdim = nboson_states[imode]
+        a = backend.diag(backend.sqrt(backend.arange(1, mdim)), k=1)
+        h_od = a + a.T
+        Hb[idx : idx + mdim, idx : idx + mdim] = h_od * zalpha[imode]
+    eg = backend.einsum("NM,zNM->z", Hb, Gboson)
+    return eg
 
 
 local_eng_boson = local_eng_boson_2nd

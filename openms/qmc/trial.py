@@ -17,13 +17,12 @@
 # files for trial WF and random walkers
 
 r"""
-Single and multi Slater determinant trial wavefunction
-------------------------------------------------------
+Single Slater determinant trial wavefunction
+--------------------------------------------
 
 Both SD and MSD can be written as the generalized formalism
 
 .. math::
-
     \ket{\Psi_T} = \sum^{N_d}_{\mu} c_\mu\ket{\psi_\mu} = \sum_\mu c_\mu \hat{\mu} \ket{\psi_0}
 
 Where :math:`\ket{\psi_0}` is the mean-field reference (like HF) and
@@ -31,19 +30,18 @@ Where :math:`\ket{\psi_0}` is the mean-field reference (like HF) and
 :math:`\ket{\psi_mu}` from the MF reference and :math:`N_d` is the number of
 determinants.
 
-Overlap
-~~~~~~~
+
+**Overlap**:
+
 
 Within AFQMC, we need to compute the overlap between trial and walker:
 
 .. math::
-
-   \langle \Psi_T\ket{\psi_w} = \sum_\mu c_\mu \langle \psi_mu\ket{\psi_w}.
+   \langle \Psi_T\ket{\psi_w} = \sum_\mu c_\mu \langle \psi_\mu\ket{\psi_w}.
 
 For SD, which involves the agebra in the matrix representation as
 
 .. math::
-
     \langle \psi_0\ket{\psi_w} = det[C^\dagger_{\psi_0} C_{\psi_w}]
     = det[C^\dagger_{\psi_w} C^*_{\psi_0}]
 
@@ -51,13 +49,84 @@ i.e., in the einsum format:
 
 >>> S = backend.einsum("zpi, pj->zij", phi, psi.conj())
 
-For MSD, the overlap is
+**Green's Function***:
+
+One-body GF is
+
+.. math::
+    G^\sigma_{ij} = & \frac{\bra{\Psi_T}a^\dagger_i a_j \ket{\psi_w}}{\langle\Psi_T\ket{\psi_w}} \\
+                  = & \left[\psi^\sigma_w (\Psi^{\sigma\dagger}_T\psi^\sigma_w)^{-1} \Psi^{\sigma\dagger}_T \right]
+                  \equiv & \left[\Theta^\sigma_w \Psi^{\sigma\dagger}_T \right].
+
+Where :math:`\Theta^\sigma_w=\psi^\sigma_w (\Psi^{\sigma\dagger}_T\psi^\sigma_w)^{-1}`.
+
+The **Force bias** can be calculated from the GFs via:
+
+.. math::
+     F_\gamma  = & \sqrt{-\Delta\tau} \sum_{ij,\sigma} [L^\sigma_\gamma]_{ij} G^\sigma_{ij} \\
+               = & \sqrt{-\Delta\tau} \sum_\sigma \text{Tr}[L^\sigma_{\gamma}\psi^\sigma_w
+                   (\Psi^{\sigma\dagger}_T\psi^\sigma_w)^{-1} \Psi^{\sigma\dagger}_T] \\
+               \equiv & \sqrt{-\Delta\tau} \sum_\sigma \text{Tr}[(\Psi^{\sigma\dagger}_T L^\sigma_\gamma)\Theta^\sigma_w]
+
+Since :math:`(\Psi^{\sigma\dagger}_T L^\sigma_\gamma)` is independent of walker, we pre-compute it and contract it with
+:math:`\Theta^\sigma_w` to update the force bias.
+
+**Energy**
+
+The one-body temr is
 
 .. math::
 
+    E_1 = \text{Tr}[hG] = \sum_\sigma (\Psi^{\sigma\dagger}_T h_1) \Theta^\sigma_w.
+
+So again, we pre-compute :math:`(\Psi^{\sigma\dagger}_T h_1)` and contract it with
+:math:`\Theta^\sigma_w` without explicitly constructing the GF to get the one-body
+energy.
+
+Similarly, the two-body term is given by:
+
+.. math::
+
+    E_2 = & \frac{1}{2}\sum_{\gamma, ijkl, \sigma\sigma'} [L_\gamma]_{il}[L^*_\gamma]_{kj}
+          \frac{\bra{\Psi_T}a^\dagger_{i\sigma} a^\dagger_{j\sigma'} a_{k\sigma'}
+           a_{l\sigma}\ket{\psi_w}}{\langle\Psi_T\ket{\psi_w}} \\
+        = & \frac{1}{2}\sum_{\gamma, ijkl, \sigma\sigma'} [L_\gamma]_{il}[L^*_\gamma]_{kj}
+            \left[G^\sigma_{il} G^{\sigma'}_{jk} - \delta_{\sigma\sigma'}G^\sigma_{ik} G^{\sigma'}_{jl} \right]\\
+        = & \frac{1}{2}\sum_\gamma (\text{Tr}[L_\gamma G])^2
+          - \frac{1}{2} \sum_{\sigma}\text{Tr} \left[(\Psi^{\sigma\dagger}_T L^\sigma_\gamma)\Theta^\sigma_w
+            (\Psi^{\sigma\dagger}_T L^\sigma_\gamma)\Theta^\sigma_w\right].
+
+Once, again, we only need the contract the precomputed :math:`(\Psi^{\sigma\dagger}_T L^\sigma_\gamma)` with
+:math:`\Theta^\sigma_w` for computing the energies.
+
+
+Multi Slater determinant (MSD) trial wavefunction
+-------------------------------------------------
+
+
+The :math:`\ket{\phi_\mu}` is a Slater determinants with matrix representation :math:`{\psi_\mu^\sigma}`
+for spin :math:`\sigma`.
+
+
+**Overlap**:
+
+For MSD, the overlap is
+
+.. math::
     S = \langle \psi_0\ket{\psi_w}\left[1 + \sum_\mu c_\mu \frac{\bra{\psi_0} \hat{\mu}^\dagger \ket{\psi_w}}{\psi_0\ket{\psi_w}}  \right]
 
 The summation over determinants in the second term can be performed via the aid of Wick's theorem.
+
+More details TBA.
+
+**Green's functions**:
+
+
+**Force bias**:
+
+
+**Efficient Implementation**:
+
 
 
 """
@@ -86,7 +155,6 @@ def half_rotate_integrals(
     1. Half-rotated h1e:
 
     .. math::
-
         \tilde{h}_{iq} = \sum_{p} C*_{jp} h_{pq}
 
 
@@ -266,6 +334,12 @@ def calc_trial_walker_ovlp_gf(walker, trial):
     if not trial.half_rotated:
         walker.Ga = backend.einsum("pi, nqi->npq", trial.psia.conj(), walker.Ghalfa)
 
+    if trial.boson_psi is not None:
+        ovlp_b = trial.bovlp_with_walkers(walker)
+        inv_ovlp = 1.0 / ovlp_b
+        walker.boson_Ghalf = backend.einsum("zN, z->zN", walker.boson_phiw, inv_ovlp)
+        walker.boson_Gf = backend.einsum("zM, N->zMN", walker.boson_Ghalf, trial.boson_psi.conj())
+
     if trial.ncomponents > 1:
         ovlp_b, walker.Ghalfb = trial_walker_ovlp_gf_base(walker.phiwb, trial.psib)
         sign_b, logovlp_b = backend.linalg.slogdet(ovlp_b)
@@ -276,6 +350,12 @@ def calc_trial_walker_ovlp_gf(walker, trial):
     else:
         ovlp = sign_a * backend.exp(logovlp_a - walker.logshift)
     return ovlp
+
+#
+# ****** functions for computing trial_walker overlap in MSD formalism ******
+#
+
+
 
 
 class TrialWFBase(object):
@@ -316,18 +396,19 @@ class TrialWFBase(object):
         # and number of SO # we assume using spin orbitals
         self.ncomponents = kwargs.get("ncomponents", 1)  # number of spin components
         self.nelectrons = mol.nelectron
+        self.nao = mol.nao_nr()
         self.spin = mol.spin
         self.nalpha = (self.nelectrons + self.spin) // 2
         self.nbeta = self.nalpha - self.spin
+
         assert self.nalpha >= 0 and self.nbeta >= 0
+
         if self.nalpha + self.nbeta != self.nelectrons:
             raise RuntimeError(
                 "Electron number %d and spin %d are not consistent\n"
                 "Note mol.spin = 2S = Nalpha - Nbeta, not 2S+1"
                 % (self.nelectrons, self.spin)
             )
-
-        logger.debug(self, " nalpha/nbeta = %d  %d " % (self.nalpha, self.nbeta))
 
         # self.num_elec = num_elec # number of electrons
         # self.n_mo = n_mo
@@ -340,17 +421,23 @@ class TrialWFBase(object):
         self.OAO = kwargs.get("OAO", True)
         self.half_rotated = False
 
-        self.build()
+        self.boson_psi = None
+
+        # self.build()
 
     def dump_flags(self):
         r"""dump flags"""
         logger.note(self, task_title("Flags of trial wavefunction"))
-        logger.note(self, f" Trail WF is              : {self.__class__.__name__}")
-        logger.note(self, f" Number of determinants   : {self._numdets:5d}")
-        logger.note(self, f" Number of spin components: {self.ncomponents:5d}")
-        logger.note(self, f" Number of electrons      : {self.nelectrons: 5d}")
-        logger.note(self, f" Number of alpha electron : {self.nalpha: 5d}")
-        logger.note(self, f" Number of beta electron  : {self.nbeta: 5d}")
+        logger.note(self, f" Trail WF is                  : {self.__class__.__name__}")
+        logger.note(self, f" Number of determinants       : {self._numdets:5d}")
+        logger.note(self, f" Number of spin components    : {self.ncomponents:5d}")
+        logger.info(self, f" Number of total orbitals     : {self.nao:5d}")
+        logger.note(self, f" Number of total electrons    : {self.nelectrons: 5d}")
+        logger.note(self, f" Number of alpha electrons    : {self.nalpha: 5d}")
+        logger.note(self, f" Number of beta electrons     : {self.nbeta: 5d}")
+        if isinstance(self.mol, Boson):
+            logger.note(self, f" Number of bosonic models     : {self.mol.nmodes}")
+            logger.note(self, f" Number of bosonic states     : {self.mol.nboson_states}")
         logger.note(self, f"")
 
 
@@ -391,6 +478,9 @@ class TrialHF(TrialWFBase):
         super().__init__(*args, **kwargs)
 
         self._numdets = 1
+        self.header = "SD_RHF"
+        if self.ncomponents > 1:
+            self.header = "SD_UHF"
 
     def build(self):
         r"""
@@ -402,20 +492,24 @@ class TrialHF(TrialWFBase):
         Representation of boson: 1) Fock, 2) CS, 3), VLF, 4) real space.
         """
 
-        nmo = self.mf.mo_coeff.shape[-1]
-
         if self.OAO:
             overlap = self.mol.intor("int1e_ovlp")
             Xmat = lo.orth.lowdin(overlap)
             xinv = backend.linalg.inv(Xmat)
             # Nao * Na
-            self.psia = self.psib = xinv.dot(self.mf.mo_coeff[:, : self.mol.nelec[0]])
+            # self.psia = self.psib = xinv.dot(self.mf.mo_coeff[:, : self.mol.nelec[0]])
+            self.psia = xinv.dot(self.mf.mo_coeff[:, : self.mol.nelec[0]])
+            self.psib = xinv.dot(self.mf.mo_coeff[:, : self.mol.nelec[1]])
         else:
-            tmp = backend.identity(nmo)
-            self.psia = self.psib = tmp[:, self.mf.mo_occ > 0]
+            nmo = self.mf.mo_coeff.shape[-1]
+            tmp = backend.identity(nmo)[:, self.mf.mo_occ > 0]
+            #self.psia = self.psib = tmp
+            # psia and psib may have different size, when nalpha and nbeta are different
+            self.psia = tmp[:, self.nalpha]
+            self.psib = tmp[:, self.nbeta]
 
         if self.ncomponents > 1:
-            self.psi = backend.hstack([self.psia, self.psia])
+            self.psi = backend.hstack([self.psia, self.psib])
             # TODO: build Fermionic Gf and Ghalf in SO
             # TODO: the new function trail_walker_gf can computer such green's functions
             # TODO: may longer need the GF_so function
@@ -425,7 +519,6 @@ class TrialHF(TrialWFBase):
             self.Gf, self.Gf_half = estimators.GF_so(self.psi, self.psi, self.nalpha, 0)
 
         # build bosonic trial
-        self.boson_psi = None
         # self.boson_basis = "Fock"
 
         # with h5py.File("input.h5", "w") as f:
@@ -445,7 +538,7 @@ class TrialHF(TrialWFBase):
         nao = self.psia.shape[0]
         nchol = ltensor.shape[0]
         psia = self.psia.reshape(self._numdets, nao, self.nalpha)
-        psib = None if self.ncomponents == 1 else self.psia.reshape(self._numdets, nao, self.nbeta)
+        psib = None if self.ncomponents == 1 else self.psib.reshape(self._numdets, nao, self.nbeta)
 
         # rh1e and rltensor are both tuple of alpha and beta components
         rotated_h1e, rltensor = half_rotate_integrals(self.ncomponents, psia, psib, h1e, ltensor)
@@ -592,8 +685,8 @@ class TrialHF(TrialWFBase):
             ovlp_b = self.bovlp_with_walkers(walkers)
             inv_ovlp = 1.0 / ovlp_b
             theta = backend.einsum("zN, z->zN", walkers.boson_phiw, inv_ovlp)
-            Gb = backend.einsum("zM, N->zMN", theta, self.boson_psi.conj())
-            return [Gf, Gb], TL_theta
+            boson_Gf = backend.einsum("zM, N->zMN", theta, self.boson_psi.conj())
+            return [Gf, boson_Gf], TL_theta
 
         return Gf, TL_theta
 
@@ -605,6 +698,8 @@ from openms.qmc import estimators
 class TrialUHF(TrialWFBase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.header = "SD_UHF"
+        self.ncomponents = 2
 
     def build(self):
         overlap = self.mol.intor("int1e_ovlp")  # AO Overlap Matrix, S
@@ -612,9 +707,7 @@ class TrialUHF(TrialWFBase):
         xinv = backend.linalg.inv(Xmat)  # S**(-1/2)
 
         # TODO: name change MO_ALPHA/beta -> psia/b
-        MO_ALPHA = self.mf.mo_coeff[
-            0, :, : self.mol.nelec[0]
-        ]  # Occupied ALPHA MO Coeffs
+        MO_ALPHA = self.mf.mo_coeff[0, :, : self.mol.nelec[0]]  # Occupied ALPHA MO Coeffs
         MO_BETA = self.mf.mo_coeff[1, :, : self.mol.nelec[1]]  # Occupied BETA MO Coeffs
 
         self.psi = [
@@ -634,9 +727,11 @@ class TrialUHF(TrialWFBase):
             self.psi, self.psi, self.nalpha, self.nbeta
         )
 
+
     def ovlp_with_walkers(self, walkers):
         r"""Compute the overlap with walkers"""
-        pass
+        super().ovlp_with_walkers(walkers)
+
 
     def force_bias(self, walkers, TL_tensor, verbose=False):
         r"""Compute the force bias (Eqns.67-69 of Ref. :cite:`zhang2021jcp`)
@@ -668,7 +763,7 @@ class TrialUHF(TrialWFBase):
         # vbias = backend.einsum("npq, zqr->znpr", TL_tensor, Ghalfa)
 
 
-def get_ci(mol, cas):
+def get_ci(mol, cas, ci_thresh=1.e-8):
     from pyscf import mcscf, fci
 
     # TODO: use UHF if openshell system
@@ -676,12 +771,12 @@ def get_ci(mol, cas):
     e_hf = mf.kernel()
 
     # casscf
-    M, N = cas
-    mc = mcscf.CASSCF(mf, M, N)
+    ncas, neleccas = cas
+    mc = mcscf.CASSCF(mf, ncas, neleccas)
 
     # get fcivec
-    nocca = (N + mol.spin) // 2
-    noccb = N - nocca
+    nelecasa = (neleccas + mol.spin) // 2
+    nelecasb = neleccas - nelecasa
     e_tot, e_cas, fcivec, mo, mo_energy = mc.kernel()
 
     # TODO, get mo_occ from mc
@@ -691,47 +786,63 @@ def get_ci(mol, cas):
     logger.debug(mol, f"correlation energy:  {e_tot - e_hf}")
 
     # logger.debug(mol, f"hf.mo_occ ?= cassc.mo_occ = {backend.allclose(mf.mo_occ, mc.mo_occ, rtol=1e-05)} \n")
-    logger.debug(
-        mol,
-        f"hf.mo_coeff ?= cassc.mo_coeff = {backend.allclose(mf.mo_coeff, mc.mo_coeff, rtol=1e-05)} \n",
-    )
-    logger.debug(mol, f"cassc.mo_occ   = {mc.mo_occ}")
-    logger.debug(mol, f"cassc.mo_coeff = {mc.mo_coeff}")
+    # logger.debug(mol, f"cassc.mo_occ   = {mc.mo_occ}")
+    # logger.debug(mol, f"cassc.mo_coeff = {mc.mo_coeff}")
 
     coeff, occa, occb = zip(
-        *fci.addons.large_ci(fcivec, M, (nocca, noccb), tol=1e-8, return_strs=False)
+        *fci.addons.large_ci(fcivec, ncas, (nelecasa, nelecasb), tol=ci_thresh, return_strs=False)
     )
-    return mf, coeff, (occa, occb)
+    # may need to return mc, instead of mf
+    return mf, coeff, occa, occb
 
 
 class multiCI(TrialWFBase):
+    r"""Trial WF based on multi CI cofigurations.
+
+    Here, we construct the Trial WF based on PySCF CASSCF calculations
+
+    """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.header = "MSD_UHF"
+        self.ncomponents = 2 # FIXME: decide whether to consider 1 component in this trial class
 
-        self.ci_coeffs = kwargs.get("ci_coeffs", None)
-        self.occs = kwargs.get("occupations", None)
-        self.cas = kwargs.get("cas", None)
-        if self.ci_coeffs is None:
+        self.cas = kwargs.get("cas", None)  # active space (norbital, nelectron)
+        self.use_cas = kwargs.get("use_cas", True)
+        ci_coeffs, occa, occb = kwargs.get("cas_wfn", (None, None, None))
+        self.nchunks = kwargs.get("nchunks", 1)
+        self._numdets = kwargs.get("numdets", -1)
+
+        if ci_coeffs is None:
             # build a mcscf calculations and get the values
             if self.cas is None:
                 raise RuntimeError(
-                    "Cas must be specified if ci_coefficients are not provided"
+                    "CAS (ncas, neleccas) must be specified if ci_coefficients are not provided"
                 )
-            self.mf, self.ci_coeffs, self.occs = get_ci(self.mol, self.cas)
-        logger.debug(self, f"mo_occ   = {self.mf.mo_occ}")
-        logger.debug(self, f"occupation (a, b) = {self.occs}")
+            self.mf, ci_coeffs, occa, occb = get_ci(self.mol, self.cas)
+        assert len(occa) == len(occb)
+        assert len(occa) == len(ci_coeffs)
 
-        # TODO: get X
+        if self.nbeta > 0:
+            max_orbital = max(backend.max(occa), backend.max(occb)) + 1
+        else:
+            max_orbital = backend.max(occa) + 1
+        logger.debug(self, f"Debug: mo_occ = {self.mf.mo_occ}")
+        logger.debug(self, f"Debug: max_orbital is {max_orbital}")
 
+        #
         # update other parameters
-        self._numdets = len(self.ci_coeffs)
-        logger.debug(self, f"number of determinents = {self._numdets:8d}")
+        #
+        self.max_numdets = len(ci_coeffs)
+        if self._numdets < 0: self._numdets = self.max_numdets
+        assert self._numdets <= self.max_numdets
 
-        self.build()
 
-    # def build(self):
-    #    # get chol
-    #    pass
+        logger.info(self, f"Info: num_dets = {self._numdets:8d}")
+        logger.info(self, f"Info: max_num_dets = {self.max_numdets:8d}")
+        logger.debug(self, f"Debug: occa0 in cas = {occa}")
+        logger.debug(self, f"Debug: occb0 in cas = {occb}")
+        # occa/b are:
 
     def force_bias(self, walkers):
         r"""Compute the force bias with multiSD (Eqns.83-84 of Ref. :cite:`zhang2021jcp`)
@@ -792,6 +903,7 @@ def make_trial(mol, mf=None, **kwargs):
     # if MF is none: according to multiplicity and options to choose UHF/ROHF/RHF/MCSCF
 
     trial = TrialHF(mol, mf=mf, **kwargs)
+    trial.build()
     logger.debug(trial, f"Debug: trial WF is {trial.psi}")
 
     if isinstance(mol, Boson):
@@ -825,6 +937,7 @@ if __name__ == "__main__":
     atoms = [("H", i * bond, 0, 0) for i in range(natoms)]
     mol = gto.M(atom=atoms, basis="sto-6g", unit="Bohr", verbose=3)
     trial = TrialHF(mol)
+    trial.buld()
 
     cas = (2, 2)
     trial = multiCI(mol, cas=cas)

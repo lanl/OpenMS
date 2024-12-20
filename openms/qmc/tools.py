@@ -264,12 +264,10 @@ def get_mean_std(energies, N=10):
 
     Returns
     -------
-    tuple
-        A tuple (mean, std_dev), where:
-        - mean : float
-            The mean of the real parts of the selected energy subset.
-        - std_dev : float
-            The standard deviation of the real parts of the selected energy subset.
+    mean : float
+      The mean of the real parts of the selected energy subset.
+    std_dev : float
+      The standard deviation of the real parts of the selected energy subset.
     """
     m = max(1, len(energies) // N)
     last_m_real = numpy.asarray(energies[-m:]).real

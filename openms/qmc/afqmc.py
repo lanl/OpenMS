@@ -628,6 +628,7 @@ if __name__ == "__main__":
         dt=0.005,
         total_time=2.0,
         num_walkers=num_walkers,
+        taylor_order=6,
         energy_scheme="hybrid",
         verbose=4,
     )
@@ -644,7 +645,7 @@ if __name__ == "__main__":
     fcisolver = fci.FCI(mf)
     fci_energy = fcisolver.kernel()[0]
 
-    print(fci_energy)
+    print('fci_energy is: ', fci_energy)
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots()

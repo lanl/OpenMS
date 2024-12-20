@@ -30,6 +30,12 @@ from pyscf.lib import logger
 from openms.lib.logger import task_title
 
 
+default_walker_options = {
+    "nwalkers": 100,
+    "weight_min": 0.1,
+    "weight_max": 10.0,
+}
+
 def initialize_walkers(trial):
     r"""get initial walkers
 
@@ -47,7 +53,7 @@ def initialize_walkers(trial):
 
 
 class BaseWalkers(object):
-    def __init__(self, **kwargs):
+    def __init__(self, trial, **kwargs):
         r"""Base walker class
 
         Parameters
@@ -59,17 +65,14 @@ class BaseWalkers(object):
             Number of walkers
         """
 
-        self.nwalkers = kwargs.get("nwalkers", 100)
-        self.logshift = backend.zeros(self.nwalkers)
-
-        trial = kwargs.get("trial", None)
-        if trial is None:
-            raise Exception("Trial WF must be specified in walker")
         self.verbose = trial.verbose
         self.stdout = trial.stdout
         self.nalpha = trial.nalpha
         self.nbeta = trial.nbeta
         self.ncomponents = trial.ncomponents
+
+        self.nwalkers = kwargs.get("nwalkers", 100)
+        self.logshift = backend.zeros(self.nwalkers)
 
         # variables for weights and weights control
         self.weights = backend.ones(self.nwalkers)
@@ -149,6 +152,8 @@ class BaseWalkers(object):
         self.weights /= ratio
 
 
+from openms.qmc.trial import multiCI
+
 # walker in so orbital (akin ghf walker)
 class Walkers_so(BaseWalkers):
     r"""walker in the SO
@@ -159,15 +164,13 @@ class Walkers_so(BaseWalkers):
     Walker shape: [nwalker, n_AO, n_electron]
     """
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, trial, **kwargs):
 
-        trial = kwargs.get("trial", None)
-        if trial is None:
-            raise Exception("Trial WF must be specified in walker")
+
+        super().__init__(trial, **kwargs)
 
         self.nao = trial.psi.shape[-2]
-        logger.debug(self, f"Debug: nao in walkers = {self.nao}")
+        # logger.debug(self, f"Debug: nao in walkers = {self.nao}")
 
         # 1) create walkers
         init_walker = initialize_walkers(trial)
@@ -198,4 +201,86 @@ class Walkers_so(BaseWalkers):
         self.Ghalfb = backend.zeros(
             (self.nwalkers, self.nbeta, self.nao), dtype=backend.complex128
         )
+
+
+    def get_boson_dm(self, trial, boson_phiw):
+        r"""Return bosonic DM for each walker
+
+        Shape is: [nwalkers, nFock, nFock]
+
+        Shape of boson_phiw: [nwalkers, nfock]
+        """
+        # Check if the bosonic wavefunction has the correct size
+        boson_size = sum(trial.mol.nboson_states)
+        if boson_phiw.shape[1] != boson_size:
+            raise ValueError(
+                f"Mismatch in bosonic wavefunction size. Expected {boson_size}, but got {boson_phiw.shape[1]}."
+            )
+
+        # Initialize the bosonic DM
+        boson_DM = backend.zeros((self.nwalkers, boson_size, boson_size))
+        # Dictionary to store per-mode DMs
+        boson_mode_DM_dict = {}
+
+        # Compute the density matrix for each mode separately
+        start = 0
+        for mode_index, mode_size in enumerate(trial.mol.nboson_states):  # Iterate over each mode
+            end = start + mode_size
+
+            # Extract the wavefunction for the current mode
+            boson_mode_phiw = boson_phiw[:, start:end]  # Shape: [nwalkers, mode_size]
+
+            # Compute the density matrix for this mode
+            boson_mode_DM = backend.einsum(
+                "wi,wj->wij", boson_mode_phiw, backend.conj(boson_mode_phiw)
+            )  # Shape: [nwalkers, mode_size, mode_size]
+
+            # Store the mode DM in the dictionary
+            boson_mode_DM_dict[mode_index] = boson_mode_DM
+
+            # Insert the mode's DM into the appropriate block of the full DM
+            boson_DM[:, start:end, start:end] = boson_mode_DM
+
+            # Update the start index for the next mode
+            start = end
+
+        return boson_DM, boson_mode_DM_dict
+
+
+    def get_boson_bdag_plus_b(self, trial, boson_phi):
+        r"""Compute the expectation value of <b^\dag_a + b_a>
+        """
+        # This function is almost the same as the get_bdag_plus_b in openms/lib/boson.py
+        # Only difference is that here we make this value for each walker.
+
+        # get DM per mode per walker
+        boson_DM, boson_mode_DM = self.get_boson_dm(trial, boson_phi)
+
+        # matrix representation of Q_b = b^\dag_a + b_a: [nfock, nfock]
+        # Q_{a, nm} = <m| b^\dag_a + b_a|n>
+        Qalpha = backend.zeros(trial.mol.nmodes)
+        for mode_index, mdim in enumerate(trial.mol.nboson_states):
+            Qmat = backend.diag(backend.sqrt(backend.arange(1, mdim)), k = 1) \
+                   + backend.diag(backend.sqrt(backend.arange(1, mdim)), k = -1)
+            Qalpha[mode_index] = backend.sum(Qmat * boson_mode_DM[mode_index])
+        # Tr[rho_{a, nm} * Q_{a, nm}]
+        return Qalpha
+
+
+class multiCI_Walkers(Walkers_so):
+
+    def __init__(self, trial, **kwargs):
+        super().__init__(trial, **kwargs)
+
+
+
+def make_walkers(trial, walker_options):
+    r"""determine the walker type based on trial WF"""
+
+    logger.debug(trial, f"walker options are {walker_options}")
+
+    if isinstance(trial, multiCI):
+        return multiCI_Walkers(trial, **walker_options)
+    else:
+        return Walkers_so(trial, **walker_options)
 

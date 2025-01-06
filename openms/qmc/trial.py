@@ -355,6 +355,68 @@ def calc_trial_walker_ovlp_gf(walker, trial):
 # ****** functions for computing trial_walker overlap in MSD formalism ******
 #
 
+def calc_ovlp_iexc(exc_order, Gf, cre_index, anh_index, occ_map, nao_frozen):
+    r"""Order `exc_order` excitaiton's contribution to the trial_walker overlap
+
+    An universal function for either alpha or beta component
+    """
+    pass
+
+
+def compute_MSD_ovlp(GFs, trial):
+    r"""
+    Compute overlap in MSD formalism
+    """
+    pass
+
+
+def calc_MSD_trial_walker_ovlp(walker, trial):
+    r"""Compute the trial walker overlap only
+
+    Parameters
+    ----------
+    walker : object
+        MSD walker.
+    trial : object
+        MSD trial
+    Returns
+    -------
+    ovlp : float64 / complex128
+        Overlap between walker and trial
+    """
+    pass
+
+def calc_MSD_trial_walker_ovlp_gf(walker, trial):
+    r"""Compute walker green's function with singlet trial
+
+    This function also contains the code to compute the trial walker overlap
+    """
+
+    raise NotImplementedError("Greens function and Trail_Walker overlap with MSD is not implemented yet.")
+
+
+def permutation_sign(anh_index, cre_index, ref_det, target_det):
+    r"""
+    Determine the sign of permutation from reference determinants to the target determinants
+
+    """
+
+    nmove = 0
+    perm = 0
+    for o in anh_index:
+        io = backend.where(target_det == o)[0]
+        perm += io - nmove
+        nmove += 1
+    nmove = 0
+    for o in cre_index:
+        io = backend.where(ref_det == o)[0]
+        perm += io - nmove
+        nmove += 1
+
+    if perm % 2 == 1: return -1
+    return 1
+
+
 
 
 
@@ -843,6 +905,21 @@ class multiCI(TrialWFBase):
         logger.debug(self, f"Debug: occa0 in cas = {occa}")
         logger.debug(self, f"Debug: occb0 in cas = {occb}")
         # occa/b are:
+
+
+
+    def ovlp_with_walkers_gf(self, walkers):
+        r"""compute trial_walker overlap and green's function
+        """
+        return calc_MSD_trial_walker_ovlp_gf(walkers, self)
+
+
+    def ovlp_with_walkers(self, walkers):
+        r"""Compute the overlap between trial and walkers (MDS)
+        """
+
+        return calc_MSD_trial_walker_ovlp(walkers, self)
+
 
     def force_bias(self, walkers):
         r"""Compute the force bias with multiSD (Eqns.83-84 of Ref. :cite:`zhang2021jcp`)

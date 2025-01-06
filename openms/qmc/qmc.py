@@ -606,17 +606,17 @@ class QMCbase(object):
         # 1) old code
         # ortho_walkers = backend.zeros_like(self.walkers.phiwa)
         detR = backend.zeros(self.walkers.nwalkers, dtype=backend.complex128)
-        for idx in range(self.walkers.phiwa.shape[0]):
-            self.walkers.phiwa[idx], log_det = qr_ortho(self.walkers.phiwa[idx])
+        for iw in range(self.walkers.phiwa.shape[0]):
+            self.walkers.phiwa[iw], log_det = qr_ortho(self.walkers.phiwa[iw])
 
             if self.walkers.ncomponents > 1:
-                self.walkers.phiwb[idx], log_det_b = qr_ortho(self.walkers.phiwa[idx])
+                self.walkers.phiwb[iw], log_det_b = qr_ortho(self.walkers.phiwb[iw])
                 log_det += log_det_b
 
-            detR[idx] = backend.exp(log_det - self.walkers.detR_shift[idx])
-            self.walkers.log_detR[idx] += backend.log(detR[idx])
-            self.walkers.detR[idx] = detR[idx]
-            self.walkers.ovlp[idx] = self.walkers.ovlp[idx] / detR[idx]
+            detR[iw] = backend.exp(log_det - self.walkers.detR_shift[iw])
+            self.walkers.log_detR[iw] += backend.log(detR[iw])
+            self.walkers.detR[iw] = detR[iw]
+            self.walkers.ovlp[iw] = self.walkers.ovlp[iw] / detR[iw]
 
         """
         # 2) batched code
@@ -632,8 +632,8 @@ class QMCbase(object):
 
         if self.walkers.boson_phiw is not None:
             ortho_walkers = backend.zeros_like(self.walkers.boson_phiw)
-            # for idx in range(self.walkers.boson_phiw.shape[0]):
-            #    ortho_walkers[idx] = backend.linalg.qr(self.walkers.boson_phiw[idx])[0]
+            # for iw in range(self.walkers.boson_phiw.shape[0]):
+            #    ortho_walkers[iw] = backend.linalg.qr(self.walkers.boson_phiw[iw])[0]
             # self.walkers.boson_phiw = ortho_walkers
 
     # renormalization is to be deprecated

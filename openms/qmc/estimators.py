@@ -69,7 +69,22 @@ def get_wfn(weights, psiw):
 
 
 def bosonic_GF(T, W):
-    r"""compute the bosonic green's function"""
+    r"""compute the bosonic green's function
+
+    Parameters
+    ----------
+    T: ndarray
+       Trial WF
+    W: ndarray
+       Walker WF
+
+    Returns
+    -------
+    Gf: ndarray
+       Walker GF
+    Ghalf: ndarray
+       Walker half-rotated GF
+    """
 
     # T shape is nfock
     # W shape is (nwalker, nfock)
@@ -93,6 +108,20 @@ def GF(T, W):
 
     where :math:`T/W` are the matrix associated with the SD
     (trial and walker), respectively :math:`\ket{\Psi_{T/W}}`
+
+    Parameters
+    ----------
+    T: ndarray
+       Trial WF
+    W: ndarray
+       Walker WF
+
+    Returns
+    -------
+    Gf: ndarray
+       Walker GF
+    Ghalf: ndarray
+       Walker half-rotated GF
     """
 
     TW = backend.dot(W.T, T.conj())
@@ -224,6 +253,9 @@ def local_energy_SD_RHF(trial, walkers, enuc = 0.0):
 def ecoul_rltensor_uhf(rltensora, rltensorb, Ghalfa, Ghalfb):
     r"""Compute Coulomb energy
 
+    Parameters
+    ----------
+
     """
     LG = backend.einsum("nqi, zqi->zn", rltensora, Ghalfa)
     LG += backend.einsum("nqi, zqi->zn", rltensorb, Ghalfb)
@@ -305,8 +337,24 @@ def local_eng_boson_2nd(omega, nboson_states, Gb):
 def local_eng_eboson(omega, nboson_states, geb, Gfermions, Gboson):
     r"""
     Gfermions: tuple of Fermionic GFs for up and down spin (if available)
+
+    Parameters
+    ----------
+    omega: 1d array
+        frequencies of bosons
+    nboson_states: 1d array
+        number of Fock state for each bosonic mode
+    geb: ndarray
+        electron-boson coupling matrix
+    Gfermions: ndarray
+        Fermionic GFS
     Gboson: ndarray
-          bosonic GFs
+        bosonic GFs
+
+    Returns
+    -------
+    eg: ndarray
+        electron-boson interacting energy
     """
 
     nmodes = len(omega)

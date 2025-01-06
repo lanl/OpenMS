@@ -222,6 +222,13 @@ class Walkers_so(BaseWalkers):
         # Dictionary to store per-mode DMs
         boson_mode_DM_dict = {}
 
+        """
+        # Construct the bosonic DM using the boson_phiw
+        for iw in range(self.nwalkers):
+            phi_walker = boson_phiw[iw]  # Shape: [nfock]
+            boson_DM[iw] = backend.outer(phi_walker, backend.conj(phi_walker))
+        """
+
         # Compute the density matrix for each mode separately
         start = 0
         for mode_index, mode_size in enumerate(trial.mol.nboson_states):  # Iterate over each mode
@@ -272,6 +279,17 @@ class multiCI_Walkers(Walkers_so):
     def __init__(self, trial, **kwargs):
         super().__init__(trial, **kwargs)
 
+        # create GF for the reference determinants
+        self.G0a = backend.zeros(
+            (self.nwalkers, self.nao, self.nao), dtype=backend.complex128
+        )
+        self.G0b = backend.zeros(
+            (self.nwalkers, self.nao, self.nao), dtype=backend.complex128
+        )
+
+        #
+        self.CIa = backend.zeros((self.nwalkers, trial.nao_cas, trial.nalpha_cas), dtype=backend.complex128)
+        self.CIb = backend.zeros((self.nwalkers, trial.nao_cas, trial.nbeta_cas), dtype=backend.complex128)
 
 
 def make_walkers(trial, walker_options):

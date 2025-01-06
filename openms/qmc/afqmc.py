@@ -620,7 +620,7 @@ if __name__ == "__main__":
     bond = 1.6
     natoms = 2
     atoms = [("H", i * bond, 0, 0) for i in range(natoms)]
-    mol = gto.M(atom=atoms, basis="sto-6g", unit="Bohr", verbose=3)
+    mol = gto.M(atom=atoms, basis="sto6g", unit="Bohr", verbose=3)
 
     num_walkers = 500
     afqmc = AFQMC(

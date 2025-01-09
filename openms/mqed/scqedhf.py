@@ -580,6 +580,13 @@ class RHF(qedhf.RHF):
                              = &
         """
 
+        ### TODO: temporary, create flag in object, default "False"?
+        self.eta_hessian = True
+        step_deta = numpy.zeros_like(self.eta_grad)
+        if self.eta_hessian:
+            step_deta = self.get_eta_hessian(dm_do, g_DO, dm=dm)
+        ###
+
         for imode in range(self.qed.nmodes):
             onebody_deta = numpy.zeros(self.nao)
             twobody_deta = numpy.zeros(self.nao)
@@ -606,6 +613,16 @@ class RHF(qedhf.RHF):
             del fc_derivative, tmp
 
             self.eta_grad[imode] = onebody_deta + twobody_deta
+            if self.eta_hessian:
+                self.eta_grad[imode] = -step_deta[imode] * self.eta_grad[imode]
+
+        return self
+
+
+    def get_eta_hessian(self, dm_do, g_DO, dm=None):
+        r"""Construct eta-eta Hessian matrix for 2nd order eta gradient step."""
+
+
 
         return self
 

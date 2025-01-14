@@ -613,15 +613,16 @@ class RHF(qedhf.RHF):
             self.eta_grad[imode] = onebody_deta + twobody_deta
 
             if self.eta_hessian:
+                time1 = time.time()
                 step_deta2 = self.get_eta_hessian_test(dm_do, imode)
-                step_deta = self.get_eta_hessian(dm_do, imode)
-                step_diff = step_deta - step_deta2
-                print (step_diff)
-                print (numpy.linalg.norm(step_diff))
-                print (numpy.allclose(step_deta2, step_deta))
-                exit()
-                #self.eta_grad[imode] = -numpy.dot(step_deta, self.eta_grad[imode])
+                print (f"FAST TIME = {time.time() - time1}")
 
+                time2 = time.time()
+                step_deta = self.get_eta_hessian(dm_do, imode)
+                print (f"SLOW TIME = {time.time() - time2}")
+                exit()
+
+                #self.eta_grad[imode] = -numpy.dot(step_deta, self.eta_grad[imode])
 
         return self
 

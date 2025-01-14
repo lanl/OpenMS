@@ -343,6 +343,7 @@ class RHF(scqedhf.RHF):
 
         return self
 
+
     def norm_var_params(self):
         var_norm = linalg.norm(self.eta_grad) / numpy.sqrt(self.eta.size)
         var_norm += linalg.norm(self.vlf_grad) / numpy.sqrt(self.vlf_grad.size)

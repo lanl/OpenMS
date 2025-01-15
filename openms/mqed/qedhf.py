@@ -198,6 +198,7 @@ def kernel(
     mf.pre_kernel(locals())
     mf.check_sanity()
 
+    mf.cycles = 0
     cput1 = logger.timer(mf, 'initialize scf', *cput0)
     for cycle in range(mf.max_cycle):
         dm_last = dm
@@ -254,6 +255,7 @@ def kernel(
         if scf_conv:
             break
 
+    mf.cycles = cycle + 1
     if scf_conv and conv_check:
 
         # An extra diagonalization, to remove level shift

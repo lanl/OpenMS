@@ -266,6 +266,7 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
 
     cput1 = logger.timer(mf, 'initialize scf', *cput0)
 
+    mf.cycles = 0
     for cycle in range(mf.max_cycle):
         time0 = time.time()
         dm_last = dm
@@ -341,6 +342,7 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
         if scf_conv:
             break
 
+    mf.cycles = cycle + 1
     if scf_conv and conv_check:
         # An extra diagonalization, to remove level shift
         #fock = mf.get_fock(h1e, s1e, vhf, dm)  # = h1e + vhf

@@ -581,9 +581,9 @@ class RHF(qedhf.RHF):
         """
 
         ### TODO: temporary, create flag in object, default "False"?
-        self.eta_hessian = False
-        self.eta_hessian = True
-        ###
+        self.hessian_step = False
+        #self.hessian_step = True
+        #self.eta_hessian = numpy.zeros((self.qed.nmodes, self.nao, self.nao))
 
         for imode in range(self.qed.nmodes):
             onebody_deta = numpy.zeros(self.nao)
@@ -612,70 +612,14 @@ class RHF(qedhf.RHF):
 
             self.eta_grad[imode] = onebody_deta + twobody_deta
 
-            if self.eta_hessian:
-                time1 = time.time()
-                step_deta2 = self.get_eta_hessian_test(dm_do, imode)
-                print (f"FAST TIME = {time.time() - time1}")
-
-                time2 = time.time()
-                step_deta = self.get_eta_hessian(dm_do, imode)
-                print (f"SLOW TIME = {time.time() - time2}")
-                exit()
-
-                #self.eta_grad[imode] = -numpy.dot(step_deta, self.eta_grad[imode])
+            ### TODO: temporary, may move to better spot? Check grad norm before computing Hessian?
+            if self.hessian_step:
+                self.eta_hessian[imode] = self.get_eta_hessian(dm_do, imode)
 
         return self
 
 
     def get_eta_hessian(self, dm_do, imode):
-        r"""Construct eta-eta Hessian matrix for 2nd order eta gradient step."""
-
-        # Gaussian factors
-        fc_factor = self.FC_factor(self.eta, imode)
-        fc_twobody = self.FC_factor(self.eta, imode, onebody=False)
-
-        # Construct Hessian matrix
-        hessian = numpy.zeros((self.nao, self.nao))
-        two_body = numpy.zeros((self.nao, self.nao, self.nao, self.nao))
-
-        for p in range(self.nao):
-
-            hessian[p, p] = 2.0 * dm_do[imode, p, p] / self.qed.omega[imode]  # Diagonal terms
-
-            for q in range(self.nao):
-
-                one_body = (2.0 / self.qed.omega[imode]**2) * self.h1e_DO[p, q] \
-                           * dm_do[imode, p, q] * fc_factor[p, q] \
-                           * (((self.eta[imode, p] - self.eta[imode, q]) / self.qed.omega[imode] )**2 - 1.0)
-
-                hessian[p, p] += one_body
-                hessian[p, q] -= one_body
-                hessian[p, q] += 2.0 * (dm_do[imode, p, p] * dm_do[imode, q, q] \
-                                         - 0.5 * dm_do[imode, p, q] * dm_do[imode, q, p]) \
-                                         / self.qed.omega[imode]
-
-                for r in range(self.nao):
-                    for s in range(self.nao):
-
-                        two_body[p, r, q, s] = (2.0 / self.qed.omega[imode]**2) * self.eri_DO[p, r, q, s] \
-                                   * (dm_do[imode, p, r] * dm_do[imode, q, s] \
-                                      - 0.5 * dm_do[imode, p, s] * dm_do[imode, q, r]) \
-                                   * fc_twobody[p, r, q, s] \
-                                   * (((self.eta[imode, p] - self.eta[imode, r] \
-                                        + self.eta[imode, q] - self.eta[imode, s]) \
-                                      / self.qed.omega[imode] )**2 - 1.0)
-
-                        hessian[p, p] += two_body[p, r, q, s]
-                        hessian[p, q] += two_body[p, r, q, s]
-                        hessian[p, r] -= two_body[p, r, q, s]
-                        hessian[p, s] -= two_body[p, r, q, s]
-
-        # Invert and return the Hessian
-        hessian_inv = numpy.linalg.inv(hessian)
-        return hessian_inv
-
-
-    def get_eta_hessian_test(self, dm_do, imode):
         r"""Construct eta-eta Hessian matrix for 2nd order eta gradient step."""
 
         # One-body indices
@@ -731,11 +675,10 @@ class RHF(qedhf.RHF):
         hessian += two_body.sum(axis=(1, 3))
         hessian -= two_body.sum(axis=(2, 3))
         hessian -= two_body.sum(axis=(1, 2))
-        del fc_factor, density_mat, eta_diff, two_body
 
         # Invert and return the Hessian
-        hessian_inv = numpy.linalg.inv(hessian)
-        return hessian_inv
+        del fc_factor, density_mat, eta_diff, two_body
+        return numpy.linalg.inv(hessian)
 
 
     # variable gradients, here we only have eta
@@ -993,10 +936,30 @@ class RHF(qedhf.RHF):
 
     def update_var_params(self):
 
-        #print (self.eta)
-        self.eta -= self.precond * self.eta_grad
-        #print (self.eta)
+        #eta1 = self.eta.copy()
+        #print (f"ETA1 =\n{eta1}")
+
+        ## Update to eta w/o Hessian
+        #eta_first = self.eta - (self.precond * self.eta_grad)
+        #print (f"ETA_FIRST =\n{eta_first}")
+
+        if self.hessian_step:
+            eta_step = numpy.einsum("apq, aq-> ap", self.eta_hessian, self.eta_grad)
+            self.eta -= self.precond * eta_step
+        else:
+            self.eta -= self.precond * self.eta_grad
+
+        #eta2 = self.eta.copy()
+        #print (f"ETA2 =\n{eta2}")
         #exit()
+
+        #eta_delta1 = eta_first[0] - eta1[0]
+        #eta_delta2 = eta2[0] - eta1[0]
+
+        #print (f"\nETA_DELTA1 =\n{eta_delta1}")
+        #print (f"\nETA_DELTA2 =\n{eta_delta2}")
+        #exit()
+
         return self
 
 

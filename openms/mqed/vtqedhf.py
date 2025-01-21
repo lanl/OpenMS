@@ -160,7 +160,7 @@ class RHF(scqedhf.RHF):
 
     def gaussian_derivative_sq_vector(self, eta, imode, onebody=True):
         r"""
-        Compute derivative of FC factor with respect to f
+        Compute derivative of FC factor with respect to F (squeezing)
 
         .. math::
 
@@ -176,7 +176,10 @@ class RHF(scqedhf.RHF):
 
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
-        derivative = -numpy.exp(-0.5 * (tmp * diff_eta) ** 2) * (tmp * diff_eta) ** 2
+
+        ph_exp_val = self.photon_exp_val(imode)
+        derivative = -numpy.exp((-0.5 * (tmp * diff_eta) ** 2) * (ph_exp_val + 1)) \
+                     * (((tmp * diff_eta) ** 2) * (ph_exp_val + 1))
 
         if onebody:
             return derivative.reshape(nao, nao)
@@ -204,11 +207,9 @@ class RHF(scqedhf.RHF):
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
 
-        #ph_exp_val = 0.0
-        ph_exp_val = self.testing_ph_exp_val(imode)
-
+        ph_exp_val = self.photon_exp_val(imode)
         derivative = -numpy.exp((-0.5 * (tmp * diff_eta) ** 2) * (ph_exp_val + 1)) \
-                     * (tmp * diff_eta) ** 2
+                     * (((tmp * diff_eta) ** 2) * (ph_exp_val + 1))
 
         # in principle, the couplings_var should be > 0.0
         if self.qed.couplings_var[imode] < -0.05 or self.qed.couplings_var[imode] > 1.05:
@@ -375,6 +376,7 @@ class RHF(scqedhf.RHF):
 
         return variables, gradients
 
+
     def set_var_params(self, params):
         r"""set the additional variaitonal params"""
 
@@ -398,6 +400,7 @@ class RHF(scqedhf.RHF):
             self.qed.squeezed_var = params[fsize :].reshape(
                 self.vsq_grad.shape
             )
+
 
     def set_params(self, params, fock_shape=None):
         r""" get size of the variational parameters
@@ -423,6 +426,7 @@ class RHF(scqedhf.RHF):
                 self.vsq_grad.shape
             )
         return f
+
 
     def make_rdm1_org(self, mo_coeff, mo_occ, nfock=2, **kwargs):
         r"""One-particle density matrix in original AO-Fock representation

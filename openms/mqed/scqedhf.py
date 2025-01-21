@@ -399,6 +399,9 @@ class RHF(qedhf.RHF):
 
         self.precond = 0.1
 
+        # Flag to construct eta-eta Hessian matrix
+        self.second_order_eta_step = False
+
         # Parameters for dipole moment basis set degeneracy # TODO: Check if being used?
         self.dipole_degen_thresh = 1.0e-8
         self.dipole_fock_shift = 1.0e-3
@@ -582,10 +585,8 @@ class RHF(qedhf.RHF):
                              = &
         """
 
-        ### TODO: temporary, create flag in object, default "False"?
-        self.hessian_step = False
-        #self.hessian_step = True
-        #self.eta_hessian = numpy.zeros((self.qed.nmodes, self.nao, self.nao))
+        if self.second_order_eta_step == True:
+            self.eta_hessian = numpy.zeros((self.qed.nmodes, self.nao, self.nao))
 
         for imode in range(self.qed.nmodes):
             onebody_deta = numpy.zeros(self.nao)
@@ -614,8 +615,9 @@ class RHF(qedhf.RHF):
 
             self.eta_grad[imode] = onebody_deta + twobody_deta
 
-            ### TODO: temporary, may move to better spot? Check grad norm before computing Hessian?
-            if self.hessian_step:
+            ### TODO: temporary, may move to better spot?
+            ### TODO: Check grad norm before computing Hessian?
+            if self.second_order_eta_step:
                 self.eta_hessian[imode] = self.get_eta_hessian(dm_do, imode)
 
         return self
@@ -705,15 +707,13 @@ class RHF(qedhf.RHF):
         return eri
 
 
-    def testing_ph_exp_val(self, imode):
+    def photon_exp_val(self, imode):
 
         mdim = self.qed.nboson_states[imode]
         idx = sum(self.qed.nboson_states[:imode])
 
         ci = self.qed.boson_coeff[idx : idx + mdim, idx]
         pdm = numpy.outer(numpy.conj(ci), ci)
-
-        #print (f"PHOTONIC DENSITY MATRIX:\n{pdm}")
 
         ph_exp_val = 2.0 * numpy.arange(mdim)
         return numpy.sum(ph_exp_val * pdm)
@@ -740,10 +740,7 @@ class RHF(qedhf.RHF):
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
 
-        #ph_exp_val = 0.0
-        ph_exp_val = self.testing_ph_exp_val(imode)
-        #print (f"PHOTONIC EXPECTATION VALUE:\n{ph_exp_val}\n")
-
+        ph_exp_val = self.photon_exp_val(imode)
         factor = numpy.exp((-0.5 * (tmp * diff_eta) ** 2) * (ph_exp_val + 1))
 
         if onebody:
@@ -764,12 +761,10 @@ class RHF(qedhf.RHF):
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
 
-        #ph_exp_val = 0.0
-        ph_exp_val = self.testing_ph_exp_val(imode)
-
         # Apply the derivative formula
+        ph_exp_val = self.photon_exp_val(imode)
         derivative = numpy.exp((-0.5 * (tmp * diff_eta) ** 2) * (ph_exp_val + 1)) \
-                     * (tmp ** 2) * diff_eta
+                     * ((tmp ** 2) * diff_eta * (ph_exp_val + 1))
 
         if onebody:
             return derivative.reshape(self.nao, self.nao)
@@ -945,9 +940,9 @@ class RHF(qedhf.RHF):
         #eta_first = self.eta - (self.precond * self.eta_grad)
         #print (f"ETA_FIRST =\n{eta_first}")
 
-        if self.hessian_step:
-            eta_step = numpy.einsum("apq, aq-> ap", self.eta_hessian, self.eta_grad)
-            self.eta -= self.precond * eta_step
+        if self.second_order_eta_step:
+            eta_step = numpy.einsum("apq, aq-> ap", self.eta_hessian, self.precond * self.eta_grad)
+            self.eta -= eta_step
         else:
             self.eta -= self.precond * self.eta_grad
 

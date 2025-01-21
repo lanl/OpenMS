@@ -860,7 +860,7 @@ class Boson(object):
         for a in range(self.nmodes):
             logger.info(self, '------ cavity mode #%s ------', (a + 1))
             logger.info(self, 'nboson_states[%s] = %d', *(a, self.nboson_states[a]))
-            logger.info(self, 'omega[%s] = %.1f', *(a, self.omega[a]))
+            logger.info(self, 'omega[%s] = %.2f', *(a, self.omega[a]))
             logger.info(self, 'vec[%s] = %.3f   %.3f   %.3f', *(a, *self.vec[a]))
             if self.use_cs:
                 logger.info(self, 'coherent_state[%s] = %.10f', *(a, self.z_alpha[a]))

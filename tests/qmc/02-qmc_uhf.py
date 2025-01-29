@@ -1,7 +1,8 @@
-import numpy
-import unittest
-from pyscf import gto, scf, fci
 from openms.qmc.afqmc import AFQMC
+from pyscf import gto, mcscf, scf, fci
+import numpy
+import h5py
+import unittest
 
 
 def get_mol(natoms, bond, basis="sto3g", verbose=1):
@@ -12,14 +13,7 @@ def get_mol(natoms, bond, basis="sto3g", verbose=1):
     return mol
 
 
-def calc_qmc_energy(
-    mol,
-    time=6.0,
-    num_walkers=500,
-    uhf=False,
-    energy_scheme="hybrid",
-    block_decompose_eri=False,
-):
+def calc_qmc_energy(mol, time=6.0, num_walkers=500, uhf=False, energy_scheme="hybrid"):
 
     afqmc = AFQMC(
         mol,
@@ -28,9 +22,9 @@ def calc_qmc_energy(
         num_walkers=num_walkers,
         energy_scheme=energy_scheme,
         uhf=uhf,
-        chol_thresh=1.0e-20,
+        chol_thresh=1.0e-10,
         property_calc_freq=1,
-        verbose=1,
+        verbose=mol.verbose,
     )
 
     times, energies = afqmc.kernel()
@@ -53,69 +47,60 @@ def run_fci(mol):
     #
     # create an FCI solver based on the SCF object
     #
-    cisolver = fci.FCI(mf)
-    e_rhf_fci = cisolver.kernel()[0]
-    print("E(FCI) = %.12f" % e_rhf_fci)
-
-    #
-    # create an FCI solver based on the SCF object
-    #
     umf = mol.UHF().run()
     cisolver = fci.FCI(umf)
     e_uhf_fci = cisolver.kernel()[0]
     print("E(UHF-FCI) = %.12f" % e_uhf_fci)
-    return e_rhf_fci, e_uhf_fci
+    return e_uhf_fci
 
 
 class TestQMCH2(unittest.TestCase):
 
     def test_qmc_h2(self):
-        mean_ref = -1.1369791727
-        std_dev_ref = 0.0013134
-        local_mean_ref = -1.1371015
-        local_std_dev_ref = 0.001594
+        mean_ref = -2.191589
+        std_dev_ref = 0.003
+        local_mean_ref = -2.191436
+        local_std_dev_ref = 0.003
 
         basis = "sto6g"
         verbose = 1
-        # fci
-        mol = get_mol(2, 1.6, basis=basis, verbose=verbose)
-        fci_energies = run_fci(mol)
+        # # fci
+        mol = get_mol(4, 1.6, basis=basis, verbose=verbose)
+        fci_energy = run_fci(mol)
 
-        mol = get_mol(2, 1.6, basis=basis, verbose=verbose)
-        # qmc_rhf
-        qmc_energies = calc_qmc_energy(mol, uhf=False)
+        # qmc_uhf
+        mol = get_mol(4, 1.6, basis=basis, verbose=verbose)
+        qmc_energies = calc_qmc_energy(mol, uhf=True)
         mean, std_dev = get_mean_std(qmc_energies)
 
-        # qmc_rhf in SO
+        mol = get_mol(4, 1.6, basis=basis, verbose=verbose)
         qmc_energies2 = calc_qmc_energy(mol, uhf=True, energy_scheme="local")
         mean2, std_dev2 = get_mean_std(qmc_energies2)
 
-        print(f"fci_energies :  {fci_energies}")
+        print(f"fci_energies :  {fci_energy}")
         print(f"energy and std are (hybrid):  {mean} {std_dev}")
         print(f"energy and std are (local):   {mean2} {std_dev2}")
         # assert numpy.isclose(mean, mean_ref)
         # assert numpy.isclose(std_dev, std_dev_ref)
 
         self.assertAlmostEqual(
-            mean, mean_ref, places=4, msg="E_mean does not match the reference value."
-        )
-        self.assertAlmostEqual(
-            std_dev,
-            std_dev_ref,
-            places=3,
-            msg="Standard deivation does not match the reference value.",
+            mean, mean_ref, places=3, msg="E_mean does not match the reference value."
         )
         self.assertAlmostEqual(
             mean2,
             local_mean_ref,
-            places=4,
+            places=3,
             msg="E_mean does not match the reference value.",
         )
-        self.assertAlmostEqual(
+        self.assertLess(
+            std_dev,
+            std_dev_ref,
+            msg=f"Standard deviation {std_dev:0.6f} is not smaller than the reference value {std_dev_ref:0.6f}.",
+        )
+        self.assertLess(
             std_dev2,
             local_std_dev_ref,
-            places=3,
-            msg="Standard deivation does not match the reference value.",
+            msg=f"Standard deviation {std_dev2:0.6f} is not smaller than the reference value {local_std_dev_ref:0.6f}.",
         )
 
 

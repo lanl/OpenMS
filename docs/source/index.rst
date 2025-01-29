@@ -26,6 +26,7 @@ how to :ref:`installation` the project.
    mqed.rst
    gwf.rst
    qmc.rst
+   nqs.rst
    models.rst
    qdynamics.rst
    spindynamics.rst
@@ -50,6 +51,7 @@ how to :ref:`installation` the project.
     mqed
     gwf
     qmc
+    nqs
     qmd
     solvers
     qcsolvers

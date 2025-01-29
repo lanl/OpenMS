@@ -216,6 +216,71 @@ def get_quadrupole_ao(mol, add_nuc_dipole=True, origin_shift=None):
         return quadrupole_ao
 
 
+# function for getting fci integrals
+
+def transform_ao2mo(A, C):
+    from functools import reduce
+    r"""Transform A in AO in MO or other orthogonal basis using C
+    """
+
+    # assuming the dimension is the same
+    # TODO: consider other situtations
+
+    Amo = reduce(numpy.dot, (C.conj().T, A, C))
+    return Amo
+
+
+def get_integrals4fci(mol, cavity_freq, cavity_mode, lo_method='meta-lowdin'):
+    from pyscf import lo, ao2mo
+    from pyscf import scf
+
+    nmode = len(cavity_freq)
+
+    mol.build(dump_input=False)
+    nao = mol.nao_nr()
+    nelec = mol.nelectron
+
+    qed = Photon(mol, omega=cavity_freq, vec=cavity_mode)
+
+    # ---------------------------------------------
+    # local orbital
+    # C = lo.orth_ao(mol, method=lo_method)
+    overlap = mol.intor("int1e_ovlp")
+    C = lo.orth.lowdin(overlap)
+
+    qed.get_gmatao()
+    gmat = qed.gmat
+    gmat_bilinear = gmat * numpy.sqrt(cavity_freq/2.0)
+    #gmat_bilinear = -gmat * numpy.sqrt(cavity_freq/2.0)
+
+    enuc = mol.energy_nuc()
+    ovlp = scf.hf.get_ovlp(mol)
+    hcore = scf.hf.get_hcore(mol)
+    eri = mol.intor('int2e', aosym='s8')
+    eri = ao2mo.restore(1, eri, nao)
+    dm0 = scf.hf.get_init_guess(mol)
+
+    #
+    # transform into orthogonal basis
+    #
+
+    hcore = transform_ao2mo(hcore, C)
+    ovlp = transform_ao2mo(ovlp, C)
+    eri = ao2mo.kernel(eri, C)
+    Hep = numpy.einsum("Xpq, pm, qn -> Xmn", gmat_bilinear, C, C, optimize=True)
+    SC = ovlp.dot(C)
+    dm0 = transform_ao2mo(dm0, SC)
+
+    # add DSE into eri
+    gmat_lo = numpy.einsum('Xpq, pm, qn -> Xmn', gmat, C, C, optimize=True)
+    hcore += 0.5 * numpy.einsum('Xpq, Xqs -> ps', gmat_lo, gmat_lo)
+    eri   += numpy.einsum('Xpq, Xrs -> pqrs', gmat_lo, gmat_lo)
+
+    return enuc, ovlp, hcore, eri, Hep, dm0
+
+
+
+
 class Boson(object):
     r"""Boson base class.
 
@@ -910,6 +975,28 @@ class Boson(object):
             self.q_lambda_ao = self.get_q_lambda_ao()
 
         return self
+
+
+    def print_summary(self):
+        r"""
+        Summary of bosonic features
+        """
+
+        if self.nmodes > 0:
+            logger.info(self, "\nnumber of %s modes = %d", self.boson_type, self.nmodes)
+            for i in range(self.nmodes):
+                logger.info(self, "Info of mode %d:", i)
+                logger.info(self, "   mode frequencies is:  %f", self.omega[i])
+                logger.info(
+                    self,
+                    "   mode vector is:       %s",
+                    " ".join(f"{self.vec[i,j]:.5f}" for j in range(3)),
+                )
+                logger.info(self, "   number of states is:  %d", self.nboson_states[i])
+                logger.info(self, "   coupling strength is: %f", self.couplings[i])
+                logger.info(
+                    self, "   bilinear coupling is: %f", self.couplings_bilinear[i]
+                )
 
 
     def update_couplings(self):

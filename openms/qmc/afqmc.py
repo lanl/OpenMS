@@ -626,9 +626,10 @@ if __name__ == "__main__":
     afqmc = AFQMC(
         mol,
         dt=0.005,
-        total_time=2.0,
+        total_time=10.0,
         num_walkers=num_walkers,
         taylor_order=6,
+        # energy_scheme="local",
         energy_scheme="hybrid",
         verbose=4,
     )

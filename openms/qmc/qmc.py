@@ -89,48 +89,118 @@ def qr_ortho_batch(phiw):
     return Qmat, log_det
 
 
-def kernel(mc, propagator, trial=None):
+def kernel(mc, propagator=None, trial=None):
     r"""An universal kernel for qmc propagations"""
 
+    mc.dump_flags()
+
+    logger.note(mc, task_title("Entering the main kernel of AFQMC"))
     # prepare propagation
+    logger.info(mc, f"\n Random seed is {mc.random_seed}\n")
     backend.random.seed(mc.random_seed)
-    logger.note(self, task_title(" Entering the main kernel of AFQMC"))
 
     # integrals
     h1e = mc.h1e
     ltensor = mc.ltensor
-    propagator = mc.propagator
-
-    trial = mc.trial if trial_wf is None else trial_wf
+    if propagator is None:
+        propagator = mc.propagator
+    if trial is None:
+        trial = mc.trial
     walkers = mc.walkers
 
+    # setup propagator
     # generalize the propagator build for any typs
     # (fermions, bosons, or fermion-boson mixture).
-    propagator.build(h1e, ltensor, mc.trial, mc.geb)
+    # mc.build_propagator(h1e, eri, ltensor)
+    propagator.build(h1e, ltensor, trial, mc.geb)
+
+    logger.debug(mc, f"Debug: the initial orthogonalise in walker")
+    mc.orthogonalization()
+
+    # initialize property calculations
+    mc.property_stack(walkers, -1)
 
     # start the propagation
     tt = 0.0
     energy_list = []
     time_list = []
     wall_t0 = time.time()
-    while tt <= mc.total_time:
-        dump_result = int(tt / mc.dt) % mc.print_freq == 0
+    logstring = f"{'Step':^8}{'Etot':^17}{'Norm':^17}{'Raw_Etot':^17}{'E1':^17}{'E2':^17}"
+    if isinstance(propagator, PhaselessElecBoson):
+        logstring += f"{'Eb':^17}{'Eg':^17}"
+    logstring += "  Wall_time"
+    logger.info(mc, logstring)
 
-        # step 1: compute bias and GFs
+    # while tt <= mc.total_time:
+    for step in range(mc.nsteps):
+        t0 = time.time()
+        tt = mc.dt * step
+        dump_result = step % mc.print_freq == 0
+        logger.debug(
+            mc, f"\nDebug: -------------- qmc step {step} -----------------"
+        )
 
-        # step 2: compute energies and other properties
+        # step 0): periodic re-orthogonalization
+        # (FIXME: whether put this at the begining or end, in principle, should not matter)
+        if (step + 1) % mc.renorm_freq == 0:
+            wall_t1 = time.time()
+            mc.orthogonalization()
+            logger.debug(mc, f"Debug: orthogonalise at step {step}")
+            mc.wt_ortho += time.time() - wall_t1
 
-        # step 3: propagate walkers
+        # step 1: propagate walkers
+        wall_t1 = time.time()
+        propagator.propagate_walkers(
+            trial, walkers, vbias, ltensor, eshift=mc.eshift, verbose=int(dump_result)
+        )
+        mc.wt_propagator += time.time() - wall_t1
 
-        # step 4: update weights and re-orthogonalize and re-normalize walkers
+        # step 2) weight control
+        wall_t1 = time.time()
+        mc.walkers.weight_control(step)
+        mc.wt_weight_control += time.time() - wall_t1
 
-        # step 5: store intermediate variables (if needed)
-        if dump_result:
+        # step 3): estimate energies and other properties if needed
+        # We store weights, energies, and other properties of each estimator in local
+        # buffer_variables and compute the properties at every print_freq
+        wall_t1 = time.time()
+        mc.property_stack(walkers, step)
+
+        # mc.measurements(walkers, step)
+        if (step + 1) % mc.property_calc_freq == 0:
+            # Compute energies and other observables
+            energies = propagator.local_energy(h1e, ltensor, walkers, trial, enuc=mc.nuc_energy)
+            energy = energies[0] / energies[1]
+
+            # Append time and energy to respective lists
             time_list.append(tt)
             energy_list.append(energy)
-            # and other large data into .h5 file
 
-        tt += self.dt
+            # Log the computed energy and other properties
+            logstring = (
+                f"{step:6d}  {energy:15.7e}  "
+                f"{energies[0]:15.7e}  {energies[1]:15.7e}  "
+                f"{energies[2]:15.7e}  {energies[3]:15.7e}  "
+            )
+            if len(energies) > 4:
+                logstring += f"{energies[4]:15.7e}  {energies[5]:15.7e}  "
+            logstring += f"{time.time() - t0:10.4f}s"
+
+            logger.info(mc, logstring)
+            sys.stdout.flush()
+        mc.wt_observables += time.time() - wall_t1
+
+        # step 5): TODO: code of checkpoint
+        wall_t1 = time.time()
+        # if dump_result:
+        #     mc.save_checkpoint()
+        #     logger.debug(mc, f"local_energy:   {walkers.eloc}")
+        mc.wt_io += time.time() - wall_t1
+
+    #
+    # TODO: code of analysis, post processing, etc.
+    #
+    mc.wt_tot = time.time() - wall_t0
 
     # finalize the propagations
     mc.post_kernel()
@@ -205,6 +275,7 @@ class QMCbase(object):
         self.total_time = total_time
         # FIXME: in the future, we will use nsteps to control the propagation,
         # and deprecate the total_time
+
         self.nsteps = int(total_time / dt)  # nsteps
         # self.nsteps = nsteps  #
         self.propagator = None
@@ -249,14 +320,17 @@ class QMCbase(object):
             "verbose": self.verbose,
             "stdout": self.stdout,
             "num_fake_fields": 0,
-            "quantizaiton": "second",
             "energy_scheme": self.energy_scheme,
             "taylor_order": self.taylor_order,
+            # electron-boson_mixture
+            "decouple_bilinear" : False,
+            "turnoff_bosons" : True,
+            "quantizaiton": "second",
         }
 
         self.walker_options = gwalker.default_walker_options
         tmp_walker_options = kwargs.get("walker_options", None)
-        print("tmp_walker_options = ", tmp_walker_options)
+        # print("tmp_walker_options = ", tmp_walker_options)
         if tmp_walker_options is not None:
             self.walker_options.update(tmp_walker_options)
         if num_walkers is not None:
@@ -348,6 +422,12 @@ class QMCbase(object):
             self,
             task_title(f"Get integrals ... Done! Time used: {time.time()-t0: 7.3f} s"),
         )
+        if self.geb is not None:
+            #trial.init_boson_trial_with_z(self.geb)
+            zalpha = backend.einsum("Xpq, pq->X", self.geb, self.trial.Gf[0])
+            self.trial.initialize_boson_trial_with_z(zalpha, self.mol.nboson_states)
+            logger.debug(self, f"Debug: initial coherent state is  : {zalpha}")
+            logger.debug(self, f"Debug: initial bosonic trial WF is: {self.trial.boson_psi}")
 
         # 3) set up walkers
         t0 = time.time()
@@ -358,9 +438,7 @@ class QMCbase(object):
         # calculate green's function
         ovlp = self.trial.ovlp_with_walkers_gf(self.walkers)
         logger.debug(self, f"Debug: initial trial_walker overlap is\n {ovlp}")
-        logger.note(
-            self, f"Setup walkers ... Done! Time used: {time.time()-t0: 7.3f} s"
-        )
+        logger.note(self, f"Setup walkers ... Done! Time used: {time.time()-t0: 7.3f} s")
 
         # 4) prepare the propagator
         # TODO: may use a dict to switch different propagator
@@ -372,6 +450,7 @@ class QMCbase(object):
                 "\nsystem is a electron-boson coupled system!"
                 + "\nPhaselessElecBoson propagator is to be used!\n",
             )
+            self.propagator_options["nbarefields"] = self.nbarefields
             self.propagator = PhaselessElecBoson(self.dt, **self.propagator_options)
             self.propagator.chol_Xa = self.chol_Xa
         else:
@@ -420,7 +499,7 @@ class QMCbase(object):
 
         # flags of propagators (walkers)
         logger.note(
-            self, f" Propagator is        : {self.propagator.__class__.__name__}"
+            self, f" Propagator is          : {self.propagator.__class__.__name__}"
         )
         self.propagator.dump_flags()
 
@@ -496,13 +575,10 @@ class QMCbase(object):
         # shape of h1e [nspin, nao, nao]
         h1e = backend.array([hcore for _ in range(self.ncomponents)])
         logger.debug(self, f"\nDebug: h1e.shape = {h1e.shape}")
-        logger.debug(
-            self, f"Debug: norm of hcore in OAO/MO = {backend.linalg.norm(h1e[0])}"
-        )
-        logger.debug(
-            self, f"Debug: norm of ltensor in OAO/MO = {backend.linalg.norm(ltensor)}"
-        )
+        logger.debug(self, f"Debug: hcore norm in OAO/MO = {backend.linalg.norm(h1e[0])}")
+        logger.debug(self, f"Debug: chol norm in OAO/MO  = {backend.linalg.norm(ltensor)}")
 
+        self.nbarefields = ltensor.shape[0]
         # with h5py.File("input.h5", "r+") as fa:
         #    fa["h1e"] = h1e
         #    fa["nuc_energy"] = self.nuc_energy
@@ -518,35 +594,78 @@ class QMCbase(object):
 
             # transform into OAO
             chol_eb = backend.einsum(
-                "ik, mkj, jl -> mil", Xmat.T, chol_eb, Xmat, optimize=True
+                "ik, mkj, jl -> mil", Xmat.conj().T, chol_eb, Xmat, optimize=True
             )
+
+            # add DSE contribution to h1e
+            oei_dse = 0.5 * backend.einsum('Xpq, Xqs->ps', chol_eb, chol_eb)
+            h1e += backend.array([oei_dse for _ in range(self.ncomponents)])
 
             # geb is the bilinear coupling term
             tmp = (system.omega * 0.5) ** 0.5
             self.geb = chol_eb * tmp[:, backend.newaxis, backend.newaxis]
 
-            logger.debug(self, f"size of chol before adding DSE: {ltensor.shape[0]}")
+            logger.info(self, f"size of chol before adding DSE: {ltensor.shape[0]}")
+            # DSE-mediated eri
+            if backend.linalg.norm(chol_eb) > 1.0e-10:
+                ltensor = backend.concatenate((ltensor, chol_eb), axis=0)
+                self.nbarefields += chol_eb.shape[0] # add N_v more chols
+
             # add terms due to decoupling of bilinear term
             if self.propagator_options["decouple_bilinear"]:
                 logger.debug(
                     self, f"creating chol due to decomposition of bilinear term"
                 )
+                zalpha = backend.einsum("Xpq, pq->X", self.geb, self.trial.Gf[0])
 
-                # TODO: set A_\alpha and O_\alpha operator as input variables
-                decoup_Afactor = backend.ones(nmodes)
-                decoup_Ofactor =  (system.omega * 0.5) ** 0.5
-                # \sqrt{1-A_\alpha} + \sqrt{A_\alpha}
-                tmp = backend.sqrt(backend.ones(nmodes) - decoup_Afactor) + backend.sqrt(decoup_Afactor)
-                Lga = chol_eb * tmp[:, backend.newaxis, backend.newaxis]
-                for imode in range(nmodes):
-                    if backend.linalg.norm(Lga[imode]) > 1.0e-10:
-                        ltensor = backend.concatenate((ltensor, Lga), axis=0)
+                # TODO: set Afac as input variables as long as
+                # Decompose \sqrt{w/2} (\lambda\cdot D}(a^\dagger_v + a_v) as (A_v * \lambda\cdot D) * (O_v * X_v)
+                # where X_v = a^\dagger_v + a_v
+                # where A_v * O_v = sqrt{w_v/2}
+                decoup_Afac = backend.ones(nmodes)
+                decoup_Ofac = (system.omega * 0.5) ** 0.5 / decoup_Afac
 
-                # (1 + 1j) * \sqrt{\omega} (\lambda\cdot D)
-                self.chol_Xa = backend.sqrt(decoup_Afactor) * decoup_Ofactor  * (1.0 + 1j)
-            else:
-                if backend.linalg.norm(chol_eb) > 1.0e-10:
-                    ltensor = backend.concatenate((ltensor, chol_eb), axis=0)
+                #decoup_Ofac = backend.sqrt(abs(zalpha))
+                #decoup_Afac = (system.omega * 0.5) ** 0.5 / decoup_Ofac
+
+                # Add the chols due to the decomposition of bilinear term:
+                #
+                # 1) Original DSE + terms due tot the decomposition is:
+                #     - 1/2 * (A_v\lambda_v\cdot D)^2 + 1/2 * (A_v\lambda_v\cdot D + O_v * X_v)^2
+                #                            |                              |
+                #           a): \sqrt{1-A_v} chol_eb           b): \sqrt{A_v} * chol_eb
+                #
+                #  i.e., at most 2N_b more tensors will be appended (N_b number of bosonic modes)
+                #
+                # 2) Bosonic part from the decomposition:
+                #   1/2 * (A_v \lambda_v \cdot D + O_v * X_v)^2 - 1/2 * (O_v * X_v)^2
+                #                                     |                     |
+                #                           a)   sqrt{O_v}X_v    b)  j * sqrt{O_v} X_v
+                # factors = [backend.sqrt(backend.ones(nmodes) - decoup_Afac, dtype=complex), backend.sqrt(decoup_Afac)]
+                factors = [(1 + 1j) * decoup_Afac]
+                factors = [-1j*decoup_Afac, decoup_Afac]
+                for factor in factors:
+                    Lga = chol_eb * factor[:, backend.newaxis, backend.newaxis]
+                    for imode in range(nmodes):
+                        if backend.linalg.norm(Lga[imode]) > 1.0e-10:
+                            ltensor = backend.concatenate((ltensor, Lga[imode][backend.newaxis,...]), axis=0)
+
+                # [1, 1j] * Ofac * (a^\dagger_v + a_v)
+                chol_Xa =  decoup_Ofac
+                self.chol_Xa =  backend.array([chol_Xa * (1 + 1j)])
+                self.chol_Xa =  backend.array([chol_Xa, -1j * chol_Xa])
+                logger.debug(self, f"Debug: chol_Xa.shape = {chol_Xa.shape}")
+                logger.debug(self, f"Debug: chol_Xa.shape = {self.chol_Xa.shape}\n")
+                logger.debug(self, f"size of bosonic chol {self.chol_Xa.shape[0]}\n")
+
+            for i in range(ltensor.shape[0]):
+                evals, evecs = scipy.linalg.eigh(ltensor[i])
+                logger.debug(self, f"evals of ltensor[{i}] in OAO: {evals}")
+
+            logger.info(self, f"size of chol after adding DSE:  {ltensor.shape[0]}")
+            logger.debug(self, f"Norm of ltensor (bare):  {backend.linalg.norm(ltensor[:-1])}")
+            logger.debug(self, f"Norm of ltensor (L[0]):  {backend.linalg.norm(ltensor[0])}")
+            logger.debug(self, f"Norm of ltensor (eb):    {backend.linalg.norm(ltensor[-1])}")
 
         self.nfields = ltensor.shape[0]
         return h1e, ltensor
@@ -632,6 +751,9 @@ class QMCbase(object):
 
         if self.walkers.boson_phiw is not None:
             ortho_walkers = backend.zeros_like(self.walkers.boson_phiw)
+            norms = backend.einsum('ij,ij->i', self.walkers.boson_phiw, self.walkers.boson_phiw.conj())
+            norms = backend.sqrt(norms)
+            self.walkers.boson_phiw = self.walkers.boson_phiw / norms[:, None]
             # for iw in range(self.walkers.boson_phiw.shape[0]):
             #    ortho_walkers[iw] = backend.linalg.qr(self.walkers.boson_phiw[iw])[0]
             # self.walkers.boson_phiw = ortho_walkers
@@ -753,7 +875,7 @@ class QMCbase(object):
         self.property_buffer += backend.array(tmp)
 
         # logger.debug(self, f"Debug: updated buffer shape is {self.property_buffer.shape}")
-        logger.debug(self, f"Debug: updated buffer is {self.property_buffer}")
+        # logger.debug(self, f"Debug: updated buffer is {self.property_buffer}")
 
         # Perform periodic property reduction and normalization
         if (step + 1) % self.property_calc_freq == 0:
@@ -814,7 +936,7 @@ class QMCbase(object):
 
         # setup propagator
         # self.build_propagator(h1e, eri, ltensor)
-        propagator.build(h1e, ltensor, self.trial, self.geb)
+        propagator.build(h1e, ltensor, trial, self.geb)
 
         logger.debug(self, f"Debug: the initial orthogonalise in walker")
         self.orthogonalization()
@@ -827,9 +949,11 @@ class QMCbase(object):
         energy_list = []
         time_list = []
         wall_t0 = time.time()
-        logger.info( self,
-            f"{'Step':^8}{'Etot':^17}{'Norm':^17}{'Raw_Etot':^17}{'E1':^17}{'E2':^17}  Wall_time"
-        )
+        logstring = f"{'Step':^8}{'Etot':^17}{'Norm':^17}{'Raw_Etot':^17}{'E1':^17}{'E2':^17}"
+        if isinstance(propagator, PhaselessElecBoson):
+            logstring += f"{'Eb':^17}{'Eg':^17}"
+        logstring += "  Wall_time"
+        logger.info(self, logstring)
 
         # while tt <= self.total_time:
         for step in range(self.nsteps):
@@ -839,6 +963,7 @@ class QMCbase(object):
             logger.debug(
                 self, f"\nDebug: -------------- qmc step {step} -----------------"
             )
+
             # step 3): periodic re-orthogonalization
             # (FIXME: whether put this at the begining or end, in principle, should not matter)
             if (step + 1) % self.renorm_freq == 0:
@@ -880,8 +1005,6 @@ class QMCbase(object):
             # moved phaseless approximation to propagation
             # since it is associated with propagation type
             # self.update_weight(overlap, cfb, cmf)
-            if dump_result:
-                logger.debug(self, f"local_energy:   {walkers.eloc}")
 
             # step 4): estimate energies and other properties if needed
             # We store weights, energies, and other properties of each estimator in local
@@ -900,30 +1023,39 @@ class QMCbase(object):
                 energy_list.append(energy)
 
                 # Log the computed energy and other properties
-                logger.info(
-                    self,
+                logstring = (
                     f"{step:6d}  {energy:15.7e}  "
                     f"{energies[0]:15.7e}  {energies[1]:15.7e}  "
                     f"{energies[2]:15.7e}  {energies[3]:15.7e}  "
-                    f"{time.time() - t0:10.4f}s"
                 )
+                if len(energies) > 4:
+                    logstring += f"{energies[4]:15.7e}  {energies[5]:15.7e}  "
+                logstring += f"{time.time() - t0:10.4f}s"
+
+                logger.info(self, logstring)
+                sys.stdout.flush()
             self.wt_observables += time.time() - wall_t1
 
             # step 5): TODO: code of checkpoint
             wall_t1 = time.time()
             # if dump_result:
             #     self.save_checkpoint()
+            #     logger.debug(self, f"local_energy:   {walkers.eloc}")
             self.wt_io += time.time() - wall_t1
 
+        #
         # TODO: code of analysis, post processing, etc.
+        #
         self.wt_tot = time.time() - wall_t0
 
+        # finalize the propagations
         self.post_kernel()
         return time_list, energy_list
 
     def _finalize(self):
         """Hook for dumping results and clearing up the object."""
 
+        # TODO: print summary & post-processing data, etc.
 
 
         logger.note(self, task_title("Wall time analysis"))

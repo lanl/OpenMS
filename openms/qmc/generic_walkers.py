@@ -47,8 +47,6 @@ def initialize_walkers(trial):
     # shape: Nw x N_NO x N_AO for SD
     init_walker = trial.psi.copy()
 
-    # 2) TODO: multiSD
-
     return init_walker
 
 
@@ -65,6 +63,9 @@ class BaseWalkers(object):
             Number of walkers
         """
 
+        #trial = kwargs.get("trial", None)
+        #if trial is None:
+        #    raise Exception("Trial WF must be specified in walker")
         self.verbose = trial.verbose
         self.stdout = trial.stdout
         self.nalpha = trial.nalpha
@@ -166,10 +167,13 @@ class Walkers_so(BaseWalkers):
 
     def __init__(self, trial, **kwargs):
 
+        #trial = kwargs.get("trial", None)
+        #if trial is None:
+        #    raise Exception("Trial WF must be specified in walker")
 
         super().__init__(trial, **kwargs)
 
-        self.nao = trial.psi.shape[-2]
+        self.nao = trial.nao
         # logger.debug(self, f"Debug: nao in walkers = {self.nao}")
 
         # 1) create walkers
@@ -266,11 +270,17 @@ class Walkers_so(BaseWalkers):
         # matrix representation of Q_b = b^\dag_a + b_a: [nfock, nfock]
         # Q_{a, nm} = <m| b^\dag_a + b_a|n>
         Qalpha = backend.zeros(trial.mol.nmodes)
+        sum_boson_DM = {}
+        for imode in range(trial.mol.nmodes):
+            sum_boson_DM[imode] = backend.einsum("z, znm->nm", self.weights, boson_mode_DM[imode]) / backend.sum(self.weights)
+
         for mode_index, mdim in enumerate(trial.mol.nboson_states):
             Qmat = backend.diag(backend.sqrt(backend.arange(1, mdim)), k = 1) \
                    + backend.diag(backend.sqrt(backend.arange(1, mdim)), k = -1)
-            Qalpha[mode_index] = backend.sum(Qmat * boson_mode_DM[mode_index])
+            Qalpha[mode_index] = backend.sum(Qmat * sum_boson_DM[mode_index])
         # Tr[rho_{a, nm} * Q_{a, nm}]
+        logger.debug(self, f"Debug: Updated Qalpha = {Qalpha}")
+
         return Qalpha
 
 
@@ -280,10 +290,10 @@ class multiCI_Walkers(Walkers_so):
         super().__init__(trial, **kwargs)
 
         # create GF for the reference determinants
-        self.G0a = backend.zeros(
+        self.Ga = backend.zeros(
             (self.nwalkers, self.nao, self.nao), dtype=backend.complex128
         )
-        self.G0b = backend.zeros(
+        self.Gb = backend.zeros(
             (self.nwalkers, self.nao, self.nao), dtype=backend.complex128
         )
 

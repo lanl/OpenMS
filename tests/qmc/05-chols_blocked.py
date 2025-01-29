@@ -1,11 +1,10 @@
 import numpy
 import scipy
 import time
-
 from pyscf import gto
 from openms.qmc import tools
-
 import unittest
+from openms.qmc.afqmc import AFQMC
 
 def get_mol(basis="631g", verbose=1):
 
@@ -23,8 +22,6 @@ def get_mol(basis="631g", verbose=1):
     mol = gto.M(
         atom = atom,
         basis=basis,
-        #basis="sto3g",
-        #basis="cc-pvdz",
         unit="Angstrom",
         symmetry=True,
         verbose=verbose,
@@ -33,7 +30,7 @@ def get_mol(basis="631g", verbose=1):
 
 def test_cholesky_errors(num_steps=6):
 
-    mol = get_mol(basis="sto3g", verbose=3)
+    mol = get_mol(basis="sto3g", verbose=1)
 
     threshold0 = 1.e-4
     eri = mol.intor('int2e_sph', aosym='s1')
@@ -58,18 +55,10 @@ def test_cholesky_errors(num_steps=6):
         t2 = time.time() - t2
 
         # Compute errors
-        # eri_block = numpy.einsum("xp, xq->pq", ltensor1, ltensor1)
-        # eri_full = numpy.einsum("xp, xq->pq", ltensor2, ltensor2)
-        # err_block = numpy.linalg.norm(eri_block - eri_2d)
-        # err_full = numpy.linalg.norm(eri_full - eri_2d)
-
         eri_block = numpy.einsum("xpq, xrs->pqrs", ltensor1, ltensor1)
         eri_full = numpy.einsum("xpq, xrs->pqrs", ltensor2, ltensor2)
         err_block = numpy.linalg.norm(eri_block - eri)
         err_full = numpy.linalg.norm(eri_full - eri)
-
-        # print("nao =  ", nao)
-        # print("wall time comparison:", t1, t2)
 
         results.append([
             threshold,
@@ -89,7 +78,7 @@ def test_chols_oao():
     from pyscf import ao2mo
 
     threshold = 1.e-7
-    mol = get_mol(basis="sto3g", verbose=3)
+    mol = get_mol(basis="sto3g", verbose=1)
 
     overlap = mol.intor("int1e_ovlp")
     Xmat = lo.orth.lowdin(overlap)
@@ -113,9 +102,24 @@ def test_chols_oao():
     eri_block = numpy.einsum("xpq, xrs->pqrs", ltensor1, ltensor1)
 
     # check if the two eri close
+    error = numpy.linalg.norm(eri - eri_block)
+    print(f"Error of cholesky decomposition is : {error}")
     numpy.testing.assert_almost_equal(eri, eri_block, decimal=4, err_msg="ERI do not match the reference value.")
 
 
+
+class TestQMC_Chols(unittest.TestCase):
+
+    def test_qmc_truncated_chols(self):
+        #TODO: QMC vs different truncation threshold
+        test_cholesky_errors()
+
+    def test_chols_oao(self):
+
+        test_chols_oao()
+
+
+
 if __name__ == '__main__':
-    test_chols_oao()
-    #test_cholesky_errors(num_steps=7)
+    # test_cholesky_errors(num_steps=7)
+    unittest.main()

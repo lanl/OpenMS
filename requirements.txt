@@ -2,8 +2,7 @@ pyscf
 h5py
 numpy
 scipy
+matplotlib
 sphinx
 sphinx-rtd-theme
 sphinxcontrib-bibtex
-
-

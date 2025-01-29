@@ -18,4 +18,4 @@ Quantum Monte Carlo (QMC)
    qmc_propagator
    qmc_estimator
    qmc_tools
-
+   vmc

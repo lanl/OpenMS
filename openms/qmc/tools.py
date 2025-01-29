@@ -203,6 +203,10 @@ def chols_blocked(mol, thresh=1.e-6, max_chol_fac=15):
         nu = numpy.argmax(numpy.abs(delta))
         delta_max = numpy.abs(delta[nu])
 
+        # shls_slice computes shells of integrals as determined by the angular
+        # momentum of the basis function and the number of contraction
+        # coefficients.
+
         # Search for AO index within this shell indexing scheme.
         j, l = divmod(nu, nao)
         sj, sl = _find_shell(indices4bas, j, l)

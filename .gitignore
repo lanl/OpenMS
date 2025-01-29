@@ -1,4 +1,5 @@
 # Byte-compiled / optimized / DLL files
+__pycache__/
 *.py[cod]
 
 # C extensions
@@ -29,9 +30,22 @@ curr*
 *.png
 *.i
 
+# sample file
+*sample*py
+
 # output files
 *.chk
 
+tests/
+
+
+# python
+*py*old*
+
+# cmake
+CMakeLists.*old
+CMakeLists.*2
+CMakeLists.txt_*
 
 oldcodes/
 docs/source/generated
@@ -58,6 +72,7 @@ var/
 *_wrap.c
 *.sh
 *deps/
+*old*/
 *vars*
 *notes*
 
@@ -77,6 +92,8 @@ epsilon.y
 epsilon.z
 Real_Space_Param.dat
 source.dat
+*.sas*
+*.inp
 
 # Local log files
 *~

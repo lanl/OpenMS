@@ -32,3 +32,13 @@ A collection of QMC solvers for electron-boson interactions.
 # p, q, r, s: atomic/spin orbital (either AO or OAO)
 # n: index for cholesky
 # z: index for walker
+
+# TODO list:
+# 1) make the TrialWF classes independent of mf object, only need to pass the mo_coefficients to
+#    construct the trial WF.
+# 2) MultiSD trial
+# 3) remove the dependence on the mol/boson object, make it easier to overwrite the integrals.
+#    basically, we only need the integrals (or Hamiltonians) for the propagation.
+#    Removing the dependence on the mol/boson object will make it easier to incoporate any system, like many molecules
+# 3) QMC for interacting bosons
+# 4) Free-projection QMC.

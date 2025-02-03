@@ -229,18 +229,29 @@ def local_eng_eb_1st(h1e, eri, gmat, mass, freq, Gf, Q, laplacian, spin_fac=0.5)
 # bosonic energy estimators
 # -----------------------------
 
+def e_rh1e_Ghalf(rh1e, Ghalf):
+    r"""compute one body energy using rotated_h1e and Ghalf
+    """
+    if False:
+        e1 = backend.einsum("qi, zqi->z", rh1e, Ghalf)
+    else:
+        nwalkers = Ghalf.shape[0]
+        tmp = Ghalf.reshape((nwalkers, -1))
+        e1 = backend.dot(tmp, rh1e.ravel())
+    return e1
+
 
 def local_energy_SD_RHF(trial, walkers, enuc = 0.0):
     r"""Compute local energy with half-rotated integrals
     """
     # Ghalfa/b: [nwalkers, nao, na/nb]
     # rh1a/b: [nao, na/nb]
-    e1 = 2.0 * backend.einsum("qi, zqi->z", trial.rh1a, walkers.Ghalfa)
+
+    e1 = 2.0 * e_rh1e_Ghalf(trial.rh1a, walkers.Ghalfa)
     e1 += enuc
 
     # coulomb energy
-    LG = backend.einsum("nqi, zqi->zn", trial.rltensora, walkers.Ghalfa)
-    ecoul =  2.0 * backend.einsum("zn, zn->z", LG, LG)
+    ecoul = 4.0 * ecoul_rltensor_uhf(trial.rltensora, walkers.Ghalfa)
 
     # exchange
     exx = 2.0 * exx_rltensor_Ghalf(trial.rltensora, walkers.Ghalfa)
@@ -250,17 +261,32 @@ def local_energy_SD_RHF(trial, walkers, enuc = 0.0):
     return e1, e2
 
 
-def ecoul_rltensor_uhf(rltensora, rltensorb, Ghalfa, Ghalfb):
+def ecoul_rltensor_uhf(rltensora, Ghalfa, rltensorb=None, Ghalfb=None):
     r"""Compute Coulomb energy
 
     Parameters
     ----------
 
     """
-    LG = backend.einsum("nqi, zqi->zn", rltensora, Ghalfa)
-    LG += backend.einsum("nqi, zqi->zn", rltensorb, Ghalfb)
 
-    return 0.5 * backend.einsum("zn, zn->z", LG, LG)
+    if False:
+        # einsum code
+        LG = backend.einsum("nqi, zqi->zn", rltensora, Ghalfa)
+        if Ghalfb is not None:
+            LG += backend.einsum("nqi, zqi->zn", rltensorb, Ghalfb)
+        ecoul = 0.5 * backend.einsum("zn, zn->z", LG, LG)
+    else:
+        nwalkers = Ghalfa.shape[0]
+        nchol = rltensora.shape[0]
+
+        tmpa = Ghalfa.reshape((nwalkers, -1))
+        LG = backend.dot(tmpa, rltensora.reshape((nchol, -1)).T)
+        if Ghalfb is not None:
+            tmpb = Ghalfb.reshape((nwalkers, -1))
+            LG += backend.dot(tmpb, rltensorb.reshape((nchol, -1)).T)
+        # (nwalkers, nchol)
+        ecoul = 0.5 * backend.sum(LG * LG, axis=1)
+    return ecoul
 
 
 def exx_rltensor_Ghalf(rltensor, Ghalf):
@@ -287,13 +313,22 @@ def exx_rltensor_Ghalf(rltensor, Ghalf):
 
 
 
-    t0 = time.time()
-    LG = backend.einsum('nqi, zqj->znij', rltensor, Ghalf)
-    t2 = time.time() - t0
-    # print(f"Debug: compare wall time {t1} vs {t2}")
-
-    # Compute exchange contribution
-    exx = 0.5 * backend.einsum('znij, znji->z', LG, LG)
+    if False:
+        t0 = time.time()
+        LG = backend.einsum('nqi, zqj->znij', rltensor, Ghalf)
+        t2 = time.time() - t0
+        # print(f"Debug: compare wall time {t1} vs {t2}")
+        # Compute exchange contribution
+        exx = 0.5 * backend.einsum('znij, znji->z', LG, LG)
+    else:
+        nwalkers = Ghalf.shape[0]
+        nchol = rltensor.shape[0]
+        exx = backend.zeros(nwalkers, dtype=backend.complex128)
+        for i in range(nwalkers):
+            for l in range(nchol):
+                LG = backend.dot(rltensor[l].T, Ghalf[i]) # ij
+                exx[i] += backend.dot(LG.ravel(), LG.T.ravel())
+        exx *= 0.5
 
     return exx
 
@@ -303,12 +338,15 @@ def local_energy_SD_UHF(trial, walkers, enuc = 0.0):
     """
     # Ghalfa/b: [nwalkers, nao, na/nb]
     # rh1a/b: [nao, na/nb]
-    e1 = backend.einsum("qi, zqi->z", trial.rh1a, walkers.Ghalfa)
-    e1 += backend.einsum("qi, zqi->z", trial.rh1b, walkers.Ghalfb)
+
+    e1 = e_rh1e_Ghalf(trial.rh1a, walkers.Ghalfa)
+    e1 += e_rh1e_Ghalf(trial.rh1b, walkers.Ghalfb)
     e1 += enuc
 
     # coulomb energy
-    ecoul = ecoul_rltensor_uhf(trial.rltensora, trial.rltensorb, walkers.Ghalfa, walkers.Ghalfb)
+    ecoul = ecoul_rltensor_uhf(trial.rltensora, walkers.Ghalfa, trial.rltensorb, walkers.Ghalfb)
+
+    # exchange
     exx = exx_rltensor_Ghalf(trial.rltensora, walkers.Ghalfa)
     exx += exx_rltensor_Ghalf(trial.rltensorb, walkers.Ghalfb)
 

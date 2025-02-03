@@ -477,6 +477,7 @@ class Boson(object):
                 self.nboson_states = nboson_states
             else:
                 self.nboson_states = [nboson_states for i in range(self.nmodes)]
+        self.boson_freq = omega # eventually we will use boson_freq to replace omega
 
         # Molecular coupling strengths
         self.gfac = None

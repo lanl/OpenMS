@@ -125,9 +125,9 @@ def kernel(mc, propagator=None, trial=None):
     energy_list = []
     time_list = []
     wall_t0 = time.time()
-    logstring = f"{'Step':^8}{'Etot':^17}{'Norm':^17}{'Raw_Etot':^17}{'E1':^17}{'E2':^17}"
+    logstring = f"{'Step':^8}{'Etot':^16}{'Raw_Etot':^16}{'Norm':^14}{'E1':^16}{'E2':^16}"
     if isinstance(propagator, PhaselessElecBoson):
-        logstring += f"{'Eb':^17}{'Eg':^17}"
+        logstring += f"{'Eb':^16}{'Eg':^16}"
     logstring += "  Wall_time"
     logger.info(mc, logstring)
 
@@ -178,12 +178,13 @@ def kernel(mc, propagator=None, trial=None):
 
             # Log the computed energy and other properties
             logstring = (
-                f"{step:6d}  {energy:15.7e}  "
-                f"{energies[0]:15.7e}  {energies[1]:15.7e}  "
-                f"{energies[2]:15.7e}  {energies[3]:15.7e}  "
+                f"Step: {step:5d}  {energy:14.7e}  "
+                f"{energies[0]:14.7e}  {energies[1]:9.5e}  "
+                f"{backend.sum(walkers.weights_org):14.7e}  "
+                f"{energies[2]:14.7e}  {energies[3]:14.7e}  "
             )
             if len(energies) > 4:
-                logstring += f"{energies[4]:15.7e}  {energies[5]:15.7e}  "
+                logstring += f"{energies[4]:14.7e}  {energies[5]:14.7e}  "
             logstring += f"{time.time() - t0:10.4f}s"
 
             logger.info(mc, logstring)
@@ -270,6 +271,27 @@ class QMCbase(object):
         self.block_decompose_eri = kwargs.get("block_decompose_eri", False)
         self.chol_thresh = kwargs.get("chol_thresh", 1.0e-6)
 
+        # check whether it is a eb-AFQMC case
+        # Two ways of turning on fermion-boson interactions
+        # 1) pass a boson object
+        # 2) pass a bare molecule object but with fermion-boson coupling matrix
+
+        self.geb = None  # TODO: optimize the handling of geb
+        self.fbinteraction = False # whether this is fermion-boson mixture
+        if not isinstance(self.system, Boson): # only check boson_freq is system itself not a boson object
+            boson_freq = kwargs.get("boson_freq", None)
+            if boson_freq is not None:
+                self.system.boson_freq = boson_freq
+                self.system.nmodes = len(self.system.boson_freq)
+                nphoton = kwargs.get("nphoton", 3)
+                self.system.gmat = kwargs.get("gmat", None)
+                self.system.nboson_states =  [nphoton for i in range(self.system.nmodes)]
+                # print("boson_freq = ", self.system.boson_freq.shape, self.system.boson_freq)
+                # print("gmat = ", self.system.gmat)
+                self.fbinteraction = True
+        else:
+            self.fbinteraction = True
+
         # propagator params
         self.dt = dt
         self.total_time = total_time
@@ -312,7 +334,6 @@ class QMCbase(object):
         self.pop_control_freq = 5  # weight control frequency
 
         # other variables for Hamiltonian
-        self.geb = None  # TODO: optimize the handling of geb
         self.chol_Xa = None  # TODO: optimize the handling of this term
 
         # update propagator options
@@ -444,7 +465,7 @@ class QMCbase(object):
         # TODO: may use a dict to switch different propagator
         t0 = time.time()
         logger.note(self, task_title("Prepare propagator"))
-        if isinstance(self.system, Boson):
+        if self.fbinteraction:
             logger.note(
                 self,
                 "\nsystem is a electron-boson coupled system!"
@@ -472,6 +493,7 @@ class QMCbase(object):
                 f"Prepare propagator ... Done! Time used: {time.time()-t0: 7.3f} s"
             ),
         )
+
 
     @abstractmethod
     def cast2backend(self):
@@ -584,7 +606,7 @@ class QMCbase(object):
         #    fa["nuc_energy"] = self.nuc_energy
         #    fa["cholesky"] = ltensor
 
-        if isinstance(self.system, Boson):
+        if self.fbinteraction: # isinstance(self.system, Boson):
             system = self.system
             # Add boson-mediated oei and eri:
             # shape [nm, nao, nao]
@@ -602,7 +624,7 @@ class QMCbase(object):
             h1e += backend.array([oei_dse for _ in range(self.ncomponents)])
 
             # geb is the bilinear coupling term
-            tmp = (system.omega * 0.5) ** 0.5
+            tmp = (system.boson_freq * 0.5) ** 0.5
             self.geb = chol_eb * tmp[:, backend.newaxis, backend.newaxis]
 
             logger.info(self, f"size of chol before adding DSE: {ltensor.shape[0]}")
@@ -623,10 +645,7 @@ class QMCbase(object):
                 # where X_v = a^\dagger_v + a_v
                 # where A_v * O_v = sqrt{w_v/2}
                 decoup_Afac = backend.ones(nmodes)
-                decoup_Ofac = (system.omega * 0.5) ** 0.5 / decoup_Afac
-
-                #decoup_Ofac = backend.sqrt(abs(zalpha))
-                #decoup_Afac = (system.omega * 0.5) ** 0.5 / decoup_Ofac
+                decoup_Ofac = (system.boson_freq * 0.5) ** 0.5 / decoup_Afac
 
                 # Add the chols due to the decomposition of bilinear term:
                 #
@@ -949,9 +968,9 @@ class QMCbase(object):
         energy_list = []
         time_list = []
         wall_t0 = time.time()
-        logstring = f"{'Step':^8}{'Etot':^17}{'Norm':^17}{'Raw_Etot':^17}{'E1':^17}{'E2':^17}"
+        logstring = f"{'Step':^10}{'Etot':^16}{'Raw_Etot':^16}{'Norm':^14}{'Raw_Norm':^14}{'E1':^16}{'E2':^16}"
         if isinstance(propagator, PhaselessElecBoson):
-            logstring += f"{'Eb':^17}{'Eg':^17}"
+            logstring += f"{'Eb':^16}{'Eg':^16}"
         logstring += "  Wall_time"
         logger.info(self, logstring)
 
@@ -1024,9 +1043,10 @@ class QMCbase(object):
 
                 # Log the computed energy and other properties
                 logstring = (
-                    f"{step:6d}  {energy:15.7e}  "
-                    f"{energies[0]:15.7e}  {energies[1]:15.7e}  "
-                    f"{energies[2]:15.7e}  {energies[3]:15.7e}  "
+                    f"Step {step:5d}  {energy:14.7e}  "
+                    f"{energies[0]:14.7e}  {energies[1]:9.5e}  "
+                    f"{backend.sum(walkers.weights_org):14.7e}  "
+                    f"{energies[2]:14.7e}  {energies[3]:14.7e}  "
                 )
                 if len(energies) > 4:
                     logstring += f"{energies[4]:15.7e}  {energies[5]:15.7e}  "

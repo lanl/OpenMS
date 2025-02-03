@@ -385,6 +385,11 @@ def calc_ovlp_iexc(exc_order, Gf, cre_idx, anh_idx, occ_map, nao_frozen):
     nwalkers = Gf.shape[0]
     numdets = len(cre_idx[exc_order])
 
+    ovlp = None
+    if numdets > 0:
+        ovlp = backend.zeros((nwalkers, numdets), dtype=backend.complex128)
+        ovlp_tmp = backend.zeros((exc_order, exc_order), dtype=backend.complex128)
+
     pass
 
 

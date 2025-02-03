@@ -1,19 +1,18 @@
-from openms.qmc.afqmc import AFQMC
-from pyscf import gto, mcscf, scf, fci
 import numpy
-import h5py
 import unittest
+from pyscf import gto, scf, fci
+from openms.qmc.afqmc import AFQMC
+from molecules import get_mol
 
 
-def get_mol(natoms, bond, basis="sto3g", verbose=1):
-
-    atoms = [("H", i * bond, 0, 0) for i in range(natoms)]
-    mol = gto.M(atom=atoms, basis=basis, unit="Bohr", verbose=verbose)
-
-    return mol
-
-
-def calc_qmc_energy(mol, time=6.0, num_walkers=500, uhf=False, energy_scheme="hybrid"):
+def calc_qmc_energy(
+    mol,
+    time=6.0,
+    num_walkers=500,
+    uhf=False,
+    energy_scheme="hybrid",
+    block_decompose_eri=False,
+):
 
     afqmc = AFQMC(
         mol,
@@ -62,18 +61,19 @@ class TestQMCH2(unittest.TestCase):
         local_mean_ref = -2.191436
         local_std_dev_ref = 0.003
 
+        bond = 1.6 * 0.5291772
         basis = "sto6g"
         verbose = 1
         # # fci
-        mol = get_mol(4, 1.6, basis=basis, verbose=verbose)
+        mol = get_mol(4, bond, basis=basis, verbose=verbose, name="Hchain")
         fci_energy = run_fci(mol)
 
         # qmc_uhf
-        mol = get_mol(4, 1.6, basis=basis, verbose=verbose)
+        mol = get_mol(4, bond, basis=basis, verbose=verbose, name="Hchain")
         qmc_energies = calc_qmc_energy(mol, uhf=True)
         mean, std_dev = get_mean_std(qmc_energies)
 
-        mol = get_mol(4, 1.6, basis=basis, verbose=verbose)
+        mol = get_mol(4, bond, basis=basis, verbose=verbose, name="Hchain")
         qmc_energies2 = calc_qmc_energy(mol, uhf=True, energy_scheme="local")
         mean2, std_dev2 = get_mean_std(qmc_energies2)
 

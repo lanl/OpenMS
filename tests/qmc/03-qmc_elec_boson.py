@@ -5,30 +5,7 @@ from pyscf import gto, scf
 from openms.mqed import qedhf
 from openms.qmc.afqmc import AFQMC
 from utilities.analysis import get_mean_std
-
-
-def get_mol(bond=2.0, basis="sto6g"):
-    atom = f"Li 0.0    0.0     0.0; H 0.0  0.0 {bond}"
-    mol = gto.M(
-        atom=atom,
-        basis=basis,
-        # basis="cc-pvdz",
-        unit="Angstrom",
-        symmetry=True,
-        verbose=3,
-    )
-    return mol
-
-
-def get_cavity(nmode, gfac, omega=0.5):
-    r"""Return cavity properties"""
-
-    cavity_freq = numpy.zeros(nmode)
-    cavity_mode = numpy.zeros((nmode, 3))
-    cavity_freq[0] = omega
-    cavity_mode[0, :] = gfac * numpy.asarray([0, 1, 0])
-    return cavity_freq, cavity_mode
-
+from molecules import get_mol, get_cavity
 
 def run_fci(mol, cavity_freq, cavity_mode, nphoton=2):
     from openms.mqed import qedfci as fci

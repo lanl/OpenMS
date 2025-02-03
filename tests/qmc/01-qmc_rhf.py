@@ -2,14 +2,7 @@ import numpy
 import unittest
 from pyscf import gto, scf, fci
 from openms.qmc.afqmc import AFQMC
-
-
-def get_mol(natoms, bond, basis="sto3g", verbose=1):
-
-    atoms = [("H", i * bond, 0, 0) for i in range(natoms)]
-    mol = gto.M(atom=atoms, basis=basis, unit="Bohr", verbose=verbose)
-
-    return mol
+from molecules import get_mol
 
 
 def calc_qmc_energy(
@@ -30,7 +23,7 @@ def calc_qmc_energy(
         uhf=uhf,
         chol_thresh=1.0e-20,
         property_calc_freq=1,
-        verbose=1,
+        verbose=mol.verbose,
     )
 
     times, energies = afqmc.kernel()
@@ -75,13 +68,14 @@ class TestQMCH2(unittest.TestCase):
         local_mean_ref = -1.1371015
         local_std_dev_ref = 0.001594
 
+        bond = 1.6 * 0.5291772
         basis = "sto6g"
         verbose = 1
         # fci
-        mol = get_mol(2, 1.6, basis=basis, verbose=verbose)
+        mol = get_mol(2, bond, basis=basis, verbose=verbose, name="Hchain")
         fci_energies = run_fci(mol)
 
-        mol = get_mol(2, 1.6, basis=basis, verbose=verbose)
+        mol = get_mol(2, bond, basis=basis, verbose=verbose, name="Hchain")
         # qmc_rhf
         qmc_energies = calc_qmc_energy(mol, uhf=False)
         mean, std_dev = get_mean_std(qmc_energies)

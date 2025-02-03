@@ -57,6 +57,18 @@ def boson_adag_plus_a(nmodes, boson_states, za):
 
     return Hb
 
+def propagate_onebody(op, phi):
+    r""" Base function for propagating onebody operator
+    """
+
+    # The loop is faster than the einsum
+    if False: # TODO: determine which method to contract the tensor
+        phi = backend.einsum("pq, zqr->zpr", op, phi)
+    else:
+        for iw in range(phi.shape[0]):
+            phi[iw] = backend.dot(op, phi[iw])
+    return phi
+
 
 def propagate_effective_oei(phi, system, bt2, H1diag=False):
     r"""Propagate by the kinetic term by direct matrix multiplication.
@@ -100,10 +112,18 @@ def propagate_exp_op(phiw, op, order):
     walker WF.
     """
 
-    temp = phiw.copy()
-    for i in range(order):
-        temp = backend.einsum("zpq, zqr->zpr", op, temp) / (i + 1.0)
-        phiw += temp
+    if False:
+        temp = phiw.copy()
+        for i in range(order):
+            temp = backend.einsum("zpq, zqr->zpr", op, temp) / (i + 1.0)
+            phiw += temp
+    else:
+        for iw in range(phiw.shape[0]):
+            temp = phiw[iw].copy()
+            for i in range(order):
+                temp = backend.dot(op[iw], temp) / (i + 1.0)
+                phiw[iw] += temp
+
     return phiw
 
 
@@ -324,11 +344,9 @@ class Phaseless(PropagatorBase):
         """
         t0 = time.time()
         # logger.debug(self, f"Debug: phiwb.shape = {walkers.phiwb.shape}")
-        walkers.phiwa = backend.einsum("pq, zqr->zpr", self.exp_h1e[0], walkers.phiwa)
+        walkers.phiwa = propagate_onebody(self.exp_h1e[0], walkers.phiwa)
         if walkers.ncomponents > 1:
-            walkers.phiwb = backend.einsum(
-                "pq, zqr->zpr", self.exp_h1e[1], walkers.phiwb
-            )
+            walkers.phiwb = propagate_onebody(self.exp_h1e[1], walkers.phiwb)
         self.wt_onebody += time.time() - t0
 
     def propagate_HS(self, walkers, ltensor, xshift):
@@ -339,9 +357,9 @@ class Phaseless(PropagatorBase):
         # TODO: further improve the efficiency of this part
         # TODO: like may use symmetry in ltensor to imporve the efficiency of this part
 
-        eri_op = (
-            1j * backend.sqrt(self.dt) * backend.einsum("zn, npq->zpq", xshift, ltensor)
-        )
+        sqrtdt = 1j * backend.sqrt(self.dt)
+        nchol, nao = ltensor.shape[:-1]
+        eri_op = sqrtdt * backend.dot(xshift, ltensor.reshape(nchol, -1)).reshape(walkers.nwalkers, nao, nao)
 
         # \sum_n 1/n! (j\sqrt{\Delta\tau) xL)^n
         walkers.phiwa = propagate_exp_op(walkers.phiwa, eri_op, self.taylor_order)
@@ -820,7 +838,7 @@ class PhaselessElecBoson(Phaseless):
         basis = backend.asarray(
             [backend.arange(mdim) for mdim in self.system.nboson_states]
         )
-        waTa = backend.einsum("m, mF->mF", self.system.omega, basis).ravel()
+        waTa = backend.einsum("m, mF->mF", self.system.boson_freq, basis).ravel()
         self.Hb = backend.diag(waTa)
 
         # if we decouple the bilinear term
@@ -861,11 +879,11 @@ class PhaselessElecBoson(Phaseless):
         etot, norm, e1, e2 = super().local_energy(h1e, ltensor[:self.nbarefields], walkers, trial, enuc=enuc)
 
         # boson energy
-        eb = local_eng_boson(self.system.omega, self.system.nboson_states, walkers.boson_Gf)
+        eb = local_eng_boson(self.system.boson_freq, self.system.nboson_states, walkers.boson_Gf)
 
         # electron-boson interacting energy
         Gfermions = [walkers.Ga, walkers.Gb] if walkers.ncomponents > 1 else [walkers.Ga, walkers.Ga]
-        eg = local_eng_eboson(self.system.omega, self.system.nboson_states, self.geb, Gfermions, walkers.boson_Gf)
+        eg = local_eng_eboson(self.system.boson_freq, self.system.nboson_states, self.geb, Gfermions, walkers.boson_Gf)
 
         # update the local energy with eb and eg
         walkers.eloc += eb + eg
@@ -891,7 +909,7 @@ class PhaselessElecBoson(Phaseless):
 
     #    # bosonc energy
     #    # print("Gb =", Gb)
-    #    eb = local_eng_boson(self.system.omega, self.system.nboson_states, Gb)
+    #    eb = local_eng_boson(self.system.boson_freq, self.system.nboson_states, Gb)
 
     #    # bilinear energy
     #    nmodes = self.system.nmodes
@@ -1186,7 +1204,7 @@ class PhaselessElecBoson(Phaseless):
         basis = backend.asarray(
             [backend.arange(mdim) for mdim in self.system.nboson_states]
         )
-        waTa = backend.einsum("m, mF->mF", self.system.omega, basis).ravel()
+        waTa = backend.einsum("m, mF->mF", self.system.boson_freq, basis).ravel()
         evol_Hb = backend.exp(-dt * waTa)
         """
         if self.decouple_bilinear:
@@ -1196,8 +1214,8 @@ class PhaselessElecBoson(Phaseless):
             evol_Hb = scipy.linalg.expm(-dt * self.Hb)
         walkers.boson_phiw = backend.einsum("mn, zn->zm", evol_Hb, walkers.boson_phiw)
 
-        eloc = local_eng_boson(self.system.omega, self.system.nboson_states, walkers.boson_Gf)
-        walkers.weights *= backend.exp(-dt * eloc.real)
+        eloc = local_eng_boson(self.system.boson_freq, self.system.nboson_states, walkers.boson_Gf)
+        # walkers.weights *= backend.exp(-dt * eloc.real)
 
 
     def propagate_bosons_1st(self, trial, walkers, dt):

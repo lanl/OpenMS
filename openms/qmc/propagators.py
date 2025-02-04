@@ -159,9 +159,12 @@ class PropagatorBase(object):
 
         # variables for collecting wall times
         self.wt_onebody = 0.0  # for one-body term
+        self.wt_buildh1e = 0.0  # for building h1e (in e-b interaction)
         self.wt_twobody = 0.0  # for total two body propagation
         self.wt_fbias = 0.0  # for computing bias in two-body propagation
         self.wt_hs = 0.0  # for propagating HS term in two-body propagation
+        self.wt_chs = 0.0  # for constructing HS term in two-body propagation
+        self.wt_phs = 0.0  # for propagating HS term in two-body propagation
         self.wt_ovlp = 0.0  # for computing overlap and walker GF
         self.wt_weight = 0.0  # for updating weights
         self.wt_bilinear = 0.0  # for bilinear term
@@ -210,7 +213,7 @@ class PropagatorBase(object):
         # FIXME: Note: if we spin orbital, the rho_mf's diagonal term is 2
         # while if not (i.e., rhf), the diagonal term is 1
         # need to decide how to deal with the factor of 2 in rhf case
-        rho_mf = trial.psi.dot(trial.psi.T.conj()) # * 2.0 / trial.ncomponents
+        rho_mf = trial.psi.dot(trial.psi.T.conj()) * 2.0 / trial.ncomponents
 
         # rho_mf = trial.Gf[0] + trial.Gf[1] # we can also use Gf to get rho_mf
         self.mf_shift = 1j * backend.einsum("npq,pq->n", ltensor, rho_mf)
@@ -291,6 +294,7 @@ class Phaseless(PropagatorBase):
         r"""Compute local energy with UHF
         """
 
+        t0 = time.time()
         # update green function fist
         trial.ovlp_with_walkers_gf(walkers)
 
@@ -349,6 +353,7 @@ class Phaseless(PropagatorBase):
             walkers.phiwb = propagate_onebody(self.exp_h1e[1], walkers.phiwb)
         self.wt_onebody += time.time() - t0
 
+
     def propagate_HS(self, walkers, ltensor, xshift):
         r"""Propagate the walker WF according to the auxiliary field (HS)"""
         # xshift: [nwalker, nchol]
@@ -357,14 +362,18 @@ class Phaseless(PropagatorBase):
         # TODO: further improve the efficiency of this part
         # TODO: like may use symmetry in ltensor to imporve the efficiency of this part
 
+        t0 = time.time()
         sqrtdt = 1j * backend.sqrt(self.dt)
         nchol, nao = ltensor.shape[:-1]
         eri_op = sqrtdt * backend.dot(xshift, ltensor.reshape(nchol, -1)).reshape(walkers.nwalkers, nao, nao)
+        self.wt_chs += time.time() - t0
 
+        t0 = time.time()
         # \sum_n 1/n! (j\sqrt{\Delta\tau) xL)^n
         walkers.phiwa = propagate_exp_op(walkers.phiwa, eri_op, self.taylor_order)
         if walkers.ncomponents > 1:
             walkers.phiwb = propagate_exp_op(walkers.phiwb, eri_op, self.taylor_order)
+        self.wt_phs += time.time() - t0
 
 
     def propagate_walkers_twobody(self, trial, walkers, vbias, ltensor):
@@ -488,6 +497,7 @@ class Phaseless(PropagatorBase):
         t0 = time.time()
         self.update_weight(walkers, ovlp, newovlp, cfb, cmf, eshift)
         self.wt_weight += time.time() - t0
+        assert not backend.isnan(backend.linalg.norm(walkers.weights)), "NaN detected in walkers.weights"
         # logger.debug(self, f"updated weight: {walkers.weights}\n eshift = {eshift}")
 
 
@@ -1083,13 +1093,13 @@ class PhaselessElecBoson(Phaseless):
             walker.weight = 0.0
         """
 
+        t0 = time.time()
         shifted_h1e = self.shifted_h1e + oei
         self.exp_h1e = scipy.linalg.expm(-self.dt / 2 * shifted_h1e)
+        self.wt_buildh1e += time.time() - t0
 
-        walkers.phiwa = backend.einsum("pq, zqr->zpr", self.exp_h1e[0], walkers.phiwa)
-        if walkers.ncomponents > 1:
-            walkers.phiwb = backend.einsum("pq, zqr->zpr", self.exp_h1e[1], walkers.phiwb)
-        self.wt_onebody += time.time() - t0
+        # use super() method
+        super().propagate_walkers_onebody(walkers)
 
 
     def propagate_walkers_bilinear(self, trial, walkers, dt):
@@ -1491,8 +1501,9 @@ class PhaselessElecBoson(Phaseless):
 
         t0 = time.time()
         self.update_weight(walkers, ovlp, newovlp, cfb, cmf, eshift)
-        # logger.debug(self, f"updated weight: {walkers.weights}\n eshift = {eshift}")
         self.wt_weight += time.time() - t0
+        # logger.debug(self, f"Debug: updated weight: {backend.linalg.norm(walkers.weights)}\n eshift = {eshift}")
 
+        assert not backend.isnan(backend.linalg.norm(walkers.weights)), "NaN detected in walkers.weights"
 
 # TODO: finite temperature QMC propagators:

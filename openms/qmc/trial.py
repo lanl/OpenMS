@@ -390,6 +390,8 @@ def calc_ovlp_iexc(exc_order, Gf, cre_idx, anh_idx, occ_map, nao_frozen):
         ovlp = backend.zeros((nwalkers, numdets), dtype=backend.complex128)
         ovlp_tmp = backend.zeros((exc_order, exc_order), dtype=backend.complex128)
 
+        # loop over the CIs up to exc_order
+        #
     pass
 
 
@@ -576,7 +578,7 @@ class TrialWFBase(object):
 
 
     @abstractmethod
-    def half_rotate_integrals(self):
+    def half_rotate_integrals(self, h1e, ltensor):
         pass
 
 

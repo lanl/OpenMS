@@ -345,7 +345,7 @@ class QMCbase(object):
             "taylor_order": self.taylor_order,
             # electron-boson_mixture
             "decouple_bilinear" : False,
-            "turnoff_bosons" : True,
+            "turnoff_bosons" : False,
             "quantizaiton": "second",
         }
 
@@ -1089,12 +1089,15 @@ class QMCbase(object):
         logger.note(self, f"   Overlap & GF    : {self.propagator.wt_ovlp: 9.3f}")
         logger.note(self, f"   Updte weights   : {self.propagator.wt_weight: 9.3f}")
         logger.note(self, f"   Onebody term    : {self.propagator.wt_onebody: 9.3f}")
+        logger.note(self, f"   Build h1e term  : {self.propagator.wt_buildh1e: 9.3f}")
         logger.note(self, f"   Twobody term    : {self.propagator.wt_twobody: 9.3f}")
         logger.note(self, f"   Bilinear term   : {self.propagator.wt_bilinear: 9.3f}")
         logger.note(self, f"   Bosonic term    : {self.propagator.wt_boson: 9.3f}")
         logger.note(self, f"   Breakdown of twobody:")
         logger.note(self, f"     Force bias    : {self.propagator.wt_fbias: 9.3f}")
         logger.note(self, f"     HS of twobody : {self.propagator.wt_hs: 9.3f}")
+        logger.note(self, f"     build HS      : {self.propagator.wt_chs: 9.3f}")
+        logger.note(self, f"     Propagate HS  : {self.propagator.wt_phs: 9.3f}")
         # more wall times TBA.
         logger.note(self, f"")
 

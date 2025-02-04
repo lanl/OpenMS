@@ -63,10 +63,10 @@ def run_fci(mol):
 class TestQMCH2(unittest.TestCase):
 
     def test_qmc_h2(self):
-        mean_ref = -1.1369791727
-        std_dev_ref = 0.0013134
-        local_mean_ref = -1.1371015
-        local_std_dev_ref = 0.001594
+        mean_ref = -1.137063519899
+        std_dev_ref = 0.0014814390
+        local_mean_ref = -1.137101514300
+        local_std_dev_ref = 0.0015942613
 
         bond = 1.6 * 0.5291772
         basis = "sto6g"

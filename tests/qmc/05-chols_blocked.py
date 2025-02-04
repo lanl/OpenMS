@@ -114,10 +114,10 @@ class TestQMC_Chols(unittest.TestCase):
         #TODO: QMC vs different truncation threshold
         test_cholesky_errors()
 
+
     def test_chols_oao(self):
 
         test_chols_oao()
-
 
 
 if __name__ == '__main__':

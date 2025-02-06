@@ -743,6 +743,23 @@ class RHF(qedhf.RHF):
         ph_exp_val = self.photon_exp_val(imode)
         factor = numpy.exp((-0.5 * (tmp * diff_eta) ** 2) * (ph_exp_val + 1))
 
+        # new code
+        # get the displacement operator (D(diff_eta) expectation value
+        # \sum_{mn} <m|D(z)|n> * rho_{mn}, where z=diff_eta
+        # ph_exp_val = boson.displacement_exp_val(diff_eta)
+
+        # use the get_boson_dm function
+        mdim = self.qed.nboson_states[imode]
+        idx = sum(self.qed.nboson_states[:imode])
+        ci = self.qed.boson_coeff[idx : idx + mdim, idx]
+        pdm = numpy.outer(numpy.conj(ci), ci)
+
+        # currently, the exp(-A^2/2) part is counted in the dis_exp_val!
+        # factor = numpy.exp(-0.5 * (tmp * diff_eta) ** 2) * dis_exp_val
+        #Note: for squeezing case, this will be more complicated, this part does not work for squeezing case at this stage
+        factor = displacement_exp_val(tmp * diff_eta, pdm)
+
+
         if onebody:
             return factor.reshape(self.nao, self.nao)
         else:

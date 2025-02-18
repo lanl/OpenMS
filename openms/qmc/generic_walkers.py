@@ -149,8 +149,8 @@ class BaseWalkers(object):
             )
 
         self.total_weight = total_weight
-        self.weights_org = self.weights
-        self.weights /= ratio
+        self.weights_org = self.weights.copy()
+        self.weights = self.weights / ratio
 
 
 from openms.qmc.trial import multiCI

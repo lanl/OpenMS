@@ -253,6 +253,9 @@ def _compute_eri_chunk(mol, nao, sj, sl, indices4bas, j, l, delta_max):
     cj, cl = j - indices4bas[sj], l - indices4bas[sl]
     return eri_col[:, :, cj, cl].reshape(nao * nao) / numpy.sqrt(delta_max)
 
+#
+# analysis tools
+#
 
 def get_mean_std(energies, N=10):
     r"""
@@ -278,3 +281,171 @@ def get_mean_std(energies, N=10):
     mean = numpy.mean(last_m_real)
     std_dev = numpy.std(last_m_real)
     return mean, std_dev
+
+#import pandas as pd
+
+def autocorr_func(x, normalize=True):
+    r"""
+    Compute the autocorrelation function (ACF) of a 1D array using the Fast Fourier Transform (FFT).
+
+    The autocorrelation function is computed as:
+
+    .. math::
+        \text{ACF}(k) = \frac{1}{(N-k)} \sum_{i=1}^{N-k} (x_i - \bar{x})(x_{i+k} - \bar{x})
+
+    Instead of direct computation, we use the Wiener-Khinchin theorem, which relates the ACF
+    to the power spectrum via the Fourier Transform:
+
+    .. math::
+        \text{ACF} = \mathcal{F}^{-1}(|\mathcal{F}(x)|^2)
+
+    Parameters
+    ----------
+    x : ndarray
+        Input data array (1D).
+    normalize : bool, optional
+        If True, normalizes the autocorrelation function such that ACF[0] = 1.
+
+    Returns
+    -------
+    ndarray
+        Autocorrelation function of the input array.
+    """
+    x = numpy.asarray(x, dtype=numpy.float64)
+    if x.ndim != 1:
+        raise ValueError("Input must be a 1D array.")
+
+    n = 2 ** int(numpy.ceil(numpy.log2(len(x))))  # Next power of two for FFT efficiency
+    x_mean = numpy.mean(x)
+    f = numpy.fft.fft(x - x_mean, n=2 * n)
+    acf = numpy.fft.ifft(f * numpy.conjugate(f))[: len(x)].real
+    acf /= (4 * n)  # Normalization factor
+
+    if normalize:
+        acf /= acf[0]  # Normalize to 1 at zero lag
+
+    return acf
+
+def auto_window(autocorr_times, c=5.0):
+    r"""
+    Determines the optimal window size for summing the autocorrelation function.
+
+    The window size is selected based on the Sokal criterion:
+
+    .. math::
+        k < c \cdot \tau_k
+
+    where :math:`\tau_k` is the integrated autocorrelation time at lag :math:`k`, and :math:`c` is a tunable factor.
+
+    Parameters
+    ----------
+    autocorr_times : ndarray
+        Integrated autocorrelation times at each lag.
+    c : float, optional
+        Factor controlling window size (default is 5.0).
+
+    Returns
+    -------
+    int
+        Optimal truncation index for summing ACF.
+    """
+    mask = numpy.arange(len(autocorr_times)) < c * autocorr_times
+    return numpy.argmin(mask) if numpy.any(mask) else len(autocorr_times) - 1
+
+def get_autocorr_time(y, c=5.0):
+    r"""
+    Computes the integrated autocorrelation time :cite:`goodman:2010`.
+
+    The integrated autocorrelation time :math:`\tau` is estimated as:
+
+    .. math::
+        \tau_k = 2 \sum_{i=1}^{k} \text{ACF}(i) - 1
+
+    The sum is truncated using an automated windowing procedure (`auto_window`).
+
+    Parameters
+    ----------
+    y : ndarray
+        Time series data.
+    c : float, optional
+        Windowing factor for truncation (default is 5.0).
+
+    Returns
+    -------
+    float
+        Estimated autocorrelation time.
+    """
+    acf = autocorr_func(y)
+    autocorr_times = 2.0 * numpy.cumsum(acf) - 1.0  # Integrated autocorrelation time
+    window = auto_window(autocorr_times, c)
+    return autocorr_times[window]
+
+
+# analyze error based on auto correlation function
+def analysis_autocorr(y, name="etot", verbose=False):
+    r"""
+    Perform error analysis on QMC data using the autocorrelation function.
+
+    **Reblocking** is a technique to estimate error bars in correlated data by grouping correlated samples
+    into larger blocks to obtain independent estimates.
+
+    The block size is determined by the **autocorrelation time** :math:`\tau`:
+
+    .. math::
+        \text{Block Size} = \lceil \tau \rceil
+
+    The blocked estimates for the mean and standard error are computed as:
+
+    .. math::
+        \bar{y} = \frac{1}{M} \sum_{i=1}^{M} \bar{y}_i
+
+    .. math::
+        \sigma_{\bar{y}} = \frac{\sigma}{\sqrt{M}}
+
+    where:
+    - :math:`M` is the number of blocks,
+    - :math:`\bar{y}_i` is the mean of block :math:`i`,
+    - :math:`\sigma` is the standard deviation of the blocked values.
+
+    Parameters
+    ----------
+    y : DataFrame
+        DataFrame containing QMC calculation results.
+    name : str, optional
+        Column name to analyze (default is "ETotal").
+    verbose : bool, optional
+        If True, prints additional debug information.
+
+    Returns
+    -------
+    dict
+        DataDict containing mean, standard error, number of samples, and block size.
+    """
+
+    datasize = len(y)
+    Nmax = int(numpy.log2(datasize))
+    Ndata, autocorr_times = [], []
+
+    for i in range(Nmax):
+        n = len(y) // (2**i)
+        Ndata.append(n)
+        autocorr_times.append(get_autocorr_time(y[:n]))
+
+    if verbose:
+        for n, tautocorr in zip(reversed(Ndata), reversed(autocorr_times)):
+            print(f"nsamples: {n}, autocorrelation time: {tautocorr}")
+
+    block_size = int(numpy.ceil(autocorr_times[0]))  # Use the estimate with the largest sample size
+    nblocks = len(y) // block_size
+    yblocked = [numpy.mean(y[i * block_size : (i + 1) * block_size]) for i in range(nblocks)]
+
+    yavg = numpy.mean(yblocked)
+    ystd = numpy.std(yblocked) / numpy.sqrt(nblocks)
+
+    results = {
+            f"{name}": [yavg],
+            f"{name}_error": [ystd],
+            f"{name}_nsamp": [nblocks],
+            "ac_sampsize": [block_size],
+    }
+    return results

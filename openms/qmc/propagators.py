@@ -218,6 +218,10 @@ class PropagatorBase(object):
         # rho_mf = trial.Gf[0] + trial.Gf[1] # we can also use Gf to get rho_mf
         self.mf_shift = 1j * backend.einsum("npq,pq->n", ltensor, rho_mf)
 
+        # logger.debug(self, f"Debug: psi = {trial.psi}")
+        # logger.debug(self, f"Debug: rho_mf = {rho_mf}")
+        # logger.debug(self, f"Debug: mf_shift = {self.mf_shift}")
+
         # shift due to eri
         if self.nbarefields > 0:
             trace_eri = backend.einsum("npr,nrq->pq", ltensor[:self.nbarefields].conj(), ltensor[:self.nbarefields])
@@ -226,6 +230,15 @@ class PropagatorBase(object):
         shifted_h1e = h1e - 0.5 * trace_eri
         # for p, q in itertools.product(range(h1e.shape[0]), repeat=2):
         #    shifted_h1e[p, q] = h1e[p, q] - 0.5 * backend.trace(eri[p, :, :, q])
+
+        if len(h1e.shape) == 3:
+            logger.debug(
+                self,
+                f"Debug: norm of modified h1e[0] = {backend.linalg.norm(shifted_h1e[0])}",
+            )
+        logger.debug(
+            self, f"Debug: norm of modified h1e = {backend.linalg.norm(shifted_h1e)}"
+        )
 
         # extract the mean-field shift
         shifted_h1e = shifted_h1e - backend.einsum(
@@ -236,8 +249,15 @@ class PropagatorBase(object):
         self.exp_h1e = scipy.linalg.expm(-self.dt / 2.0 * shifted_h1e)
         self.shifted_h1e = shifted_h1e
 
+        logger.debug(self, f"Debug: shape of expH1 = {self.exp_h1e.shape}")
+        logger.debug(
+            self, f"Debug: norm of expH1[0]  = {backend.linalg.norm(self.exp_h1e[0])}"
+        )
         # logger.debug(self, "norm of shifted_h1e: %15.8f", backend.linalg.norm(shifted_h1e))
         # logger.debug(self, "norm of TL_tensor:   %15.8f", backend.linalg.norm(self.TL_tensor))
+        logger.info(
+            self, f"Time for building initial propagator is {time.time()-t0:7.3f}"
+        )
 
 
     def dump_flags(self):
@@ -252,7 +272,7 @@ class PropagatorBase(object):
         # print(task_title(""))
 
     @abstractmethod
-    def propagate_walkers(self, trial, walkers, vbias, ltensor, eshift, verbose=0):
+    def propagate_walkers(self, trial, walkers, ltensor, eshift=0.0, verbose=0):
         pass
 
     @abstractmethod
@@ -289,6 +309,8 @@ class Phaseless(PropagatorBase):
         # eloc = local_eng_elec_chol_new(h1e, ltensor, gf)
         return local_eng_elec_chol(TL_theta, h1e, vbias, gf)
 
+    # TODO: according to the headers of trail,walker, propagator, and options to
+    # select right function of computing energy (may use dict)
 
     def local_energy(self, h1e, ltensor, walkers, trial, enuc=0.0):
         r"""Compute local energy with UHF
@@ -309,6 +331,10 @@ class Phaseless(PropagatorBase):
         norm = backend.sum(walkers.weights)
         e1 = backend.dot(walkers.weights, e1.real)
         e2 = backend.dot(walkers.weights, e2.real)
+        logger.debug(self, f"Debug: total energy (unnormalized) is {etot}")
+        logger.debug(self, f"Debug: e1 (unnormalized) is {e1}")
+        logger.debug(self, f"Debug: e2 (unnormalized) is {e2}")
+        # logger.debug(self, f"Debug: time of computing energy is {time.time() - t0}")
 
         ##  weights * eloc
         # energy = energy / backend.sum(walkers.weights)
@@ -364,8 +390,12 @@ class Phaseless(PropagatorBase):
 
         t0 = time.time()
         sqrtdt = 1j * backend.sqrt(self.dt)
-        nchol, nao = ltensor.shape[:-1]
-        eri_op = sqrtdt * backend.dot(xshift, ltensor.reshape(nchol, -1)).reshape(walkers.nwalkers, nao, nao)
+        if True: # using CPU
+            nchol, nao = ltensor.shape[:-1]
+            eri_op = sqrtdt * backend.dot(xshift, ltensor.reshape(nchol, -1)).reshape(walkers.nwalkers, nao, nao)
+        else:
+            eri_op = sqrtdt * backend.einsum("zn, npq->zpq", xshift, ltensor)
+        logger.debug(self, f"Debug: time of construct VHS: {time.time() - t0}")
         self.wt_chs += time.time() - t0
 
         t0 = time.time()
@@ -376,7 +406,7 @@ class Phaseless(PropagatorBase):
         self.wt_phs += time.time() - t0
 
 
-    def propagate_walkers_twobody(self, trial, walkers, vbias, ltensor):
+    def propagate_walkers_twobody(self, trial, walkers, ltensor):
         # TODO: improve the efficiency
         r"""Propgate two-body term
 
@@ -455,7 +485,7 @@ class Phaseless(PropagatorBase):
 
         return cfb, cmf
 
-    def propagate_walkers(self, trial, walkers, vbias, ltensor, eshift=0.0, verbose=0):
+    def propagate_walkers(self, trial, walkers, ltensor, eshift=0.0, verbose=0):
         r"""
         Eqs 50 - 51 of Ref :cite:`zhang2021jcp`.
 
@@ -482,7 +512,7 @@ class Phaseless(PropagatorBase):
         self.propagate_walkers_onebody(walkers)
 
         # c): 2-body propagator propagation :math:`\exp[(x-\bar{x}) * L]`
-        cfb, cmf = self.propagate_walkers_twobody(trial, walkers, vbias, ltensor)
+        cfb, cmf = self.propagate_walkers_twobody(trial, walkers, ltensor)
 
         # d):  1-body propagator propagation e^{-dt/2*H1e}
         self.propagate_walkers_onebody(walkers)
@@ -1094,8 +1124,10 @@ class PhaselessElecBoson(Phaseless):
         """
 
         t0 = time.time()
-        shifted_h1e = self.shifted_h1e + oei
-        self.exp_h1e = scipy.linalg.expm(-self.dt / 2 * shifted_h1e)
+        if not self.turnoff_bosons:
+            # logger.debug(self, f"Debug: shapes of shifted_h1e and oei {self.shifted_h1e.shape} {oei.shape}")
+            shifted_h1e = self.shifted_h1e + oei
+            self.exp_h1e = scipy.linalg.expm(-self.dt / 2 * shifted_h1e)
         self.wt_buildh1e += time.time() - t0
 
         # use super() method
@@ -1397,14 +1429,14 @@ class PhaselessElecBoson(Phaseless):
         # compute bosonic energy
 
         ## update bilinear part of local energy
-        # Gfermions = [walkers.Ga, walkers.Gb] if walkers.ncomponents > 1 else [walkers.Ga, walkers.Ga]
-        # eloc = local_eng_eboson(self.system.omega, self.system.nboson_states, self.geb, Gfermions, walkers.boson_Gf)
-        # self.e_local_boson = eloc
+        Gfermions = [walkers.Ga, walkers.Gb] if walkers.ncomponents > 1 else [walkers.Ga, walkers.Ga]
+        eloc = local_eng_eboson(self.system.boson_freq, self.system.nboson_states, self.geb, Gfermions, walkers.boson_Gf)
+        self.e_local_boson = eloc
 
-        # merged into the update_weight()
-        # walkers.weights *= backend.exp(
-        #    -dt * (eloc.real + elocold.real - 2.0 * self.e_boson_shift) / 2.0
-        # )
+        ##merged into the update_weight()
+        walkers.weights *= backend.exp(
+           -dt * (eloc.real + elocold.real - 2.0 * self.e_boson_shift) / 2.0
+        )
         # logger.debug(self, f"Debug: old bilinear local energy {backend.dot(elocold, walkers.weights)}")
         # logger.debug(self, f"Debug: new bilinear local energy {backend.dot(eloc, walkers.weights)}")
 
@@ -1414,14 +1446,15 @@ class PhaselessElecBoson(Phaseless):
             return backend.zeros(walkers.nwalkers), backend.zeros(walkers.nwalkers)
 
 
-    def propagate_walkers(self, trial, walkers, vbias, ltensor, eshift=0.0, verbose=0):
+    def propagate_walkers(self, trial, walkers, ltensor, eshift=0.0, verbose=0):
         r"""Propagate the walkers function for the coupled electron-boson interactions"""
 
         # 1) compute overlap and update the Green's funciton
         t0 = time.time()
         ovlp = trial.ovlp_with_walkers_gf(walkers) # fermionic
-        boson_ovlp = trial.boson_ovlp_with_walkers(walkers) # bosonic
-        ovlp *= boson_ovlp
+        if not self.turnoff_bosons:
+            boson_ovlp = trial.boson_ovlp_with_walkers(walkers) # bosonic
+            ovlp *= boson_ovlp
 
         # 2) update Fermionic DM and Qalpha for the bilinear terms
         walkers.Ga = backend.einsum("zqi, pi->zpq", walkers.Ghalfa, trial.psia.conj())
@@ -1451,16 +1484,17 @@ class PhaselessElecBoson(Phaseless):
         # 3) boson propagator (including free and bilinear terms)
         #
 
-        t0 = time.time()
-        self.propagate_bosons(trial, walkers, 0.5 * self.dt)
-        self.wt_boson += time.time() - t0
+        if not self.turnoff_bosons:
+            t0 = time.time()
+            self.propagate_bosons(trial, walkers, 0.5 * self.dt)
+            self.wt_boson += time.time() - t0
 
         #
         # 4) Fermionic one-body propagation
         #
         # Note: 4a)-c) are similar to bare case, we may recycle the bare code
         # but with updated ltensors and shifted h1e.
-        # super().propagate_walkers(trial, walkers, vbias, ltensor, eshift=eshift)
+        # super().propagate_walkers(trial, walkers, ltensor, eshift=eshift)
         #
         # 4a) onebody fermionic propagator propagation :math:`e^{-dt/2*H1e}` with effective one-body electronic term
         #
@@ -1468,7 +1502,7 @@ class PhaselessElecBoson(Phaseless):
 
         # 4b) two-body fermionic term
         ltmp = ltensor.copy()
-        cfb, cmf = self.propagate_walkers_twobody(trial, walkers, vbias, ltmp)
+        cfb, cmf = self.propagate_walkers_twobody(trial, walkers, ltmp)
         del ltmp
 
         # 4c) one-body electronic term
@@ -1485,24 +1519,25 @@ class PhaselessElecBoson(Phaseless):
             cmf += cmf2
             self.wt_bilinear += time.time() - t0
 
-        # 7) one-body_boson propagator
-        t0 = time.time()
-        self.propagate_bosons(trial, walkers, 0.5 * self.dt)
-        self.wt_boson += time.time() - t0
+            # 7) one-body_boson propagator
+            t0 = time.time()
+            self.propagate_bosons(trial, walkers, 0.5 * self.dt)
+            self.wt_boson += time.time() - t0
 
         #
         # 8) update weights
         #
         t0 = time.time()
         newovlp = trial.ovlp_with_walkers(walkers)
-        new_boson_ovlp = trial.boson_ovlp_with_walkers(walkers) # bosonic
-        newovlp *= new_boson_ovlp
+        if not self.turnoff_bosons:
+            new_boson_ovlp = trial.boson_ovlp_with_walkers(walkers) # bosonic
+            newovlp *= new_boson_ovlp
         self.wt_ovlp += time.time() - t0
 
         t0 = time.time()
         self.update_weight(walkers, ovlp, newovlp, cfb, cmf, eshift)
         self.wt_weight += time.time() - t0
-        # logger.debug(self, f"Debug: updated weight: {backend.linalg.norm(walkers.weights)}\n eshift = {eshift}")
+        logger.debug(self, f"Debug: updated weight: {backend.linalg.norm(walkers.weights)}\n eshift = {eshift}")
 
         assert not backend.isnan(backend.linalg.norm(walkers.weights)), "NaN detected in walkers.weights"
 

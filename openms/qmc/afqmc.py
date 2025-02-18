@@ -178,21 +178,10 @@ class AFQMC(qmc.QMCbase):
         super().dump_flags()
 
 
-    def hs_transform(self, h1e):
-        r"""
-        Perform Hubbard-Stratonovich (HS) decomposition
-
-        .. math::
-
-            e^{-\Delta\tau \hat{H}} = \int d\boldsymbol{x} p(\boldsymbol{x})\hat{B}(\boldsymbol{x}).
-
-        """
-        hs_fields = None
-        return hs_fields
-
-
     def build_propagator(self, h1e, eri, ltensor):
-        r"""Pre-compute the propagators"""
+        r"""Deprecated function
+
+        Pre-compute the propagators"""
         warnings.warn(
             "\nThis 'build_propagator' function in afqmc is deprecated"
             + "\nand will be removed in a future version. "
@@ -208,8 +197,6 @@ class AFQMC(qmc.QMCbase):
 
         trace_eri = backend.einsum("npr,nrq->pq", ltensor.conj(), ltensor)
         shifted_h1e = h1e - 0.5 * trace_eri
-        # for p, q in itertools.product(range(h1e.shape[0]), repeat=2):
-        #    shifted_h1e[p, q] = h1e[p, q] - 0.5 * backend.trace(eri[p, :, :, q])
         shifted_h1e = shifted_h1e - backend.einsum(
             "n, npq->pq", self.mf_shift, 1j * ltensor
         )
@@ -224,23 +211,8 @@ class AFQMC(qmc.QMCbase):
         )
 
 
-    def propagation_onebody(self, phi_w):
-        r"""Propgate one-body term"""
-        return backend.einsum("pq, zqr->zpr", self.exp_h1e, phi_w)
-
-    def propagation_twobody(self, vbias, phi_w):
-        r"""Propgate two-body term
-        Which is the major computational bottleneck.
-
-        TODO: move the two-body propagation into this function
-        TODO: improve the efficiency
-        of this part with a) MPI, b) GPU, c) tensor hypercontraction
-
-        """
-        pass
-
     def propagate_walkers(self, walkers, xbar, ltensor):
-        r"""
+        r"""Deprecated function!!!
         Eqs 50 - 51 of Ref :cite:`zhang2021jcp`.
 
         Trotter decomposition of the imaginary time propagator:
@@ -295,7 +267,8 @@ class AFQMC(qmc.QMCbase):
         self.update_weight(ovlp, cfb, cmf)
 
     def update_weight(self, overlap, cfb, cmf):
-        r"""
+        r"""Deprecated function!!!
+
         Update the walker coefficients using two different schemes.
 
         a). Hybrid scheme:
@@ -523,6 +496,7 @@ class QEDAFQMC(AFQMC):
 
 
     def propagate_bilinear_coupling(self):
+        r"""Deprecated function"""
         # Half-step Bilinear propagation
 
         # BMW:
@@ -542,7 +516,8 @@ class QEDAFQMC(AFQMC):
             # print( "\tCavity Polarization Direction: %1.3f %1.3f %1.3f" % (self.cavity_vec[0,0], self.cavity_vec[0,1], self.cavity_vec[0,2]) )
             # print("\n")
 
-    def propagate_photon_hamiltonian( self ):
+    def propagate_photon_hamiltonian(self):
+        r"""Deprecated function"""
         # Half-step photon propagation
 
         # exp_Hph is diagonal in the Fock basis
@@ -554,6 +529,8 @@ class QEDAFQMC(AFQMC):
 
     def propagation(self, h1e, F, ltensor):
         r"""
+        Deprecated function
+
         Ref: https://www.cond-mat.de/events/correl13/manuscripts/zhang.pdf
         Eqs 50 - 51
         """

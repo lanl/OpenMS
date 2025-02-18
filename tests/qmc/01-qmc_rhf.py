@@ -4,7 +4,6 @@ from pyscf import gto, scf, fci
 from openms.qmc.afqmc import AFQMC
 from molecules import get_mol
 
-
 def calc_qmc_energy(
     mol,
     time=6.0,

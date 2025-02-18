@@ -142,8 +142,11 @@ def GF_so(T, W, na, nb):
 
     """
     Gfa, Gfa_half = GF(T[:, :na], W[:, :na])
+    # print(f"Debug: T.shape = ", T.shape, " na/nb =", na, nb)
+    # print(f"Debug: Gfa.shape = {Gfa.shape}")
     if nb > 0:
         Gfb, Gfb_half = GF(T[:, na:], W[:, na:])
+        # print(f"Debug: Gfb.shape = {Gfb.shape}")
     else:
         Gfb = backend.zeros(Gfa.shape, dtype=Gfa.dtype)
         Gfb_half = backend.zeros((0, Gfa_half.shape[1]), dtype=Gfa_half.dtype)
@@ -161,6 +164,13 @@ def GF_so(T, W, na, nb):
 #    1): generate trial_walker header:
 #    2): map the trial_walker header to certian function according
 # to the dict below
+#
+#energy_dict = {
+#    "SD_trial_rhf_walker": xx,
+#    "SD_trial_uhf_walker": xx,
+#    "MSD_trial_rhf_walker": xx,
+#    "MSD_trial_uhf_walker": xx,
+#}
 
 # function to handle different energy measurement case
 def measure_energy(trial, walkers, h1e, ltensors, enuc):
@@ -247,10 +257,13 @@ def local_energy_SD_RHF(trial, walkers, enuc = 0.0):
     # Ghalfa/b: [nwalkers, nao, na/nb]
     # rh1a/b: [nao, na/nb]
 
+    # e1 = 2.0 * backend.einsum("qi, zqi->z", trial.rh1a, walkers.Ghalfa)
     e1 = 2.0 * e_rh1e_Ghalf(trial.rh1a, walkers.Ghalfa)
     e1 += enuc
 
     # coulomb energy
+    # LG = backend.einsum("nqi, zqi->zn", trial.rltensora, walkers.Ghalfa)
+    # ecoul =  2.0 * backend.einsum("zn, zn->z", LG, LG)
     ecoul = 4.0 * ecoul_rltensor_uhf(trial.rltensora, walkers.Ghalfa)
 
     # exchange
@@ -311,9 +324,23 @@ def exx_rltensor_Ghalf(rltensor, Ghalf):
         Exchange energy for all walkers.
     """
 
+    # t0 = time.time()
+    # rltensor_real = rltensor.real
+    # rltensor_imag = rltensor.imag
 
+    # Ghalf_real = Ghalf.real
+    # Ghalf_imag = Ghalf.imag
+
+    # LG_real = backend.einsum('nqi, zqj->znij', rltensor_real, Ghalf_real) - \
+    #          backend.einsum('nqi, zqj->znij', rltensor_imag, Ghalf_imag)
+    # LG_imag = backend.einsum('nqi, zqj->znij', rltensor_real, Ghalf_imag) + \
+    #          backend.einsum('nqi, zqj->znij', rltensor_imag, Ghalf_real)
+    # LG = LG_real + 1.0j * LG_imag
+    # t1 = time.time() - t0
 
     if False:
+        # another version without separating real and imaginary parts
+        # einsum code # creating a big tensor is time/memery consuming
         t0 = time.time()
         LG = backend.einsum('nqi, zqj->znij', rltensor, Ghalf)
         t2 = time.time() - t0
@@ -352,6 +379,12 @@ def local_energy_SD_UHF(trial, walkers, enuc = 0.0):
 
     e2 = ecoul - exx
 
+    # print(f"Debug: e1 = {e1}")
+    # print(f"Debug: ecoul = {ecoul}")
+    # print(f"Debug: exx = {exx}")
+    # print(f"Debug: e2 = {e2}")
+    # print(f"Debug: e_tot = {e1 + e2}")
+
     return e1, e2
 
 def local_eng_boson_2nd(omega, nboson_states, Gb):
@@ -369,6 +402,9 @@ def local_eng_boson_2nd(omega, nboson_states, Gb):
 
     waTa = backend.einsum("m, mF->mF", omega, basis).ravel()
     eb = backend.einsum("F,zFF->z", waTa, Gb)
+    #print("Debug: Bosonic Gf = ", Gb)
+    #print("Debug: waTa =       ", waTa)
+    #print("eb =                ", eb)
     return eb
 
 

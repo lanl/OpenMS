@@ -111,7 +111,6 @@ def kernel(mc, propagator=None, trial=None):
     # setup propagator
     # generalize the propagator build for any typs
     # (fermions, bosons, or fermion-boson mixture).
-    # mc.build_propagator(h1e, eri, ltensor)
     propagator.build(h1e, ltensor, trial, mc.geb)
 
     logger.debug(mc, f"Debug: the initial orthogonalise in walker")
@@ -128,7 +127,7 @@ def kernel(mc, propagator=None, trial=None):
     logstring = f"{'Step':^8}{'Etot':^16}{'Raw_Etot':^16}{'Norm':^14}{'E1':^16}{'E2':^16}"
     if isinstance(propagator, PhaselessElecBoson):
         logstring += f"{'Eb':^16}{'Eg':^16}"
-    logstring += "  Wall_time"
+    logstring += "   Wall_time"
     logger.info(mc, logstring)
 
     # while tt <= mc.total_time:
@@ -151,7 +150,7 @@ def kernel(mc, propagator=None, trial=None):
         # step 1: propagate walkers
         wall_t1 = time.time()
         propagator.propagate_walkers(
-            trial, walkers, vbias, ltensor, eshift=mc.eshift, verbose=int(dump_result)
+            trial, walkers, ltensor, eshift=mc.eshift, verbose=int(dump_result)
         )
         mc.wt_propagator += time.time() - wall_t1
 
@@ -443,7 +442,7 @@ class QMCbase(object):
             self,
             task_title(f"Get integrals ... Done! Time used: {time.time()-t0: 7.3f} s"),
         )
-        if self.geb is not None:
+        if self.geb is not None and not self.propagator_options["turnoff_bosons"]:
             #trial.init_boson_trial_with_z(self.geb)
             zalpha = backend.einsum("Xpq, pq->X", self.geb, self.trial.Gf[0])
             self.trial.initialize_boson_trial_with_z(zalpha, self.mol.nboson_states)
@@ -647,6 +646,9 @@ class QMCbase(object):
                 decoup_Afac = backend.ones(nmodes)
                 decoup_Ofac = (system.boson_freq * 0.5) ** 0.5 / decoup_Afac
 
+                #decoup_Ofac = backend.sqrt(abs(zalpha))
+                #decoup_Afac = (system.boson_freq * 0.5) ** 0.5 / decoup_Ofac
+
                 # Add the chols due to the decomposition of bilinear term:
                 #
                 # 1) Original DSE + terms due tot the decomposition is:
@@ -690,10 +692,6 @@ class QMCbase(object):
         return h1e, ltensor
 
 
-    def propagate_walkers(self, walkers, xbar, ltensor):
-        pass
-
-
     def measure_observables(self, operator):
         r"""Placeholder for measure_observables.
         According to the operator, we measure the expectation values
@@ -705,7 +703,8 @@ class QMCbase(object):
 
 
     def walker_trial_overlap(self):
-        r"""
+        r"""Deprecated function!!!!
+
         Compute the overlap between trial and walkers:
 
         .. math::
@@ -803,7 +802,9 @@ class QMCbase(object):
         return energy
 
     def local_energy(self, TL_theta, h1e, eri, vbias, gf):
-        r"""Compute local energy from oei, eri and GF.
+        r"""Deprecated function!!!!
+
+       Compute local energy from oei, eri and GF.
 
         Warning: this function is Deprecaeted and moved to propagator to handle
         the cases of different trial and walkers.
@@ -923,7 +924,7 @@ class QMCbase(object):
             self.property_buffer.fill(0.0 + 0.0j)
 
 
-    def kernel(self, trial_wf=None):
+    def kernel(self, propagator=None, trial_wf=None):
         r"""main function for QMC time-stepping
 
         trial_wf: trial wavefunction
@@ -948,13 +949,14 @@ class QMCbase(object):
         h1e = self.h1e
         # eri = self.eri
         ltensor = self.ltensor
-        propagator = self.propagator
+        #propagator = self.propagator
 
         trial = self.trial if trial_wf is None else trial_wf
+        if propagator is None:
+            propagator = self.propagator
         walkers = self.walkers
 
         # setup propagator
-        # self.build_propagator(h1e, eri, ltensor)
         propagator.build(h1e, ltensor, trial, self.geb)
 
         logger.debug(self, f"Debug: the initial orthogonalise in walker")
@@ -968,10 +970,10 @@ class QMCbase(object):
         energy_list = []
         time_list = []
         wall_t0 = time.time()
-        logstring = f"{'Step':^10}{'Etot':^16}{'Raw_Etot':^16}{'Norm':^14}{'Raw_Norm':^14}{'E1':^16}{'E2':^16}"
+        logstring = f"{'Step':^10}{'Etot':^16}{'Raw_Etot':^17}{'Hybrid_Energy':^17}{'Norm':^13}{'Raw_Norm':^15}{'E1':^16}{'E2':^16}"
         if isinstance(propagator, PhaselessElecBoson):
             logstring += f"{'Eb':^16}{'Eg':^16}"
-        logstring += "  Wall_time"
+        logstring += "   Wall_time"
         logger.info(self, logstring)
 
         # while tt <= self.total_time:
@@ -1010,9 +1012,8 @@ class QMCbase(object):
 
             wall_t1 = time.time()
             # step 3): propagate walkers and update weights
-            # self.propagate_walkers(walkers, xbar, ltensor)
             propagator.propagate_walkers(
-                trial, walkers, vbias, ltensor, eshift=self.eshift, verbose=int(dump_result)
+                trial, walkers, ltensor, eshift=self.eshift, verbose=int(dump_result)
             )
             self.wt_propagator += time.time() - wall_t1
 
@@ -1044,13 +1045,14 @@ class QMCbase(object):
                 # Log the computed energy and other properties
                 logstring = (
                     f"Step {step:5d}  {energy:14.7e}  "
-                    f"{energies[0]:14.7e}  {energies[1]:9.5e}  "
+                    f"{energies[0]:14.7e}  "
+                    f"{self.eshift.real:14.7e}  {energies[1]:9.5e}  "
                     f"{backend.sum(walkers.weights_org):14.7e}  "
                     f"{energies[2]:14.7e}  {energies[3]:14.7e}  "
                 )
                 if len(energies) > 4:
                     logstring += f"{energies[4]:15.7e}  {energies[5]:15.7e}  "
-                logstring += f"{time.time() - t0:10.4f}s"
+                logstring += f"{time.time() - t0:9.4f}s"
 
                 logger.info(self, logstring)
                 sys.stdout.flush()

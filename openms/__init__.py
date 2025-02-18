@@ -156,16 +156,20 @@ else:
             "OPENMS_PATH\n" % "\n".join(__path__[1:])
         )
 
-from distutils.version import LooseVersion
+# from distutils.version import LooseVersion
 
-from . import __config__
-from . import cc
-from . import lib
-from . import maxwell
-from . import models
-from . import mqed
-from . import oqs
-from . import solvers
+from openms import __config__
+from openms import lib
+from openms import maxwell
+
+# from . import __config__
+# from . import cc
+# from . import lib
+# from . import maxwell
+# from . import models
+# from . import mqed
+# from . import oqs
+# from . import solvers
 
 # Whether to enable debug mode. When this flag is set, some modules may run
 # extra debug code.

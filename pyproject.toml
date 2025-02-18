@@ -6,3 +6,6 @@ build-backend = "flit_core.buildapi"
 name = "OpenMS"
 authors = [{name = "Zhang, Yu", email = "zhy@lanl.gov"}, {name = "Mazin, Ilia", email = "imazin@lanl.gov"}]
 dynamic = ["version", "description"]
+
+[tool.flit.module]
+name = "openms"

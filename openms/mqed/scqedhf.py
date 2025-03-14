@@ -598,7 +598,7 @@ class RHF(qedhf.RHF):
                 onebody_deta[p] -= 2.0 * dm_do[imode, p,p] * g_DO[imode, p] / self.qed.omega[imode]
 
             fc_derivative = self.gaussian_derivative_vectorized(self.eta, imode)
-            tmp1 = 2.0 * self.h1e_DO * dm_do[imode] * fc_derivative
+            tmp1 = self.h1e_DO * dm_do[imode] * fc_derivative
             tmp2 = (2.0 * dm_do[imode].diagonal().reshape(-1, 1) * dm_do[imode].diagonal() \
                    - dm_do[imode] * dm_do[imode].T) \
                    * g_DO[imode].reshape(1, -1) / self.qed.omega[imode]
@@ -607,7 +607,7 @@ class RHF(qedhf.RHF):
             del fc_derivative, tmp1, tmp2
 
             fc_derivative = self.gaussian_derivative_vectorized(self.eta, imode, onebody=False)
-            fc_derivative *= (2.0 * self.eri_DO - self.eri_DO.transpose(0, 3, 2, 1))
+            fc_derivative *= (self.eri_DO - 0.5 * self.eri_DO.transpose(0, 3, 2, 1))
 
             tmp = lib.einsum('pqrs, rs-> pq', fc_derivative, dm_do[imode], optimize=True)
             twobody_deta = lib.einsum('pq, pq-> p', tmp, dm_do[imode], optimize=True)
@@ -740,7 +740,7 @@ class RHF(qedhf.RHF):
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
 
-        factor = numpy.exp((-0.5 * (tmp * diff_eta) ** 2))
+        #factor = numpy.exp((-0.5 * (tmp * diff_eta) ** 2))
 
         # new code
         # get the displacement operator (D(diff_eta) expectation value
@@ -748,15 +748,13 @@ class RHF(qedhf.RHF):
         # currently, the exp(-A^2/2) part is counted in the dis_exp_val!
         # factor = numpy.exp(-0.5 * (tmp * diff_eta) ** 2) * dis_exp_val
         #Note: for squeezing case, this will be more complicated, this part does not work for squeezing case at this stage
-
         # use the get_boson_dm function
         mdim = self.qed.nboson_states[imode]
         idx = sum(self.qed.nboson_states[:imode])
         ci = self.qed.boson_coeff[idx : idx + mdim, idx]
         pdm = numpy.outer(numpy.conj(ci), ci)
 
-        #factor = displacement_exp_val(tmp * diff_eta, pdm)
-
+        factor = self.qed.displacement_exp_val(imode, tmp * diff_eta, pdm)
 
         if onebody:
             return factor.reshape(self.nao, self.nao)
@@ -778,7 +776,7 @@ class RHF(qedhf.RHF):
 
         # Apply the derivative formula
         derivative = numpy.exp((-0.5 * (tmp * diff_eta) ** 2)) \
-                     * -((tmp ** 2) * diff_eta)
+                     * -2.0 * ((tmp ** 2) * diff_eta)
 
         if onebody:
             return derivative.reshape(self.nao, self.nao)

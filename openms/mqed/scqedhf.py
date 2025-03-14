@@ -768,17 +768,17 @@ class RHF(qedhf.RHF):
 
         if onebody:
             p, q = numpy.ogrid[:self.nao, :self.nao]
-            diff_eta = eta[imode, q] - eta[imode, p]
+            diff_eta = eta[imode, p] - eta[imode, q]
         else:
             p, q, r, s = numpy.ogrid[:self.nao, :self.nao, :self.nao, :self.nao]
-            diff_eta = eta[imode, q] - eta[imode, p] +  eta[imode, s] - eta[imode, r]
+            diff_eta = eta[imode, p] - eta[imode, q] +  eta[imode, r] - eta[imode, s]
 
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
 
         # Apply the derivative formula
         derivative = numpy.exp((-0.5 * (tmp * diff_eta) ** 2)) \
-                     * ((tmp ** 2) * diff_eta)
+                     * -((tmp ** 2) * diff_eta)
 
         if onebody:
             return derivative.reshape(self.nao, self.nao)

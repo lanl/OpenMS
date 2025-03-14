@@ -726,46 +726,44 @@ class Boson(object):
         # Initialize matrix
         delta_disp_mat = numpy.zeros((mdim, mdim, *factor.shape))
 
-        # Gaussian factor
-        gfact = numpy.exp(-0.5 * (factor)**2)
-
         # First compute lower triangle
         ind_m, ind_n = numpy.tril_indices(mdim, k=-1)
         for i_m, i_n in zip(ind_m, ind_n):
 
-            # Factorial ratio
-            ratio = factorial(i_n, exact=True) / factorial(i_m, exact=True)
+            # Term 1: Gaussian factor derivative
+            tmp1 = factor**(i_m - i_n) * genlaguerre(n=i_n, alpha=(i_m - i_n))(factor**2) \
+                   * -2.0 * (factor / self.omega[mode]) # Gaussian factor derivative
 
-            # Term 1: Gaussian derivative * Laguerre polynomial
-            #tmp1 = self.displacement_exp_val(mode, factor, pdm, scale_by_exp=False)
-            tmp1 = numpy.sqrt(ratio) * factor**(i_m - i_n) \
-                   * genlaguerre(n=i_n, alpha=(i_m - i_n))(factor**2)
-            tmp1 *= gfact * -2.0 * (factor / self.omega[mode]) # Gaussian factor derivative
+            # Term 2: A^(m-n) derivative
+            tmp2 = genlaguerre(n=i_n, alpha=(i_m - i_n))(factor**2)
+            if i_m - i_n > 1:
+                tmp2 *= ((i_m - i_n) * (factor)**(i_m - i_n - 1))
+            else:
+                tmp2 *= (1.0 / self.omega[mode])
 
-            # Term 2:
-            tmp2 = gfact * (i_m - i_n) * (factor)**(i_m - i_n - 1) \
-                   * genlaguerre(n=i_n, alpha=(i_m - i_n))(factor**2)
-
+            # Term 3: Laguerre polynomial derivative
             if i_n > 0:
-                tmp2 -= gfact * (factor)**(i_m - i_n) * (2.0 * factor / self.omega[mode]) \
+                tmp2 -= (factor)**(i_m - i_n) * (2.0 * factor / self.omega[mode]) \
                         * genlaguerre(n=(i_n - 1), alpha=(i_m - i_n + 1))(factor**2)
 
-            # Scale term 2 by factorial before adding together
-            delta_disp_mat[i_m, i_n] = tmp1 + (numpy.sqrt(ratio) * tmp2)
+            # Scale terms by factorial and add together
+            ratio = factorial(i_n, exact=True) / factorial(i_m, exact=True)
+            delta_disp_mat[i_m, i_n] = numpy.sqrt(ratio) * (tmp1 + tmp2)
 
         # Fill upper triangle, exploit symmetry
         delta_disp_mat[ind_n, ind_m] = delta_disp_mat[ind_m, ind_n]
 
         # Compute diagonal elements
         for ind_m in range(mdim):
-            delta_disp_mat[ind_m, ind_m] = gfact * -2.0 * (factor / self.omega[mode]) \
+            delta_disp_mat[ind_m, ind_m] = -2.0 * (factor / self.omega[mode]) \
                                            * genlaguerre(n=ind_m, alpha=0)(factor**2)
             if ind_m > 0:
-                delta_disp_mat[ind_m, ind_m] += gfact * (2.0 * factor / self.omega[mode]) \
+                delta_disp_mat[ind_m, ind_m] -= (2.0 * factor / self.omega[mode]) \
                                                 * genlaguerre(n=(ind_m - 1), alpha=1)(factor**2)
 
         # Scale by Gaussian factor
-        #delta_disp_mat[:, :] *= gfact
+        gfact = numpy.exp(-0.5 * (factor)**2)
+        delta_disp_mat[:, :] *= gfact
 
         # Contract with photon density matrix
         exp_val = numpy.einsum("nm, mn...-> ...", pdm, delta_disp_mat, optimize=True)

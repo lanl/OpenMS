@@ -778,6 +778,15 @@ class RHF(qedhf.RHF):
         derivative = numpy.exp((-0.5 * (tmp * diff_eta) ** 2)) \
                      * -2.0 * ((tmp ** 2) * diff_eta)
 
+        # new code
+        # get the displacement operator (D(diff_eta) derivative
+        mdim = self.qed.nboson_states[imode]
+        idx = sum(self.qed.nboson_states[:imode])
+        ci = self.qed.boson_coeff[idx : idx + mdim, idx]
+        pdm = numpy.outer(numpy.conj(ci), ci)
+
+        derivative = self.qed.displacement_deriv(imode, tmp * diff_eta, pdm)
+
         if onebody:
             return derivative.reshape(self.nao, self.nao)
         else:

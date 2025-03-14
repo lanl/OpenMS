@@ -774,9 +774,9 @@ class RHF(qedhf.RHF):
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
 
-        # Apply the derivative formula
-        derivative = numpy.exp((-0.5 * (tmp * diff_eta) ** 2)) \
-                     * -2.0 * ((tmp ** 2) * diff_eta)
+        # # Apply the derivative formula
+        # derivative = numpy.exp((-0.5 * (tmp * diff_eta) ** 2)) \
+        #              * -2.0 * ((tmp ** 2) * diff_eta)
 
         # new code
         # get the displacement operator (D(diff_eta) derivative

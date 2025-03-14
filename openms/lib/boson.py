@@ -684,6 +684,24 @@ class Boson(object):
         # Number of boson states
         mdim = self.nboson_states[mode]
 
+        # # Test matrix
+        # disp_test = numpy.zeros((mdim, mdim, *factor.shape))
+        # for m in range(mdim):
+        #     for n in range(mdim):
+        #         if m == n:
+        #             disp_test[m, n] = genlaguerre(n=m, alpha=0)(factor**2)
+
+        #         elif m > n:
+        #             ratio = factorial(n, exact=True) / factorial(m, exact=True)
+        #             disp_test[m, n] = numpy.sqrt(ratio) * factor**(m - n) \
+        #                               * genlaguerre(n=n, alpha=(m - n))(factor**2)
+
+        #         elif m < n:
+        #             ratio = factorial(m, exact=True) / factorial(n, exact=True)
+        #             disp_test[m, n] = numpy.sqrt(ratio) * (-factor)**(n - m) \
+        #                               * genlaguerre(n=m, alpha=(n - m))(factor**2)
+
+
         # Initialize matrix
         disp_mat = numpy.zeros((mdim, mdim, *factor.shape))
 
@@ -697,13 +715,23 @@ class Boson(object):
             # Matrix elements
             disp_mat[i_m, i_n] = numpy.sqrt(ratio) * factor**(i_m - i_n) \
                                  * genlaguerre(n=i_n, alpha=(i_m - i_n))(factor**2)
-
-        # Fill upper triangle, exploit symmetry
-        disp_mat[ind_n, ind_m] = disp_mat[ind_m, ind_n]
+            disp_mat[i_n, i_m] = disp_mat[i_m, i_n] * (-1.0)**(i_n - i_m)
 
         # Compute diagonal elements
         for ind_m in range(mdim):
             disp_mat[ind_m, ind_m] = genlaguerre(n=ind_m, alpha=0)(factor**2)
+
+        # print (numpy.linalg.norm(disp_test))
+        # print (numpy.linalg.norm(disp_mat))
+        # for m in range(mdim):
+        #     for n in range(mdim):
+        #         norm = numpy.linalg.norm(disp_mat[m,n] - disp_test[m,n])
+        #         if norm != 0:
+        #             print (m, n)
+        #             print (norm)
+        #             print ("REGULAR:\n", disp_mat[m,n])
+        #             print ("\nTEST:\n", disp_test[m,n])
+        # exit()
 
         # Compute exponential term, scale displacement matrix
         if scale_by_exp:
@@ -720,11 +748,15 @@ class Boson(object):
 
         from scipy.special import genlaguerre, factorial
 
-        # Number of boson states
+        # Variables
         mdim = self.nboson_states[mode]
+        omega = self.omega[mode]
 
         # Initialize matrix
         delta_disp_mat = numpy.zeros((mdim, mdim, *factor.shape))
+
+        # Gaussian factor
+        #gfact = numpy.exp(-0.5 * (factor)**2)
 
         # First compute lower triangle
         ind_m, ind_n = numpy.tril_indices(mdim, k=-1)

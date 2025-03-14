@@ -399,8 +399,8 @@ class RHF(qedhf.RHF):
 
         self.precond = 0.1
 
-        # Flag to construct eta-eta Hessian matrix
-        self.second_order_eta_step = False
+        # # Flag to construct eta-eta Hessian matrix
+        # self.second_order_eta_step = False
 
         # Parameters for dipole moment basis set degeneracy # TODO: Check if being used?
         self.dipole_degen_thresh = 1.0e-8
@@ -585,8 +585,8 @@ class RHF(qedhf.RHF):
                              = &
         """
 
-        if self.second_order_eta_step == True:
-            self.eta_hessian = numpy.zeros((self.qed.nmodes, self.nao, self.nao))
+        # if self.second_order_eta_step == True:
+        #     self.eta_hessian = numpy.zeros((self.qed.nmodes, self.nao, self.nao))
 
         for imode in range(self.qed.nmodes):
             onebody_deta = numpy.zeros(self.nao)
@@ -615,74 +615,74 @@ class RHF(qedhf.RHF):
 
             self.eta_grad[imode] = onebody_deta + twobody_deta
 
-            ### TODO: temporary, may move to better spot?
-            ### TODO: Check grad norm before computing Hessian?
-            if self.second_order_eta_step:
-                self.eta_hessian[imode] = self.get_eta_hessian(dm_do, imode)
+            # ### TODO: temporary, may move to better spot?
+            # ### TODO: Check grad norm before computing Hessian?
+            # if self.second_order_eta_step:
+            #     self.eta_hessian[imode] = self.get_eta_hessian(dm_do, imode)
 
         return self
 
 
-    def get_eta_hessian(self, dm_do, imode):
-        r"""Construct eta-eta Hessian matrix for 2nd order eta gradient step."""
+    # def get_eta_hessian(self, dm_do, imode):
+    #     r"""Construct eta-eta Hessian matrix for 2nd order eta gradient step."""
 
-        # One-body indices
-        p, q = numpy.ogrid[:self.nao, :self.nao]
+    #     # One-body indices
+    #     p, q = numpy.ogrid[:self.nao, :self.nao]
 
-        # Gaussian factor
-        fc_factor = self.FC_factor(self.eta, imode)  # (nao, nao)
+    #     # Gaussian factor
+    #     fc_factor = self.FC_factor(self.eta, imode)  # (nao, nao)
 
-        # Construct Hessian matrix
-        hessian = numpy.zeros((self.nao, self.nao))
+    #     # Construct Hessian matrix
+    #     hessian = numpy.zeros((self.nao, self.nao))
 
-        # Diagonal terms of Hessian
-        hessian += numpy.diag(2.0 * dm_do[imode].diagonal() / self.qed.omega[imode])
+    #     # Diagonal terms of Hessian
+    #     hessian += numpy.diag(2.0 * dm_do[imode].diagonal() / self.qed.omega[imode])
 
-        # One-body terms
-        eta_diff = (((self.eta[imode, p] - self.eta[imode, q]) / self.qed.omega[imode])**2 - 1.0)
-        one_body = (2.0 / self.qed.omega[imode]**2) * self.h1e_DO * dm_do[imode] * fc_factor * eta_diff
+    #     # One-body terms
+    #     eta_diff = (((self.eta[imode, p] - self.eta[imode, q]) / self.qed.omega[imode])**2 - 1.0)
+    #     one_body = (2.0 / self.qed.omega[imode]**2) * self.h1e_DO * dm_do[imode] * fc_factor * eta_diff
 
-        # Add to Hessian
-        hessian += numpy.diag(numpy.sum(one_body, axis=1))
-        hessian -= one_body
+    #     # Add to Hessian
+    #     hessian += numpy.diag(numpy.sum(one_body, axis=1))
+    #     hessian -= one_body
 
-        # Delete first set of one-body terms
-        del fc_factor, eta_diff, one_body, p, q
+    #     # Delete first set of one-body terms
+    #     del fc_factor, eta_diff, one_body, p, q
 
-        # Another one-body term
-        dm_do_diag = numpy.outer(dm_do[imode].diagonal(), dm_do[imode].diagonal())
+    #     # Another one-body term
+    #     dm_do_diag = numpy.outer(dm_do[imode].diagonal(), dm_do[imode].diagonal())
 
-        # Add to Hessian
-        hessian += 2.0 * (dm_do_diag - 0.5 * dm_do[imode] * dm_do[imode].T) / self.qed.omega[imode]
+    #     # Add to Hessian
+    #     hessian += 2.0 * (dm_do_diag - 0.5 * dm_do[imode] * dm_do[imode].T) / self.qed.omega[imode]
 
-        # Delete other one-body term
-        del dm_do_diag
+    #     # Delete other one-body term
+    #     del dm_do_diag
 
-        ###
+    #     ###
 
-        # Two-body indices
-        p, r, q, s = numpy.ogrid[:self.nao, :self.nao, :self.nao, :self.nao]
+    #     # Two-body indices
+    #     p, r, q, s = numpy.ogrid[:self.nao, :self.nao, :self.nao, :self.nao]
 
-        # Gaussian factor
-        fc_factor = self.FC_factor(self.eta, imode, onebody=False)  # (nao, nao, nao, nao)
+    #     # Gaussian factor
+    #     fc_factor = self.FC_factor(self.eta, imode, onebody=False)  # (nao, nao, nao, nao)
 
-        # Two-body terms
-        density_mat = (dm_do[imode][:, :, None, None] * dm_do[imode][None, None, :, :]
-            - 0.5 * dm_do[imode][:, None, None, :] * dm_do[imode][None, :, :, None])
+    #     # Two-body terms
+    #     density_mat = (dm_do[imode][:, :, None, None] * dm_do[imode][None, None, :, :]
+    #         - 0.5 * dm_do[imode][:, None, None, :] * dm_do[imode][None, :, :, None])
 
-        eta_diff = (((self.eta[imode, p] - self.eta[imode, r] \
-                      + self.eta[imode, q] - self.eta[imode, s]) / self.qed.omega[imode])**2 - 1.0)
-        two_body = (2.0 / self.qed.omega[imode]**2) * self.eri_DO * fc_factor * eta_diff * density_mat
+    #     eta_diff = (((self.eta[imode, p] - self.eta[imode, r] \
+    #                   + self.eta[imode, q] - self.eta[imode, s]) / self.qed.omega[imode])**2 - 1.0)
+    #     two_body = (2.0 / self.qed.omega[imode]**2) * self.eri_DO * fc_factor * eta_diff * density_mat
 
-        # Add to Hessian
-        hessian += numpy.diag(two_body.sum(axis=(1, 2, 3)))
-        hessian += two_body.sum(axis=(1, 3))
-        hessian -= two_body.sum(axis=(2, 3))
-        hessian -= two_body.sum(axis=(1, 2))
+    #     # Add to Hessian
+    #     hessian += numpy.diag(two_body.sum(axis=(1, 2, 3)))
+    #     hessian += two_body.sum(axis=(1, 3))
+    #     hessian -= two_body.sum(axis=(2, 3))
+    #     hessian -= two_body.sum(axis=(1, 2))
 
-        # Invert and return the Hessian
-        del fc_factor, density_mat, eta_diff, two_body
-        return numpy.linalg.inv(hessian)
+    #     # Invert and return the Hessian
+    #     del fc_factor, density_mat, eta_diff, two_body
+    #     return numpy.linalg.inv(hessian)
 
 
     # variable gradients, here we only have eta
@@ -740,13 +740,14 @@ class RHF(qedhf.RHF):
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
 
-        ph_exp_val = self.photon_exp_val(imode)
-        factor = numpy.exp((-0.5 * (tmp * diff_eta) ** 2) * (ph_exp_val + 1))
+        factor = numpy.exp((-0.5 * (tmp * diff_eta) ** 2))
 
         # new code
         # get the displacement operator (D(diff_eta) expectation value
         # \sum_{mn} <m|D(z)|n> * rho_{mn}, where z=diff_eta
-        # ph_exp_val = boson.displacement_exp_val(diff_eta)
+        # currently, the exp(-A^2/2) part is counted in the dis_exp_val!
+        # factor = numpy.exp(-0.5 * (tmp * diff_eta) ** 2) * dis_exp_val
+        #Note: for squeezing case, this will be more complicated, this part does not work for squeezing case at this stage
 
         # use the get_boson_dm function
         mdim = self.qed.nboson_states[imode]
@@ -754,10 +755,7 @@ class RHF(qedhf.RHF):
         ci = self.qed.boson_coeff[idx : idx + mdim, idx]
         pdm = numpy.outer(numpy.conj(ci), ci)
 
-        # currently, the exp(-A^2/2) part is counted in the dis_exp_val!
-        # factor = numpy.exp(-0.5 * (tmp * diff_eta) ** 2) * dis_exp_val
-        #Note: for squeezing case, this will be more complicated, this part does not work for squeezing case at this stage
-        factor = displacement_exp_val(tmp * diff_eta, pdm)
+        #factor = displacement_exp_val(tmp * diff_eta, pdm)
 
 
         if onebody:
@@ -779,9 +777,8 @@ class RHF(qedhf.RHF):
         tmp = tau / self.qed.omega[imode]
 
         # Apply the derivative formula
-        ph_exp_val = self.photon_exp_val(imode)
-        derivative = numpy.exp((-0.5 * (tmp * diff_eta) ** 2) * (ph_exp_val + 1)) \
-                     * ((tmp ** 2) * diff_eta * (ph_exp_val + 1))
+        derivative = numpy.exp((-0.5 * (tmp * diff_eta) ** 2)) \
+                     * ((tmp ** 2) * diff_eta)
 
         if onebody:
             return derivative.reshape(self.nao, self.nao)
@@ -949,31 +946,7 @@ class RHF(qedhf.RHF):
 
 
     def update_var_params(self):
-
-        #eta1 = self.eta.copy()
-        #print (f"ETA1 =\n{eta1}")
-
-        ## Update to eta w/o Hessian
-        #eta_first = self.eta - (self.precond * self.eta_grad)
-        #print (f"ETA_FIRST =\n{eta_first}")
-
-        if self.second_order_eta_step:
-            eta_step = numpy.einsum("apq, aq-> ap", self.eta_hessian, self.precond * self.eta_grad)
-            self.eta -= eta_step
-        else:
-            self.eta -= self.precond * self.eta_grad
-
-        #eta2 = self.eta.copy()
-        #print (f"ETA2 =\n{eta2}")
-        #exit()
-
-        #eta_delta1 = eta_first[0] - eta1[0]
-        #eta_delta2 = eta2[0] - eta1[0]
-
-        #print (f"\nETA_DELTA1 =\n{eta_delta1}")
-        #print (f"\nETA_DELTA2 =\n{eta_delta2}")
-        #exit()
-
+        self.eta -= self.precond * self.eta_grad
         return self
 
 

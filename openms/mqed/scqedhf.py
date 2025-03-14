@@ -730,6 +730,9 @@ class RHF(qedhf.RHF):
         Here :math:`\tau= exp(F_\alpha)` and :math:`F_\alpha` are the VSQ prameters.
         """
 
+        # Number of boson states
+        mdim = self.qed.nboson_states[imode]
+
         if onebody:
             p, q = numpy.ogrid[:self.nao, :self.nao]
             diff_eta = eta[imode, p] - eta[imode, q]
@@ -740,21 +743,20 @@ class RHF(qedhf.RHF):
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
 
-        #factor = numpy.exp((-0.5 * (tmp * diff_eta) ** 2))
-
-        # new code
-        # get the displacement operator (D(diff_eta) expectation value
-        # \sum_{mn} <m|D(z)|n> * rho_{mn}, where z=diff_eta
-        # currently, the exp(-A^2/2) part is counted in the dis_exp_val!
-        # factor = numpy.exp(-0.5 * (tmp * diff_eta) ** 2) * dis_exp_val
-        #Note: for squeezing case, this will be more complicated, this part does not work for squeezing case at this stage
+        # Displacement operator
+        # Note: for squeezing case, this will be more complicated,
+        #       this part does not work for squeezing case at this stage
         # use the get_boson_dm function
-        mdim = self.qed.nboson_states[imode]
-        idx = sum(self.qed.nboson_states[:imode])
-        ci = self.qed.boson_coeff[idx : idx + mdim, idx]
-        pdm = numpy.outer(numpy.conj(ci), ci)
+        if mdim > 1:
+            idx = sum(self.qed.nboson_states[:imode])
+            ci = self.qed.boson_coeff[idx : idx + mdim, idx]
+            pdm = numpy.outer(numpy.conj(ci), ci)
 
-        factor = self.qed.displacement_exp_val(imode, tmp * diff_eta, pdm)
+            factor = self.qed.displacement_exp_val(imode, tmp * diff_eta, pdm)
+
+        # Vacuum Gaussian factor
+        else:
+            factor = numpy.exp((-0.5 * (tmp * diff_eta) ** 2))
 
         if onebody:
             return factor.reshape(self.nao, self.nao)
@@ -764,6 +766,9 @@ class RHF(qedhf.RHF):
 
     def gaussian_derivative_vectorized(self, eta, imode, onebody=True):
 
+        # Number of boson states
+        mdim = self.qed.nboson_states[imode]
+
         if onebody:
             p, q = numpy.ogrid[:self.nao, :self.nao]
             diff_eta = eta[imode, p] - eta[imode, q]
@@ -774,18 +779,18 @@ class RHF(qedhf.RHF):
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
 
-        # # Apply the derivative formula
-        # derivative = numpy.exp((-0.5 * (tmp * diff_eta) ** 2)) \
-        #              * -2.0 * ((tmp ** 2) * diff_eta)
+        # Displacement operator derivative
+        if mdim > 1:
+            idx = sum(self.qed.nboson_states[:imode])
+            ci = self.qed.boson_coeff[idx : idx + mdim, idx]
+            pdm = numpy.outer(numpy.conj(ci), ci)
 
-        # new code
-        # get the displacement operator (D(diff_eta) derivative
-        mdim = self.qed.nboson_states[imode]
-        idx = sum(self.qed.nboson_states[:imode])
-        ci = self.qed.boson_coeff[idx : idx + mdim, idx]
-        pdm = numpy.outer(numpy.conj(ci), ci)
+            derivative = self.qed.displacement_deriv(imode, tmp * diff_eta, pdm)
 
-        derivative = self.qed.displacement_deriv(imode, tmp * diff_eta, pdm)
+        # Apply vacuum derivative formula
+        else:
+            derivative = numpy.exp((-0.5 * (tmp * diff_eta) ** 2)) \
+                         * -2.0 * ((tmp ** 2) * diff_eta)
 
         if onebody:
             return derivative.reshape(self.nao, self.nao)

@@ -91,98 +91,6 @@ def get_bosonic_Ham(nmodes, nboson_states, omega, za, Fa, sc=None):
     return Hb
 
 
-#from scipy.special import laguerre, genlaguerre, factorial
-
-# def displacement_mn(z, i, j):
-#     r"""Compute the matrix element of displacement operator
-
-#     .. math::
-#         \bra{m}D(z)\ket{n} = e^{-z^2/} \sqrt{\frac{n!}{m!}} A^{m-n} L^{m-n}_{n}(A^2)
-
-#     where :math:`D(z) = e^{-z(a-a^\dagger)}` and we assume n <= m (symmetric matrix)
-#     """
-
-#     if i > j:
-#       m, n = i, j
-#     else:
-#       m, n = j, i
-
-#     x = z * z
-#     func = genlaguerre(n, m-n)  # Returns a polynomial function
-#     ratio = 1.0 / factorial(m-n, exact=True) # n!/m!
-#     dmn = func(x) * numpy.exp(-x) * z**(m-n) * numpy.sqrt(ratio)
-#     return dmn
-
-
-# def displacement_mn_vector(z, m, n):
-#     """
-#     Compute the matrix elements of the displacement operator using vectorized operations.
-
-#     Parameters:
-#         z : float or np.array
-#             Displacement parameter.
-#         m, n : np.array
-#             Arrays of indices for matrix elements.
-
-#     Returns:
-#         np.array : Matrix element values.
-#     """
-#     x = z**2
-#     m, n = np.maximum(m, n), np.minimum(m, n)  # Ensure m >= n
-
-#     # Compute Laguerre polynomials
-#     #func = genlaguerre(n, m - n)
-#     #laguerre_vals = func(x)
-#     laguerre_vals = numpy.array([genlaguerre(n[i], m[i] - n[i])(x)  for i in range(len(n))])
-
-#     # Compute factorial ratio
-#     ratio = 1.0 / factorial(m - n, exact=True)
-
-#     # Compute matrix elements using vectorized NumPy operations
-#     dmn = laguerre_vals * np.exp(-x) * z**(m - n) * np.sqrt(ratio)
-
-#     return dmn
-
-# def displacement_mat(z, n):
-#     """
-#     Compute the matrix representation of the displacement operator in a vectorized way.
-
-#     Parameters:
-#         z : float or np.array
-#             Displacement parameter.
-#         n : int
-#             Size of the matrix.
-
-#     Returns:
-#         np.array : Displacement matrix of size (n, n).
-#     """
-#     i, j = np.triu_indices(n)  # Get upper triangle indices (including diagonal)
-#     dmat = np.zeros((n, n), dtype=np.float64)  # Initialize matrix
-
-#     # Compute matrix elements in a vectorized manner
-#     dmn = displacement_mn_vector(z, i, j)
-
-#     dmat[i, j] = dmn
-#     dmat[j, i] = dmn  # Use symmetry
-
-#     return dmat
-
-
-# def displacement_exp_val(zvector, dm):
-#     r"""compute the displacement operator expectation value:
-
-#     .. math::
-#        <D> = \Tr[D\rho] = \sum_{mn}D_{mn}\rho_{mn}
-#     dm: bosonic density matrix
-#     """
-
-#     exp_vals = []
-#     for z in zvectors:
-#         dmat = displacement_mat(z, n)
-#         exp_vals.append(numpy.trace(numpy.dot(dmat, dm)))
-#     return numpy.array(exp_vals)
-
-
 def get_dipole_ao(mol, add_nuc_dipole=True, origin_shift=None):
     r"""Return dipole moment matrix in atomic orbital (AO) basis.
 
@@ -678,7 +586,11 @@ class Boson(object):
     # ---------------------
 
     def displacement_exp_val(self, mode, factor, pdm, scale_by_exp=True):
-
+        r"""
+        \sum_{mn} <m|D(z)|n> * rho_{mn}, where z=diff_eta
+        currently, the exp(-A^2/2) part is counted in the dis_exp_val!
+        factor = numpy.exp(-0.5 * (tmp * diff_eta) ** 2) * dis_exp_val
+        """
         from scipy.special import genlaguerre, factorial
 
         # Number of boson states

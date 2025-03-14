@@ -715,7 +715,7 @@ class Boson(object):
             # Matrix elements
             disp_mat[i_m, i_n] = numpy.sqrt(ratio) * factor**(i_m - i_n) \
                                  * genlaguerre(n=i_n, alpha=(i_m - i_n))(factor**2)
-            disp_mat[i_n, i_m] = disp_mat[i_m, i_n] * (-1.0)**(i_n - i_m)
+            disp_mat[i_n, i_m] = disp_mat[i_m, i_n] * (-1.0)**(i_n - i_m) # upper triangle
 
         # Compute diagonal elements
         for ind_m in range(mdim):
@@ -755,42 +755,37 @@ class Boson(object):
         # Initialize matrix
         delta_disp_mat = numpy.zeros((mdim, mdim, *factor.shape))
 
-        # Gaussian factor
-        #gfact = numpy.exp(-0.5 * (factor)**2)
-
         # First compute lower triangle
         ind_m, ind_n = numpy.tril_indices(mdim, k=-1)
         for i_m, i_n in zip(ind_m, ind_n):
 
             # Term 1: Gaussian factor derivative
-            tmp1 = factor**(i_m - i_n) * genlaguerre(n=i_n, alpha=(i_m - i_n))(factor**2) \
-                   * -2.0 * (factor / self.omega[mode]) # Gaussian factor derivative
+            tmp1 = genlaguerre(n=i_n, alpha=(i_m - i_n))(factor**2) \
+                   * factor**(i_m - i_n) * -2.0 * (factor / omega)
 
             # Term 2: A^(m-n) derivative
             tmp2 = genlaguerre(n=i_n, alpha=(i_m - i_n))(factor**2)
             if i_m - i_n > 1:
-                tmp2 *= ((i_m - i_n) * (factor)**(i_m - i_n - 1))
+                tmp2 *= ((i_m - i_n) / omega * (factor)**(i_m - i_n - 1))
             else:
-                tmp2 *= (1.0 / self.omega[mode])
+                tmp2 *= (1.0 / omega)
 
             # Term 3: Laguerre polynomial derivative
             if i_n > 0:
-                tmp2 -= (factor)**(i_m - i_n) * (2.0 * factor / self.omega[mode]) \
+                tmp2 -= (factor)**(i_m - i_n) * (2.0 * factor / omega) \
                         * genlaguerre(n=(i_n - 1), alpha=(i_m - i_n + 1))(factor**2)
 
             # Scale terms by factorial and add together
             ratio = factorial(i_n, exact=True) / factorial(i_m, exact=True)
             delta_disp_mat[i_m, i_n] = numpy.sqrt(ratio) * (tmp1 + tmp2)
-
-        # Fill upper triangle, exploit symmetry
-        delta_disp_mat[ind_n, ind_m] = delta_disp_mat[ind_m, ind_n]
+            delta_disp_mat[i_n, i_m] = (-1.0)**(i_n - i_m) * delta_disp_mat[i_m, i_n] # upper triangle
 
         # Compute diagonal elements
         for ind_m in range(mdim):
-            delta_disp_mat[ind_m, ind_m] = -2.0 * (factor / self.omega[mode]) \
-                                           * genlaguerre(n=ind_m, alpha=0)(factor**2)
+            delta_disp_mat[ind_m, ind_m] = genlaguerre(n=ind_m, alpha=0)(factor**2) \
+                                           * -2.0 * (factor / omega)
             if ind_m > 0:
-                delta_disp_mat[ind_m, ind_m] -= (2.0 * factor / self.omega[mode]) \
+                delta_disp_mat[ind_m, ind_m] -= (2.0 * factor / omega) \
                                                 * genlaguerre(n=(ind_m - 1), alpha=1)(factor**2)
 
         # Scale by Gaussian factor

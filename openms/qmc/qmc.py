@@ -156,7 +156,7 @@ def kernel(mc, propagator=None, trial=None):
 
         # step 2) weight control
         wall_t1 = time.time()
-        mc.walkers.weight_control(step)
+        mc.walkers.weight_control(step, freq=mc.pop_control_freq)
         mc.wt_weight_control += time.time() - wall_t1
 
         # step 3): estimate energies and other properties if needed
@@ -330,10 +330,11 @@ class QMCbase(object):
         self.batched = kwargs.get("batched", True)
 
         # parameters for walker weight control
-        self.pop_control_freq = 5  # weight control frequency
+        self.pop_control_freq = kwargs.get("pop_control_freq", 5)  # weight control frequency
+        self.pop_control_method = kwargs.get("pop_control_method", None)
 
         # other variables for Hamiltonian
-        self.chol_Xa = None  # TODO: optimize the handling of this term
+        self.chol_bilinear = None  # TODO: optimize the handling of this term
 
         # update propagator options
         self.propagator_options = {
@@ -344,6 +345,7 @@ class QMCbase(object):
             "taylor_order": self.taylor_order,
             # electron-boson_mixture
             "decouple_bilinear" : False,
+            "decouple_scheme" : 1,
             "turnoff_bosons" : False,
             "quantizaiton": "second",
         }
@@ -360,7 +362,7 @@ class QMCbase(object):
             self.propagator_options.update(propagator_options)
 
         # property calculations
-        self.property_calc_freq = kwargs.get("property_calc_freq", 10)
+        self.property_calc_freq = kwargs.get("property_calc_freq", 5)
         self.default_properties = ["energy"]  # TODO: more property calculators
         self.stacked_variables = [
             "weights",
@@ -443,7 +445,6 @@ class QMCbase(object):
             task_title(f"Get integrals ... Done! Time used: {time.time()-t0: 7.3f} s"),
         )
         if self.geb is not None and not self.propagator_options["turnoff_bosons"]:
-            #trial.init_boson_trial_with_z(self.geb)
             zalpha = backend.einsum("Xpq, pq->X", self.geb, self.trial.Gf[0])
             self.trial.initialize_boson_trial_with_z(zalpha, self.mol.nboson_states)
             logger.debug(self, f"Debug: initial coherent state is  : {zalpha}")
@@ -472,7 +473,7 @@ class QMCbase(object):
             )
             self.propagator_options["nbarefields"] = self.nbarefields
             self.propagator = PhaselessElecBoson(self.dt, **self.propagator_options)
-            self.propagator.chol_Xa = self.chol_Xa
+            self.propagator.chol_bilinear = self.chol_bilinear
         else:
             logger.note(
                 self,
@@ -486,11 +487,9 @@ class QMCbase(object):
 
         self.propagator.build(self.h1e, self.ltensor, self.trial, self.geb)
 
-        logger.note(
-            self,
-            task_title(
-                f"Prepare propagator ... Done! Time used: {time.time()-t0: 7.3f} s"
-            ),
+        wt_prop = time.time()-t0
+        logger.note(self,
+            task_title(f"Prepare propagator ... Done in {wt_prop: 7.3f} s"),
         )
 
 
@@ -511,6 +510,8 @@ class QMCbase(object):
         logger.note(self, f" Time step              : {self.dt:7.3f}")
         logger.note(self, f" Total time             : {self.total_time:7.3f}")
         logger.note(self, f" Number of steps        : {self.nsteps:7d}")
+        logger.note(self, f" Pop control method     : {self.pop_control_method}")
+        logger.note(self, f" Pop control freq       : {self.pop_control_freq:7d}")
         logger.note(self, f" Energy scheme          : {self.energy_scheme}")
         logger.note(self, f" Number of chols        : {self.ltensor.shape[0]:5d}")
         logger.note(self, f" Threshold of chols     : {self.chol_thresh:7.3e}")
@@ -558,40 +559,28 @@ class QMCbase(object):
         logger.debug(self, f"Debug: basis_transform_matrix = \n{Xmat}")
         norb = Xmat.shape[0]
 
-        #
-        # old code, will remove this part, as we don't need the eri
-        #
+        g_AO = None
+        if self.fbinteraction: # isinstance(self.system, Boson):
+            system = self.system
+            # Add boson-mediated oei and eri:
+            # shape [nm, nao, nao]
+            g_AO = system.gmat.copy()
+            nmodes = g_AO.shape[0]
 
-        # get h1e, and ori in OAO representation
-        mol = self.mol._mol if isinstance(self.mol, Boson) else self.mol
-        if not self.block_decompose_eri:
-            import tempfile
-            ftmp = tempfile.NamedTemporaryFile()
-
-            pyscftools.fcidump.from_mo(mol, ftmp.name, Xmat)
-            hcore, eri, self.nuc_energy = tools.read_fcidump(ftmp.name, norb)
-
-            # Cholesky decomposition of eri
-            # here eri uses chemist's notation
-            # [il|kj]  a^\dag_i a^\dag_j a_k a_l  = <ij|kl> a^\dag_i a^\dag_j a_k a_l
-            # [] -- chemist, <> physicist notations
-
-            # Cholesky decomposition of eri (ij|kl) -> L_{\gamma,ij} L_{\gamma,kl}
-            eri_2d = eri.reshape((norb**2, -1))
-            u, s, v = scipy.linalg.svd(eri_2d)
-            mask = s > self.chol_thresh
-            # ltensor = u * backend.sqrt(s)
-            ltensor = u[:, mask] * backend.sqrt(s[mask])
-            ltensor = ltensor.T
-            ltensor = ltensor.reshape(ltensor.shape[0], norb, norb)
-        else:
-            # ---------------------------------------
-            #  use block decomposition of eri in tools
-            # ---------------------------------------
-            # get h1e, eri, ltensors in OAO/MO representation
-            hcore, ltensor, self.nuc_energy = tools.get_h1e_chols(
-                mol, Xmat=Xmat, thresh=self.chol_thresh
+            # transform into OAO
+            g_OR = backend.einsum(
+                "ik, mkj, jl -> mil", Xmat.conj().T, g_AO, Xmat, optimize=True
             )
+
+        mol = self.mol._mol if isinstance(self.mol, Boson) else self.mol
+
+        # get h1e, eri, ltensors in OAO/MO representation
+        hcore, ltensor, self.nuc_energy = tools.get_h1e_chols(
+            mol, Xmat=Xmat, thresh=self.chol_thresh,
+            g=g_AO,
+            block_decompose_eri=self.block_decompose_eri,
+        )
+        #print("Norm of ltensor is: ", backend.linalg.norm(ltensor))
 
         # shape of h1e [nspin, nao, nao]
         h1e = backend.array([hcore for _ in range(self.ncomponents)])
@@ -606,87 +595,42 @@ class QMCbase(object):
         #    fa["cholesky"] = ltensor
 
         if self.fbinteraction: # isinstance(self.system, Boson):
-            system = self.system
-            # Add boson-mediated oei and eri:
-            # shape [nm, nao, nao]
-
-            chol_eb = system.gmat.copy()
-            nmodes = system.gmat.shape[0]
-
-            # transform into OAO
-            chol_eb = backend.einsum(
-                "ik, mkj, jl -> mil", Xmat.conj().T, chol_eb, Xmat, optimize=True
-            )
-
             # add DSE contribution to h1e
-            oei_dse = 0.5 * backend.einsum('Xpq, Xqs->ps', chol_eb, chol_eb)
+            oei_dse = 0.5 * backend.einsum('Xpq, Xqs->ps', g_OR, g_OR)
             h1e += backend.array([oei_dse for _ in range(self.ncomponents)])
 
             # geb is the bilinear coupling term
             tmp = (system.boson_freq * 0.5) ** 0.5
-            self.geb = chol_eb * tmp[:, backend.newaxis, backend.newaxis]
-
-            logger.info(self, f"size of chol before adding DSE: {ltensor.shape[0]}")
-            # DSE-mediated eri
-            if backend.linalg.norm(chol_eb) > 1.0e-10:
-                ltensor = backend.concatenate((ltensor, chol_eb), axis=0)
-                self.nbarefields += chol_eb.shape[0] # add N_v more chols
+            self.geb = g_OR * tmp[:, backend.newaxis, backend.newaxis]
 
             # add terms due to decoupling of bilinear term
             if self.propagator_options["decouple_bilinear"]:
-                logger.debug(
-                    self, f"creating chol due to decomposition of bilinear term"
-                )
+                logger.debug(self, f"creating chol due to decomposition of bilinear term")
                 zalpha = backend.einsum("Xpq, pq->X", self.geb, self.trial.Gf[0])
 
                 # TODO: set Afac as input variables as long as
-                # Decompose \sqrt{w/2} (\lambda\cdot D}(a^\dagger_v + a_v) as (A_v * \lambda\cdot D) * (O_v * X_v)
-                # where X_v = a^\dagger_v + a_v
-                # where A_v * O_v = sqrt{w_v/2}
-                decoup_Afac = backend.ones(nmodes)
-                decoup_Ofac = (system.boson_freq * 0.5) ** 0.5 / decoup_Afac
+                # rewrite \sqrt{w/2} (\lambda\cdot D}(a^\dagger_v + a_v)
+                # as (A_v * \lambda\cdot D) * (O_v * X_v)
+                # where X_v = a^\dagger_v + a_v and A_v * O_v = sqrt{w_v/2}
+                Afac = backend.ones(nmodes)
+                Bfac = (system.boson_freq * 0.5) ** 0.5 / Afac
+                # Bfac = backend.sqrt(abs(zalpha))
+                # Afac = (system.boson_freq * 0.5) ** 0.5 / Bfac
 
-                #decoup_Ofac = backend.sqrt(abs(zalpha))
-                #decoup_Afac = (system.boson_freq * 0.5) ** 0.5 / decoup_Ofac
+                decouple_scheme = self.propagator_options["decouple_scheme"]
+                self.chol_bilinear = tools.bilinear_decomposition(Afac, Bfac, g_OR, decouple_scheme)
 
-                # Add the chols due to the decomposition of bilinear term:
-                #
-                # 1) Original DSE + terms due tot the decomposition is:
-                #     - 1/2 * (A_v\lambda_v\cdot D)^2 + 1/2 * (A_v\lambda_v\cdot D + O_v * X_v)^2
-                #                            |                              |
-                #           a): \sqrt{1-A_v} chol_eb           b): \sqrt{A_v} * chol_eb
-                #
-                #  i.e., at most 2N_b more tensors will be appended (N_b number of bosonic modes)
-                #
-                # 2) Bosonic part from the decomposition:
-                #   1/2 * (A_v \lambda_v \cdot D + O_v * X_v)^2 - 1/2 * (O_v * X_v)^2
-                #                                     |                     |
-                #                           a)   sqrt{O_v}X_v    b)  j * sqrt{O_v} X_v
-                # factors = [backend.sqrt(backend.ones(nmodes) - decoup_Afac, dtype=complex), backend.sqrt(decoup_Afac)]
-                factors = [(1 + 1j) * decoup_Afac]
-                factors = [-1j*decoup_Afac, decoup_Afac]
-                for factor in factors:
-                    Lga = chol_eb * factor[:, backend.newaxis, backend.newaxis]
-                    for imode in range(nmodes):
-                        if backend.linalg.norm(Lga[imode]) > 1.0e-10:
-                            ltensor = backend.concatenate((ltensor, Lga[imode][backend.newaxis,...]), axis=0)
+                self.chol_bilinear_e = self.chol_bilinear[0] # electronic part
+                # add the electronic part of bilinear coupling into ltensor
+                if not self.propagator_options["turnoff_bosons"]:
+                    ltensor = backend.concatenate((ltensor, self.chol_bilinear_e), axis=0)
 
-                # [1, 1j] * Ofac * (a^\dagger_v + a_v)
-                chol_Xa =  decoup_Ofac
-                self.chol_Xa =  backend.array([chol_Xa * (1 + 1j)])
-                self.chol_Xa =  backend.array([chol_Xa, -1j * chol_Xa])
-                logger.debug(self, f"Debug: chol_Xa.shape = {chol_Xa.shape}")
-                logger.debug(self, f"Debug: chol_Xa.shape = {self.chol_Xa.shape}\n")
-                logger.debug(self, f"size of bosonic chol {self.chol_Xa.shape[0]}\n")
 
             for i in range(ltensor.shape[0]):
                 evals, evecs = scipy.linalg.eigh(ltensor[i])
                 logger.debug(self, f"evals of ltensor[{i}] in OAO: {evals}")
 
-            logger.info(self, f"size of chol after adding DSE:  {ltensor.shape[0]}")
-            logger.debug(self, f"Norm of ltensor (bare):  {backend.linalg.norm(ltensor[:-1])}")
-            logger.debug(self, f"Norm of ltensor (L[0]):  {backend.linalg.norm(ltensor[0])}")
-            logger.debug(self, f"Norm of ltensor (eb):    {backend.linalg.norm(ltensor[-1])}")
+            logger.debug(self, f"Norm of ltensor (with chol_bilinear_e):  {backend.linalg.norm(ltensor)}")
 
         self.nfields = ltensor.shape[0]
         return h1e, ltensor
@@ -771,7 +715,7 @@ class QMCbase(object):
             ortho_walkers = backend.zeros_like(self.walkers.boson_phiw)
             norms = backend.einsum('ij,ij->i', self.walkers.boson_phiw, self.walkers.boson_phiw.conj())
             norms = backend.sqrt(norms)
-            self.walkers.boson_phiw = self.walkers.boson_phiw / norms[:, None]
+            self.walkers.boson_phiw = backend.abs(self.walkers.boson_phiw / norms[:, None])
             # for iw in range(self.walkers.boson_phiw.shape[0]):
             #    ortho_walkers[iw] = backend.linalg.qr(self.walkers.boson_phiw[iw])[0]
             # self.walkers.boson_phiw = ortho_walkers
@@ -970,10 +914,10 @@ class QMCbase(object):
         energy_list = []
         time_list = []
         wall_t0 = time.time()
-        logstring = f"{'Step':^10}{'Etot':^16}{'Raw_Etot':^17}{'Hybrid_Energy':^17}{'Norm':^13}{'Raw_Norm':^15}{'E1':^16}{'E2':^16}"
+        logstring = f"{'Step':^10}{'Etot':^16}{'Raw_Etot':^17}{'Hybrid_Energy':^17}{'Norm':^11}{'Raw_Norm':^11}{'E1':^15}{'E2':^15}"
         if isinstance(propagator, PhaselessElecBoson):
-            logstring += f"{'Eb':^16}{'Eg':^16}"
-        logstring += "   Wall_time"
+            logstring += f"{'Eb':^15}{'Eg':^15}"
+        logstring += "  Wall_time"
         logger.info(self, logstring)
 
         # while tt <= self.total_time:
@@ -1019,7 +963,7 @@ class QMCbase(object):
 
             # step 2) weight control
             wall_t1 = time.time()
-            self.walkers.weight_control(step)
+            self.walkers.weight_control(step, freq=self.pop_control_freq, method=self.pop_control_method)
             self.wt_weight_control += time.time() - wall_t1
 
             # moved phaseless approximation to propagation
@@ -1046,12 +990,12 @@ class QMCbase(object):
                 logstring = (
                     f"Step {step:5d}  {energy:14.7e}  "
                     f"{energies[0]:14.7e}  "
-                    f"{self.eshift.real:14.7e}  {energies[1]:9.5e}  "
-                    f"{backend.sum(walkers.weights_org):14.7e}  "
+                    f"{self.eshift.real:14.7e}  {energies[1]:8.4e}  "
+                    f"{backend.sum(walkers.weights_org):9.4e}  "
                     f"{energies[2]:14.7e}  {energies[3]:14.7e}  "
                 )
                 if len(energies) > 4:
-                    logstring += f"{energies[4]:15.7e}  {energies[5]:15.7e}  "
+                    logstring += f"{energies[4]:14.7e}  {energies[5]:14.7e}  "
                 logstring += f"{time.time() - t0:9.4f}s"
 
                 logger.info(self, logstring)

@@ -118,17 +118,13 @@ class BaseWalkers(object):
             "to handle renormalization and orthogonalization of walkers."
         )
 
-    @abstractmethod
-    def weight_control(self, step, freq=5):
+
+    def weight_control(self, step, freq=5, method="reconfiguration"):
         r"""Handles the control of walker weights
         This method must be implemented in any subclass.
         """
+        from openms.qmc.population_control import population_control_factory
 
-        # raise NotImplementedError(
-        #    "The 'weight_control' method must be implemented in a subclass "
-        #    "to manage the walker weights effectively."
-        # )
-        t0 = time.time()
         weight_bound = 0.1 * self.total_weight
         if step > 0:
             backend.clip(
@@ -151,6 +147,37 @@ class BaseWalkers(object):
         self.total_weight = total_weight
         self.weights_org = self.weights.copy()
         self.weights = self.weights / ratio
+
+        population_control_factory(self, method=method)
+
+
+    def _pack_walkers(self):
+        if self.boson_phiw is not None and self.ncomponents > 1:
+            packed_walkers = [[self.phiwa[i], self.phiwb[i], self.boson_phiw[i]] for i in range(self.nwalkers)]
+        elif self.boson_phiw is None and self.ncomponents > 1:
+            packed_walkers = [[self.phiwa[i], self.phiwb[i]] for i in range(self.nwalkers)]
+        elif self.boson_phiw is not None and self.ncomponents == 1:
+            packed_walkers = [[self.phiwa[i], self.boson_phiw[i]] for i in range(self.nwalkers)]
+        else:
+            packed_walkers = [self.phiwa[i] for i in range(self.nwalkers)]
+        return packed_walkers
+
+
+    def _unpack_walkers(self, new_walkers):
+        r"""unpack tmp walkers into phiwa/b and boson_phiw
+        """
+        if self.boson_phiw is not None and self.ncomponents > 1:
+            self.phiwa = backend.array([new_walkers[i][0] for i in range(self.nwalkers)])
+            self.phiwb = backend.array([new_walkers[i][1] for i in range(self.nwalkers)])
+            self.boson_phiw = backend.array([new_walkers[i][2] for i in range(self.nwalkers)])
+        elif self.boson_phiw is None and self.ncomponents > 1:
+            self.phiwa = backend.array([new_walkers[i][0] for i in range(self.nwalkers)])
+            self.phiwb = backend.array([new_walkers[i][1] for i in range(self.nwalkers)])
+        elif self.boson_phiw is not None and self.ncomponents == 1:
+            self.phiwa = backend.array([new_walkers[i][0] for i in range(self.nwalkers)])
+            self.boson_phiw = backend.array([new_walkers[i][1] for i in range(self.nwalkers)])
+        else:
+            self.phiwa = backend.array([new_walkers[i] for i in range(self.nwalkers)])
 
 
 from openms.qmc.trial import multiCI

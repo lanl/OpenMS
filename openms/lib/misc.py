@@ -14,7 +14,7 @@
 # Author: Yu Zhang <zhy@lanl.gov>
 #
 
-from dataclasses import dataclass
+import warnings
 from functools import wraps
 import os, sys
 import ctypes
@@ -194,6 +194,19 @@ for k, v in periodictable.items():
     v["m"] *= amu2au
 
 
+def deprecated(func):
+    """Decorator to mark functions as deprecated."""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        warnings.warn(
+            f"{func.__name__} is deprecated and will be removed in a future version.",
+            category=DeprecationWarning,
+            stacklevel=2,
+        )
+        return func(*args, **kwargs)
+    return wrapper
+
+
 def wall_time(func):
     @wraps(func)
     def timer(*args, **kwargs):
@@ -242,10 +255,20 @@ def typewriter(string, dir_name, filename, mode):
         f.write(string + "\n")
 
 
-@dataclass
-class State:
-    forces: numpy.ndarray
-    energy: float = 0
+class State(object):
+    """Class for BO states
+
+    :param integer ndim: Dimension of space
+    :param integer nat: Number of atoms
+    """
+
+    def __init__(self, ndim, nat):
+        # Initialize variables
+        self.energy = 0.0
+        self.energy_old = 0.0
+        self.force = numpy.zeros((nat, ndim))
+        self.coef = 0.0 + 0.0j
+        self.multiplicity = 1
 
 
 class Molecule(mole.Mole):
@@ -283,7 +306,7 @@ class Molecule(mole.Mole):
         nstates = kwargs["nstates"] if "nstates" in kwargs else 1
         self.nstates = nstates
         self.states = [
-            State(numpy.zeros((self.natm, self.ndim))) for _ in range(self.nstates)
+            State(self.ndim, self.natm) for i in range(self.nstates)
         ]
 
         #

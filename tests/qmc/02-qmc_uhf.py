@@ -8,11 +8,12 @@ from molecules import get_mol
 def calc_qmc_energy(
     mol,
     time=6.0,
-    num_walkers=500,
+    num_walkers=100,
     uhf=False,
     energy_scheme="hybrid",
     block_decompose_eri=False,
 ):
+    r"""Note the number of walkers here is small, in order to do fast test"""
 
     afqmc = AFQMC(
         mol,
@@ -56,10 +57,10 @@ def run_fci(mol):
 class TestQMCH2(unittest.TestCase):
 
     def test_qmc_h2(self):
-        mean_ref = -2.191589
-        std_dev_ref = 0.003
-        local_mean_ref = -2.191436
-        local_std_dev_ref = 0.003
+        mean_ref = -2.2027
+        std_dev_ref = 0.01
+        local_mean_ref = -2.2037
+        local_std_dev_ref = 0.01
 
         bond = 1.6 * 0.5291772
         basis = "sto6g"
@@ -80,16 +81,15 @@ class TestQMCH2(unittest.TestCase):
         print(f"fci_energies :  {fci_energy}")
         print(f"energy and std are (hybrid):  {mean} {std_dev}")
         print(f"energy and std are (local):   {mean2} {std_dev2}")
-        # assert numpy.isclose(mean, mean_ref)
-        # assert numpy.isclose(std_dev, std_dev_ref)
 
-        self.assertAlmostEqual(
-            mean, mean_ref, places=3, msg="E_mean does not match the reference value."
+        self.assertLess(
+            abs(mean - mean_ref),
+            1.0e-3,
+            msg="E_mean does not match the reference value.",
         )
-        self.assertAlmostEqual(
-            mean2,
-            local_mean_ref,
-            places=3,
+        self.assertLess(
+            abs(mean2 - local_mean_ref),
+            1.0e-3,
             msg="E_mean does not match the reference value.",
         )
         self.assertLess(

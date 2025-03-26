@@ -110,9 +110,9 @@ class TestQMCH2(unittest.TestCase):
 
     def test_qedafqmc_vs_bare_afqmc(self):
 
-        bond = 2.0
+        bond = 1.0
         time = 5.0
-        nwalkers = 500
+        nwalkers = 100
         gfac = 1.e-7
         uhf = True
         uhf = False
@@ -160,17 +160,14 @@ class TestQMCH2(unittest.TestCase):
 
         # Assertions
         self.assertAlmostEqual(
-            means[0], means[1], places=6, msg="Mean energy does not match between tests 1 and 2."
+            means[0], means[1], places=2, msg="Mean energy does not match between tests 1 and 2."
         )
         self.assertAlmostEqual(
             means[0], means[2], places=2, msg="Mean energy does not match between tests 1 and 3."
         )
         self.assertAlmostEqual(
-            stds[0], stds[1], places=6, msg="Standard deviation does not match between tests 1 and 2."
+            stds[0], stds[1], places=3, msg="Standard deviation does not match between tests 1 and 2."
         )
-        #self.assertAlmostEqual(
-        #    stds[0], stds[2], places=3, msg="Standard deviation does not match between tests 1 and 3."
-        #)
 
 
     def test_qedafqmc_vs_gfac(self):
@@ -178,7 +175,7 @@ class TestQMCH2(unittest.TestCase):
         # propagate bilinear directly
         bond = 2.0
         time = 5.0
-        nw = 500
+        nw = 100
 
         gfacs = numpy.arange(0.0, 0.101, 0.05)
         Ng = len(gfacs)

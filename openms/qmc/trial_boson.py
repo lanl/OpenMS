@@ -18,9 +18,27 @@ r"""
 Trial WF for bosonic systems
 ----------------------------
 
+**Fock state representation**:
 
-Identical orbital representation:
+Fock state is :math:`\ket{n_1, n_2, \cdots, n_N}`. Its size
+is :math:`M^N`, where :math:`M` is the maximum occupation number
+and :math:`N` is the number of modes. So space grows expoentially
+with the system size, which is not a good representation for large number of modes.
+This representation is implemeted for benchmark other more efficient representations.
 
+**Coherents state representation**:
+
+Coherent state is
+
+.. math::
+   \ket{\alpha_i} = e^{-|\alpha_i|^2/2}\sum_n \frac{\alpha^N_i}{n!}\ket{n}.
+
+
+**Squeezed state representation**:
+
+TBA.
+
+**Identical orbital representation**:
 
 A single-permanet, N-boson WF is
 
@@ -69,6 +87,14 @@ import sys
 from abc import abstractmethod
 from pyscf.lib import logger
 import numpy as backend
+import numpy as np
+
+
+
+def coherent_state_coeff(n, alpha):
+    """ Compute coefficient for Fock state |n> in a coherent state |α> """
+    from scipy.special import factorial
+    return np.exp(-abs(alpha)**2 / 2) * (alpha**n) / np.sqrt(factorial(n))
 
 
 class TrialBosonBase(object):
@@ -79,6 +105,129 @@ class TrialBosonBase(object):
     def force_bias(self, walkers):
         r"""Compute the force bias"""
         pass
+
+
+# ===============================================
+# trial WF in the second quantization
+# ===============================================
+
+def calc_trial_walker_ovlp(phi_w, psi_T):
+    r"""
+    Compute bosonic trial_walker overlap
+    """
+    return backend.dot(phi_w, psi_T.conj())
+
+
+def calc_trial_walker_ovlp_gf(walkers, trial):
+    r"""
+    Compute the bosonic Green's function:
+
+    .. math::
+         G_{ij} = \frac{ \bra{\Phi_T}  a^\dagger_i a_j \ket{\Phi_W}} {\langle \Phi_T  \ket{\Phi_W}}.
+
+    Matrix Elements in the Fock Basis :math:`\ket{n_1, n_2, \cdots, \cdots, n_N}`:
+
+    .. math::
+         & a^\dagger_i \ket{n_1, n_2, \cdots, n_i, \cdots, n_N}
+         = \sqrt{n_i + 1} \ket{n_1, n_2, \cdots, n_i + 1, \cdots, n_N} \\
+         & a_j \ket{n_1, n_2, \cdots, n_j, \cdots, n_N}
+         = \sqrt{n_j} \ket{n_1, n_2, \cdots, n_j-1, \cdots, n_N}
+
+    Hence, the element is
+
+    .. math::
+        G_{ij} = \sum_{\boldsymbol{n}, \boldsymbol{n}'} C^*_T(\boldsymbol{n})
+                 C_W(\boldsymbol{n}')\sqrt{n'_j(n_i+1)}\delta_{\boldsymbol{n}', \boldsymbol{n}'+e_i-e_j}
+
+    :math:`\delta_{\boldsymbol{n}', \boldsymbol{n}'+e_i-e_j}` means that mode :math:`j` loses
+    one particle and mode :math:`i` gains one.
+
+    :param trial_wf: Dictionary mapping Fock states to coefficients for trial wavefunction.
+    :param walker_wf: Dictionary mapping Fock states to coefficients for walker wavefunction.
+    :param N: Number of bosonic modes.
+    :return: Green's function matrix G of shape (N, N).
+    """
+    # compute ovlp
+    ovlp = calc_trial_walker_ovlp(walkers.boson_phiw, trial.boson_psi)
+
+    # compute GF
+
+    pass
+
+
+class TrivialFock(TrialBosonBase):
+    r"""Trial in entire Fock space
+    """
+    def __init__(self, nmodes, nfock, *args, **kwargs):
+        r"""Define Bosonic Trial WF in 1st quantization (coordinate space)"""
+        super().__init__(*args, **kwargs)
+
+        self.nfock = nfock
+        self.nmodes = nmodes
+        self.ndim = self.nfock ** self.nmodes
+
+
+    def build(self, alpha=None):
+        r"""initialize trial wavefunction
+        alpha: array of coherent state amplitudes (shape: (N,))
+        """
+
+        count = 0
+        self.boson_psi = np.zeros(self.ndim)
+        for n_vec in backend.ndindex(*(self.nfock, ) * self.nmodes):
+            if alpha is not None:
+                # Compute coefficient using coherent state expansion
+                coeff = np.prod([coherent_state_coeff(n, alpha[i]) for i, n in enumerate(n_vec)])
+            else:
+                n_vec = tuple(n_vec)
+                coeff = np.exp(-sum(n_vec))
+            self.boson_psi[count] = coeff
+            count +=1
+        assert count == self.ndim
+
+    def ovlp_with_walkers_gf(self, walkers):
+        r""""Compute the overlap with walkers and walker GFs
+        assume the bosonic walkers is stored in walkers.boson_phiw
+
+        """
+
+        return calc_trial_walker_ovlp_gf(walker, self)
+
+
+class CoherentState(TrialBosonBase):
+    r"""Coherent state representation"""
+    def __init__(self, nmodes, nfock, *args, **kwargs):
+        r"""Define Bosonic Trial WF in 1st quantization (coordinate space)"""
+        super().__init__(*args, **kwargs)
+
+        self.nfock = nfock
+        self.nmodes = nmodes
+        self.ndim = nmodes
+
+    def build(self, alpha):
+        assert alpha.shape[0] == self.ndim
+        self.boson_psi = alpha
+
+
+    def ovlp_with_walkers(self, walkers):
+
+        pass
+
+
+
+
+class TrialIOR(TrialBosonBase):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.nmax = kwargs.get("nmax", 4)
+
+        # in IOR, the trial wavefunction is [nmode, n_exc] matrix
+        self.boson_psi = backend.zeros((self.nmodes, self.nmax))
+
+        #
+
+
 
 
 # ===============================================
@@ -131,10 +280,6 @@ class TrialQ(TrialBosonBase):
         kin = -0.5 * backend.sum(self.laplacian(Q)) / self.mass
         pot = 0.5 * self.mw * self.freq * backend.sum(Q * Q)
         etot = kin + pot - 0.5 * self.freq * nsites
-
-        # print("kinetic energy =    ", kin)
-        # print("potential energy =  ", pot)
-        # print("no. of boson sites =", nsites)
 
         return etot
 
@@ -205,22 +350,8 @@ class TrialVLF(object):
         pass
 
 
-# ===============================================
-# trial WF in the second quantization
-# ===============================================
 
-
-class TrialIOR(TrialBosonBase):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    def force_bias(self, walkers):
-        r"""Compute Force bias in IOR
-
-        TBA.
-
-        return None
-        """
+# examples
 
 if __name__ == "__main__":
     print("test-bosonic trial WF (TBA)")
@@ -228,3 +359,29 @@ if __name__ == "__main__":
     print(phonon_trial.mass)
     Q = backend.arange(0.0, 10.0, 2.0)
     print("\nLocal energy =", phonon_trial.local_energy(Q))
+
+    # Test Fock state
+    print(f"\n{'='* 25} Test fock state     {'='* 25}\n")
+    nmode = 4
+    nfock = 3
+    alpha = np.random.random(nmode)
+    print("alpha is", alpha)
+    trial = TrivialFock(nmode, nfock)
+    trial.build(alpha=alpha)
+
+    class TempWalker:
+        def __init__(self, nwalker, psi):
+            self.boson_phiw = np.array([psi + np.random.random(psi.shape) * 0.01 for _ in range(nwalker)] )
+
+    walker = TempWalker(100, trial.boson_psi)
+    print("tria.shape = ", trial.boson_psi.shape)
+    print("waker.shape =", walker.boson_phiw.shape)
+    ovlp = trial.ovlp_with_walkers(walker)
+
+    # Test coherent State
+    print(f"\n{'='* 25} Test coherent state {'='* 25}\n")
+    trial = CoherentState(nmode, nfock)
+    trial.build(alpha=alpha)
+    walker = TempWalker(100, trial.boson_psi)
+
+

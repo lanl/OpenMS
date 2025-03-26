@@ -137,8 +137,9 @@ from abc import abstractmethod
 from pyscf import tools, lo, scf, fci
 from pyscf.lib import logger
 from openms.lib.boson import Boson
-from openms.mqed.qedhf import RHF as QEDRHF
 from openms.lib.logger import task_title
+from openms.lib.misc import deprecated
+from openms.mqed.qedhf import RHF as QEDRHF
 import numpy as backend
 import h5py
 
@@ -357,10 +358,18 @@ def calc_trial_walker_ovlp_gf(walker, trial, return_signs=False):
         # ovlp_b_inv = 1/S
         # \phi_{zF} /S_{z,ij}  --> [boson_Ghalf]_{z,Fj}
         #  [boson_Ghalf]_{z,Fj} * Psi_{F'j} -> G_{FF'}
+
+        # compute overlap: size [nwalkers]
         walker.boson_ovlp = trial.boson_ovlp_with_walkers(walker)
         inv_ovlp = 1.0 / walker.boson_ovlp
-        walker.boson_Ghalf = backend.einsum("zN, z->zN", walker.boson_phiw, inv_ovlp)
-        walker.boson_Gf = backend.einsum("zM, N->zMN", walker.boson_Ghalf, trial.boson_psi.conj())
+        # <n'_1, ..., n'_i, ..., n'_N |a^\dag_i a_j| n_1, ..., n_j, ..., n_N>
+
+        # <n|a^\dag a|m> elements
+        # walker.boson_Ghalf = backend.einsum("zN, z->zN", walker.boson_phiw, inv_ovlp)
+        walker.boson_Ghalf = walker.boson_phiw * inv_ovlp[:, None]
+        nvals = backend.arange(len(trial.boson_psi))
+        walker.boson_Gf = backend.einsum("zM, N->zMN", walker.boson_Ghalf, nvals * trial.boson_psi.conj())
+
 
     sign_b = None
     if trial.ncomponents > 1:
@@ -705,7 +714,7 @@ class TrialHF(TrialWFBase):
         if self.ncomponents > 1:
             self.psi = backend.hstack([self.psia, self.psib])
             # TODO: build Fermionic Gf and Ghalf in SO
-            # TODO: the new function trail_walker_gf can computer such green's functions
+            # TODO: the new function trial_walker_gf can computer such green's functions
             # TODO: may longer need the GF_so function
             self.Gf, self.Gf_half = estimators.GF_so(self.psi, self.psi, self.nalpha, self.nbeta)
         else:
@@ -783,7 +792,7 @@ class TrialHF(TrialWFBase):
         sb = None
         # for many-bosons, there should be a permenant
         if walkers.boson_phiw is not None:
-            sb = backend.einsum("N, zN->z", self.boson_psi.conj(), walkers.boson_phiw)
+            sb = backend.dot(walkers.boson_phiw, self.boson_psi.conj())
         return sb
 
 
@@ -820,9 +829,10 @@ class TrialHF(TrialWFBase):
         # new code using rotated ltensor and Ghalf
         # shape of walkers.Ghalf   : [nwalker, nao, nalpha]
         # shape of rotated ltensor : [nchol, nao, nalpha]
-        vbias = (2.0 / self.ncomponents) * backend.einsum("nqi, zqi->zn", self.rltensora, walkers.Ghalfa)
+
+        vbias = (2.0 / self.ncomponents) * backend.tensordot(walkers.Ghalfa, self.rltensora, axes=([1, 2], [1, 2]))
         if self.ncomponents > 1:
-            vbias += backend.einsum("nqi, zqi->zn", self.rltensorb, walkers.Ghalfb)
+            vbias += backend.tensordot(walkers.Ghalfb, self.rltensorb, axes=([1, 2], [1, 2]))
         return vbias # Gf, vbias
 
 
@@ -835,6 +845,7 @@ class TrialHF(TrialWFBase):
         return vbias
 
 
+    @deprecated
     def force_bias(self, walkers, TL_tensor, verbose=False):
         r"""Update the force bias
 
@@ -899,6 +910,7 @@ class TrialHF(TrialWFBase):
             # ovlp_b_inv = 1/S
             # \phi_{zF} /S_{z,ij}  --> [boson_Ghalf]_{z,Fj}
             #  [boson_Ghalf]_{z,Fj} * Psi_{F'j} -> G_{FF'}
+
             walkers.boson_ovlp = trial.boson_ovlp_with_walkers(walkers)
             inv_ovlp = 1.0 / walkers.boson_ovlp
             theta = backend.einsum("zN, z->zN", walkers.boson_phiw, inv_ovlp)
@@ -950,6 +962,7 @@ class TrialUHF(TrialWFBase):
         super().ovlp_with_walkers(walkers)
 
 
+    @deprecated
     def force_bias(self, walkers, TL_tensor, verbose=False):
         r"""Compute the force bias (Eqns.67-69 of Ref. :cite:`zhang2021jcp`)
 
@@ -1095,6 +1108,7 @@ class multiCI(TrialWFBase):
         return vbias
 
 
+    @deprecated
     def force_bias(self, walkers):
         r"""Compute the force bias with multiSD (Eqns.83-84 of Ref. :cite:`zhang2021jcp`)
 
@@ -1117,14 +1131,16 @@ class multiCI(TrialWFBase):
 # =====================================
 # define joint fermion-boson trial
 # =====================================
-from openms.qmc.trial_boson import *
+
+#from openms.qmc.trial_boson import *
 
 
-class trail_EPH(object):
+class trial_EPH(object):
     def __init__(self, trial_e, trial_b):
         self.trial_e = trial_e
         self.trial_b = trial_b
 
+    @deprecated
     def force_bias(self, walkers):
         r"""compute the force bias"""
 
@@ -1161,9 +1177,15 @@ def make_trial(mol, mf=None, **kwargs):
         # here, we temporarily append trial WF for boson into the trial
         # set the initial condition according to Z (TBA)
         boson_size = sum(mol.nboson_states)
-        trial.boson_psi = backend.zeros(boson_size)
-        trial.boson_psi[0] = 1.0 # / backend.sqrt(boson_size)
+        # trial.boson_psi = backend.zeros(boson_size)
+        # trial.boson_psi[0] = 1.0 # / backend.sqrt(boson_size)
         # trial.boson_psi[:] = 1.0 / backend.sqrt(boson_size)
+
+        # <n_1, n_2, ..., n_i, ..., n_N | a^\dag_i a_j |m_1, m_2, ..., m_j, ..., m_N>
+        # store |n_1, n_2, ..., n_i, ..., n_N> in 1D array
+        nocc = backend.array([i for j in range(mol.nmodes) for i in range(mol.nboson_states[j])])
+        trial.boson_psi = backend.exp(-nocc)
+        trial.boson_psi = trial.boson_psi / backend.linalg.norm(trial.boson_psi)
 
         # return trial
     #else:

@@ -199,7 +199,7 @@ class RHF(scqedhf.RHF):
         nao = self.qed.gmat[imode].shape[0]
         if onebody:
             p, q = numpy.ogrid[:nao, :nao]
-            diff_eta = eta[imode, q] - eta[imode, p]
+            diff_eta = eta[imode, p] - eta[imode, q]
         else:
             p, q, r, s = numpy.ogrid[:nao, :nao, :nao, :nao]
             diff_eta = eta[imode, p] - eta[imode, q] + eta[imode, r] - eta[imode, s]

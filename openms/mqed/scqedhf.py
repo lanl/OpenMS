@@ -774,7 +774,7 @@ class RHF(qedhf.RHF):
             diff_eta = eta[imode, p] - eta[imode, q]
         else:
             p, q, r, s = numpy.ogrid[:self.nao, :self.nao, :self.nao, :self.nao]
-            diff_eta = eta[imode, p] - eta[imode, q] +  eta[imode, r] - eta[imode, s]
+            diff_eta = eta[imode, p] - eta[imode, q] + eta[imode, r] - eta[imode, s]
 
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]

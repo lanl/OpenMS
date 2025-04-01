@@ -210,12 +210,11 @@ class RHF(scqedhf.RHF):
 
         # Displacement operator derivative
         if mdim > 1:
-            pass
-            # idx = sum(self.qed.nboson_states[:imode])
-            # ci = self.qed.boson_coeff[idx : idx + mdim, idx]
-            # pdm = numpy.outer(numpy.conj(ci), ci)
+            idx = sum(self.qed.nboson_states[:imode])
+            ci = self.qed.boson_coeff[idx : idx + mdim, idx]
+            pdm = numpy.outer(numpy.conj(ci), ci)
 
-            # derivative = self.qed.displacement_deriv(imode, tmp * diff_eta, pdm)
+            derivative = self.qed.displacement_deriv(imode, tmp * diff_eta, pdm)
 
         # Apply vacuum derivative formula
         else:

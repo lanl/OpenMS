@@ -202,14 +202,13 @@ class RHF(scqedhf.RHF):
             diff_eta = eta[imode, q] - eta[imode, p]
         else:
             p, q, r, s = numpy.ogrid[:nao, :nao, :nao, :nao]
-            diff_eta = eta[imode, q] - eta[imode, p] + eta[imode, s] - eta[imode, r]
+            diff_eta = eta[imode, p] - eta[imode, q] + eta[imode, r] - eta[imode, s]
 
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
 
-        ph_exp_val = self.photon_exp_val(imode)
-        derivative = -numpy.exp((-0.5 * (tmp * diff_eta) ** 2) * (ph_exp_val + 1)) \
-                     * (((tmp * diff_eta) ** 2) * (ph_exp_val + 1))
+        derivative = -numpy.exp((-0.5 * (tmp * diff_eta) ** 2)) \
+                     * ((tmp * diff_eta) ** 2)
 
         # in principle, the couplings_var should be > 0.0
         if self.qed.couplings_var[imode] < -0.05 or self.qed.couplings_var[imode] > 1.05:

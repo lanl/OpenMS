@@ -219,8 +219,8 @@ class RHF(scqedhf.RHF):
 
         # Apply vacuum derivative formula
         else:
-            derivative = numpy.exp((-0.5 * (tmp * diff_eta) ** 2)) \
-                        * -2.0 * ((tmp * diff_eta) ** 2)
+            derivative = -numpy.exp((-0.5 * (tmp * diff_eta) ** 2)) \
+                          * ((tmp * diff_eta) ** 2)
 
         # in principle, the couplings_var should be > 0.0
         if self.qed.couplings_var[imode] < -0.05 or self.qed.couplings_var[imode] > 1.05:
@@ -330,7 +330,7 @@ class RHF(scqedhf.RHF):
             h_dot_g = self.h1e_DO * derivative  # element_wise
             oei_derivative = numpy.einsum("pq, pq->", h_dot_g, dm_do[a])
             tmp = numpy.einsum("pp, p->p", dm_do[a], g_DO[a])
-            tmp = numpy.einsum("p,q->", tmp, tmp)
+            tmp = 2.0 * numpy.einsum("p,q->", tmp, tmp)
             tmp -= numpy.einsum(
                 "pq, pq, p, q->", dm_do[a], dm_do[a], g_DO[a], g_DO[a]
             )
@@ -340,7 +340,7 @@ class RHF(scqedhf.RHF):
 
             # two-electron part
             derivative = self.gaussian_derivative_f_vector(self.eta, a, onebody=False)
-            derivative *= (self.eri_DO - 0.5 * self.eri_DO.transpose(0, 3, 2, 1))
+            derivative *= (2.0 * self.eri_DO - self.eri_DO.transpose(0, 3, 2, 1))
 
             tmp = lib.einsum("pqrs, rs-> pq", derivative, dm_do[a], optimize=True)
             tmp = lib.einsum("pq, pq->", tmp, dm_do[a], optimize=True)

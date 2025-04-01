@@ -41,14 +41,11 @@ To ensure the installation is successful, start a Python shell, and type::
 
  >>> import openms
 
-If Meep is installed, it's also required to make Python to find the :code:`meep` package, which is installed
-in the `/path/to/top_openms/openms/lib/deps/lib/python{version}/site-packages/`::
+.. If Meep is installed, it's also required to make Python to find the :code:`meep` package, which is installed
+.. in the `/path/to/top_openms/openms/lib/deps/lib/python{version}/site-packages/`::
+..
+..  export PYTHONPATH=/path/to/top_openms/openms/lib/deps/lib/python{version}/site-packages/:$PYTHONPATH
 
- export PYTHONPATH=/path/to/top_openms/openms/lib/deps/lib/python{version}/site-packages/:$PYTHONPATH
-
-To ensure the meep installation is successful, start a Python shell, and type::
-
- >>> import meep
 
 cmake configurations
 --------------------

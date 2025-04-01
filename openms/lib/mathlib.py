@@ -42,7 +42,7 @@ SAFE_EIGH_LINDEP = getattr(__config__, "lib_linalg_helper_safe_eigh_lindep", 1e-
 DAVIDSON_LINDEP = getattr(__config__, "lib_linalg_helper_davidson_lindep", 1e-14)
 DSOLVE_LINDEP = getattr(__config__, "lib_linalg_helper_dsolve_lindep", 1e-15)
 MAX_MEMORY = getattr(__config__, "lib_linalg_helper_davidson_max_memory", 2000)  # 2GB
-
+FOLLOW_STATE = getattr(__config__, "lib_linalg_helper_davidson_follow_state", False)
 
 def load_library(libname):
     r"""Load C, C++, Fortran libraries."""

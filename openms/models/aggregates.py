@@ -86,6 +86,7 @@ def matvec(A, x):
     return y
 
 
+# disordered molecular aggregates class
 class DMA(object):
     r"""
     Disordered molecular aggregates class.
@@ -211,8 +212,8 @@ class DMA(object):
 
         J. Chem. Phys. 128, 084706 (2008)
         s-like atomic states: they consist of mainly one peak with no node within the localization segment
-        p-like atomic states: They have a well defined node within localization segments and occur in pairs \
-                with s-like states. Each pair forms an sp doublet localized on the same chain segment.
+        p-like atomic states: They have a well defined node within localization segments and occur in pairs
+        with s-like states. Each pair forms an sp doublet localized on the same chain segment.
         """
 
         N = self.Nsite
@@ -270,7 +271,7 @@ class DMA(object):
         print("state    node    dipole moment")
         # not done yet
 
-
+    # compute the linear absorption spectrum of given listed of states
     def linearabs(self, elist=None, selected=None, gamma=0.001):
         r"""
         compute the linear absorption

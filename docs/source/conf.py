@@ -124,6 +124,14 @@ latex_documents = [
    u'Yu Zhang \\textless{}zhy@lanl.gov\\textgreater{}'),
 ]
 
+latex_elements = {
+    'preamble': r'''
+\usepackage{braket}
+\usepackage{amsmath}
+\usepackage{amssymb}
+'''
+}
+
 # -- Options for HTML output
 html_theme = 'sphinx_rtd_theme'
 

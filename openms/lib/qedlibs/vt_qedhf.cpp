@@ -9,8 +9,9 @@ void cpp_method_impl(py::object self) {
     std::cout << "This test_cpp_impl method is implemented in C++" << std::endl;
 
 }
+*/
 
-std::vector<std::vector<double>> cpp_method_impl(py::object py_obj) {
+std::vector<std::vector<double>> double_gmat(py::object py_obj) {
     std::vector<std::vector<double>> g = py_obj.attr("g").cast<std::vector<std::vector<double>>>();
     std::vector<std::vector<double>> result = g;
 
@@ -22,7 +23,6 @@ std::vector<std::vector<double>> cpp_method_impl(py::object py_obj) {
     return result;
 }
 
-*/
 
 std::vector<std::vector<double>> cpp_method_impl(py::object py_obj, const std::vector<std::vector<double>>& g) {
     std::vector<std::vector<double>> result = g;

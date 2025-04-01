@@ -14,25 +14,6 @@
 # Author: Yu Zhang <zhy@lanl.gov>
 #
 
-import numpy
-from scipy import linalg
-import warnings
-
-from pyscf import lib
-from pyscf.lib import logger
-
-import openms
-from openms.mqed import scqedhf
-from openms import __config__
-
-TIGHT_GRAD_CONV_TOL = getattr(__config__, "TIGHT_GRAD_CONV_TOL", True)
-LINEAR_DEP_THRESHOLD = getattr(__config__, "LINEAR_DEP_THRESHOLD", 1e-8)
-CHOLESKY_THRESHOLD = getattr(__config__, "CHOLESKY_THRESHOLD", 1e-10)
-FORCE_PIVOTED_CHOLESKY = getattr(__config__, "FORCE_PIVOTED_CHOLESKY", False)
-LINEAR_DEP_TRIGGER = getattr(__config__, "LINEAR_DEP_TRIGGER", 1e-10)
-
-
-
 r"""
 Theoretical background of VT-QEDHF methods
 
@@ -74,6 +55,23 @@ Then we derive the QEDHF functional and Fock matrix accordingly based on the HF 
 
 
 """
+
+import numpy
+from scipy import linalg
+import warnings
+
+from pyscf import lib
+from pyscf.lib import logger
+
+import openms
+from openms.mqed import scqedhf
+from openms import __config__
+
+TIGHT_GRAD_CONV_TOL = getattr(__config__, "TIGHT_GRAD_CONV_TOL", True)
+LINEAR_DEP_THRESHOLD = getattr(__config__, "LINEAR_DEP_THRESHOLD", 1e-8)
+CHOLESKY_THRESHOLD = getattr(__config__, "CHOLESKY_THRESHOLD", 1e-10)
+FORCE_PIVOTED_CHOLESKY = getattr(__config__, "FORCE_PIVOTED_CHOLESKY", False)
+LINEAR_DEP_TRIGGER = getattr(__config__, "LINEAR_DEP_TRIGGER", 1e-10)
 
 
 def newton_update(var, gradient, precond0):
@@ -123,6 +121,7 @@ class RHF(scqedhf.RHF):
 
         self.qed.update_couplings()
         self.vhf_dse = None
+        self.grad_vhf_dse = None
 
 
     def get_hcore(self, mol=None, dm=None, dress=True):
@@ -130,9 +129,10 @@ class RHF(scqedhf.RHF):
         h1e = super().get_hcore(mol, dm, dress)
 
         if dm is not None:
-
+            # this is zero for scqedhf
             # self.oei = self.qed.get_dse_hcore(dm, residue=True) # this is zero for scqedhf
-            self.oei = self.qed.add_oei_ao(dm, residue=True)  # this is zero for scqedhf
+            self.oei, self.grad_oei = self.qed.add_oei_ao(dm, residue=True, compute_grad=True)
+
             return h1e + self.oei
 
         return h1e
@@ -152,7 +152,8 @@ class RHF(scqedhf.RHF):
 
         # two-electron part (residue, to be tested!)
         # vj_dse, vk_dse = self.qed.get_dse_jk(dm, residue=True)
-        vj_dse, vk_dse = self.get_dse_jk(dm, residue=True)
+        vj_dse, vk_dse, self.grad_vhf_dse = self.get_dse_jk(dm, residue=True, compute_grad=True)
+
         self.vhf_dse = vj_dse - 0.5 * vk_dse
         vhf += self.vhf_dse
 
@@ -350,9 +351,14 @@ class RHF(scqedhf.RHF):
 
         if abs(1.0 - self.qed.couplings_var[0]) > 1.0e-4 and self.vhf_dse is not None:
             # only works for nmode == 1
-            self.dse_tot = self.energy_elec(dm, self.oei, self.vhf_dse)[0]
-            self.vlf_grad[0] -= self.dse_tot * 2.0 / (1.0 - self.qed.couplings_var[0])
+            ## E_DSE = (1-f)^2 * original E_DSE,
+            ## so the gradient =  -2(1-f) * original E_DSE =  - E_DSE*2/(1-f)
+            # old code
+            # self.dse_tot = self.energy_elec(dm, self.oei, self.vhf_dse)[0]
+            # self.vlf_grad[0] -= self.dse_tot * 2.0 / (1.0 - self.qed.couplings_var[0])
 
+            #  Now, we compute the gradient from add_oei and get_dse_jk
+            self.vlf_grad[0] += self.energy_elec(dm, self.grad_oei, self.grad_vhf_dse)[0]
         return self
 
 
@@ -400,14 +406,14 @@ class RHF(scqedhf.RHF):
         fsize += etasize
 
         varsize = self.qed.couplings_var.size
-        if params.size > fsize:
+        if params.size > fsize and self.qed.optimize_varf:
             self.qed.couplings_var = params[fsize : fsize + varsize].reshape(
                 self.vlf_grad.shape
             )
             self.qed.update_couplings()
 
         fsize += varsize
-        if params.size > fsize:
+        if params.size > fsize and self.qed.optimize_vsq:
             self.qed.squeezed_var = params[fsize :].reshape(
                 self.vsq_grad.shape
             )
@@ -437,6 +443,15 @@ class RHF(scqedhf.RHF):
                 self.vsq_grad.shape
             )
         return f
+
+    def make_boson_nocc_org(self, nfock=10):
+        r"""boson occ in original fock representation"""
+        import math
+
+        _, _, rho_b = self.make_rdm1_org(self.mo_coeff, self.mo_occ, nfock=nfock)
+        nocc = numpy.dot(numpy.diagonal(rho_b), numpy.array(range(nfock)))
+        print("nocc =", nocc)
+        return nocc
 
 
     def make_rdm1_org(self, mo_coeff, mo_occ, nfock=2, **kwargs):
@@ -477,7 +492,8 @@ class RHF(scqedhf.RHF):
 
                 z0 = numpy.exp(-0.5 * zalpha ** 2)
                 zm = z0 * zalpha ** m * numpy.sqrt(math.factorial(m))
-                zn = z0 * (-zalpha) ** n * numpy.sqrt(math.factorial(n))
+                # zn = z0 * (-zalpha) ** n * numpy.sqrt(math.factorial(n))
+                zn = z0 * (zalpha) ** n * numpy.sqrt(math.factorial(n))
 
                 rho_tmp = rho_DO * numpy.outer(zm, zn)
                 # back to AO
@@ -485,7 +501,7 @@ class RHF(scqedhf.RHF):
                 rho_tot[m, :, n, :] = rho_tmp
 
         rho_e = numpy.einsum("mpmq->pq", rho_tot)
-        rho_b = numpy.einsum("mpnp->mn", rho_tot) / numpy.trace(rho)
+        rho_b = numpy.einsum("mpnp->mn", rho_tot) / numpy.trace(rho_e)
 
         return rho_tot, rho_e, rho_b
 
@@ -495,11 +511,11 @@ if __name__ == "__main__":
     from pyscf import gto
 
     atom = """
-           H          0.86681        0.60144       0.00000
-           F         -0.86681        0.60144       0.00000
-           O          0.00000       -0.07579       0.00000
-           He         0.00000        0.00000       2.50000
-           """
+        H          0.86681        0.60144       0.00000
+        F         -0.86681        0.60144       0.00000
+        O          0.00000       -0.07579       0.00000
+        He         0.00000        0.00000       2.50000
+        """
 
     mol = gto.M(atom = atom,
                 basis = "sto-3g",

@@ -86,10 +86,10 @@ install(FILES ${HEADERS-C} DESTINATION ${PROJECT_SOURCE_DIR}/deps/include)
 # build python binding lib
 #----------------------------------
 
-if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
-  set(CMAKE_C_FLAGS "-c -O4")
-  #set(CMAKE_C_FLAGS "-c -fPIC -O4")
-endif()
+#if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+#  set(CMAKE_C_FLAGS "-c -O3")
+#  #set(CMAKE_C_FLAGS "-c -fPIC -O4")
+#endif()
 
 # Note: pFDTD_wrap.c is generated from pFDTD.i, don't change it!!!!!!
 set(WRAPPER-C

@@ -6,7 +6,9 @@ TBA
 
 How to cite
 ===========
-Bibtex entry::
+
+A general citation to the OpenMS package is appreciated.
+The Bibtex entry is::
 
   @Misc{OpenMS,
     title = {Openms: A Multiscale ecosystem for solving coupled Maxwell-Schrödinger equations in Open quantum environments},
@@ -20,29 +22,15 @@ In addition, if you use MEEP to solve Maxwell equations, please cite MEEP paper:
 If you use TiledArray for tensor contraction, please cite TiledArray paper:
 > "TiledArray: A general-purpose scalable block-sparse tensor framework", Justus A. Calvin and Edward F. Valeev, https://github.com/valeevgroup/tiledarray .
 
+For specific features used in the calculation, a citation recommendation is listed at the end of the output.
+
 Features
 ========
 
-* Quantum Electrodynamics method for molecular polaritons, including QED-HF, QED-TDHF, QED-CC, QED-EOMCC, etc.
-
-* Green's function embedded method for polariton
-
-* Multiscale Quantum Electrodynamics method for molecular polariton, including mQED-HF, mQED-TDHF, mQED-EOMCC, etc.
-
-* Quantum dynamics of open quantum systems.
-
-* Quantum transport
-
-* Interface to MEEP `MEEP <https://github.com/NanoComp/meep>`_
-
-* Interface to PySCF `PySCF <https://github.com/pyscf/pyscf>`_
-
-* Interface to TiledArray `TiledArray <https://github.com/ValeevGroup/tiledarray>`_
-
+.. include:: features.txt
 
 Designs
 =======
-
 TBA
 ---
 

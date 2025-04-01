@@ -24,12 +24,19 @@ from pyscf import gto
 from pyscf.lib import logger
 from openms.lib.ov_blocks import one_e_blocks, block_diag
 from openms.lib.ov_blocks import two_e_blocks, two_e_blocks_full
-from openms.mqed import qedhf, scqedhf, vtqedhf
 
 
 def get_bosonic_Ham(nmodes, nboson_states, omega, za, Fa, sc=None):
     r"""Construct Bosonic Hamiltonian in different representation
     after integrating out the electronic DOF.
+
+    TODO: Finish constructing the Hb matrix in different representation:
+
+        - Fock/CS representation.
+        - FIXME: squeezed coherent state :math:`S(F)D(z)\ket{0}`
+        - FIXME: Displaced squeezed state :math:`D(z)S(F)\ket{0}`
+        - FIXME: Squeezed LF :math:`S(F) D(\hat{f})\ket{0}`
+        - FIXME: LF squeezed :math:`D(\hat{f})S(F) \ket{0}`
 
     Bosonic Hamiltonain after integrating out the electronic DOF:
 
@@ -55,12 +62,11 @@ def get_bosonic_Ham(nmodes, nboson_states, omega, za, Fa, sc=None):
 
     .. math::
 
-       H_{VSQ} = &\omega (\cosh(2r)\omega_\alpha b^\dagger_\alpha b_\alpha + \sinh^2(r)
+       H_{VSQ} = & \omega_\alpha[\cosh(2r) b^\dagger_\alpha b_\alpha + \sinh^2(r)]
                  -\frac{1}{2}\sinh(2r)[b^2_\alpha + b^{\dagger 2}_\alpha]
                  \\
                  & + e^{-r} \sqrt{\frac{\omega_\alpha}{2}}\langle\Delta\lambda_\alpha\cdot\boldsymbol{D}
-                  \rangle (b^\dagger_\alpha + b_\alpha)
-                 + TBA.
+                  \rangle (b^\dagger_\alpha + b_\alpha).
     """
 
     boson_size = sum(nboson_states)
@@ -156,25 +162,25 @@ def get_quadrupole_ao(mol, add_nuc_dipole=True, origin_shift=None):
 
     Diagonal elements correspond to:
 
-        quadrupole_ao[0] = :math:`\bm{Q}_{XX}`
+        quadrupole_ao[0] = :math:`\boldsymbol{Q}_{XX}`
 
-        quadrupole_ao[4] = :math:`\bm{Q}_{YY}`
+        quadrupole_ao[4] = :math:`\boldsymbol{Q}_{YY}`
 
-        quadrupole_ao[8] = :math:`\bm{Q}_{ZZ}`
+        quadrupole_ao[8] = :math:`\boldsymbol{Q}_{ZZ}`
 
     The lower- and upper-triangles are related as:
 
-        quadrupole_ao[1] = :math:`\bm{Q}_{YX}`
+        quadrupole_ao[1] = :math:`\boldsymbol{Q}_{YX}`
 
-        quadrupole_ao[2] = :math:`\bm{Q}_{ZX}`
+        quadrupole_ao[2] = :math:`\boldsymbol{Q}_{ZX}`
 
-        quadrupole_ao[3] = :math:`(\bm{Q}_{YX})^T`
+        quadrupole_ao[3] = :math:`(\boldsymbol{Q}_{YX})^T`
 
-        quadrupole_ao[5] = :math:`\bm{Q}_{ZY}`
+        quadrupole_ao[5] = :math:`\boldsymbol{Q}_{ZY}`
 
-        quadrupole_ao[6] = :math:`(\bm{Q}_{ZX})^T`
+        quadrupole_ao[6] = :math:`(\boldsymbol{Q}_{ZX})^T`
 
-        quadrupole_ao[7] = :math:`(\bm{Q}_{ZY})^T`
+        quadrupole_ao[7] = :math:`(\boldsymbol{Q}_{ZY})^T`
 
     Parameters
     ----------
@@ -241,14 +247,14 @@ class Boson(object):
     mol : :class:`MoleBase <pyscf.gto.mole.MoleBase>`
         PySCF molecule object.
     omega : float, :class:`list[floats] <list>`, :class:`~numpy.ndarray`
-        Bosonic frequencies, :math:`\om_\al`.
+        Bosonic frequencies, :math:`\omega_\alpha`.
     vec : list, :class:`~numpy.ndarray`
-        Bosonic mode vectors, :math:`\bm{e}_\al`.
+        Bosonic mode vectors, :math:`\boldsymbol{e}_\alpha`.
 
     Keyword Arguments
     -----------------
     gfac : float, :class:`list[floats] <list>`, :class:`~numpy.ndarray`
-        Coupling constants, :math:`\la_\al`, **optional**.
+        Coupling constants, :math:`\lambda_\alpha`, **optional**.
     nboson_states : int, :class:`list[ints] <list>`, :class:`~numpy.ndarray`
         Number states for each mode, **optional**
         ``default = [1] * nmodes``.
@@ -260,11 +266,11 @@ class Boson(object):
     cavity_type : str
         Type of cavity environment.
     omega : :class:`~numpy.ndarray`
-        Bosonic frequencies, :math:`\om_\al`.
+        Bosonic frequencies, :math:`\omega_\alpha`.
     vec : :class:`~numpy.ndarray`
-        Bosonic mode vectors, :math:`\bm{e}_\alpha`.
+        Bosonic mode vectors, :math:`\boldsymbol{e}_\alpha`.
     gfac : :class:`~numpy.ndarray`
-        Coupling constants, :math:`\la_\al`.
+        Coupling constants, :math:`\lambda_\alpha`.
     nmodes : int
         Number of boson modes, :code:`len(omega)`.
     nboson_states : :class:`~numpy.ndarray`
@@ -304,16 +310,16 @@ class Boson(object):
         Controls how OEI component is computed,
         **optional** ``default = True``.
     couplings : :class:`~numpy.ndarray`
-        Coupling terms, :math:`\la_\al`,
+        Coupling terms, :math:`\lambda_\alpha`,
         copy of :attr:`gfac`.
     couplings_bilinear : :class:`~numpy.ndarray`
         Bilinear coupling terms,
-        :math:`\sqrt{\frac{\om_\al}{2}} \la_\al`.
+        :math:`\sqrt{\frac{\omega_\alpha}{2}} \lambda_\alpha`.
     couplings_self : :class:`~numpy.ndarray`
         Dipole self-energy coupling terms,
-        :math:`\frac{1}{2} \la_\al^2`.
+        :math:`\frac{1}{2} \lambda_\alpha^2`.
     couplings_var : :class:`~numpy.ndarray`
-        Variational parameters, :math:`\bm{f}`.
+        Variational parameters, :math:`\boldsymbol{f}`.
 
         - ``Default = 0`` for each mode.
         - For SC-QED-HF, ``= 1`` for each ``mode``.
@@ -323,7 +329,7 @@ class Boson(object):
         Difference between :math:`1.0` and :attr:`couplings_var`.
         ``Default = 1`` for each ``mode``.
     optimize_varf : bool
-        Optimize variational parameters, :math:`\bm{f}`.
+        Optimize variational parameters, :math:`\boldsymbol{f}`.
         ``Default = False``.
 
     Raises
@@ -404,6 +410,16 @@ class Boson(object):
             else:
                 self.omega = omega.copy()
             self.nmodes = omega.size
+
+            # Cavity mode photon occupation numbers
+            if isinstance(nboson_states, list):
+                if len(nboson_states) != len(omega):
+                    raise ValueError(
+                        "nboson_state must be an integer or a list with the same as the length of 'omega'"
+                    )
+                self.nboson_states = nboson_states
+            else:
+                self.nboson_states = [nboson_states for i in range(self.nmodes)]
 
         # Molecular coupling strengths
         self.gfac = None
@@ -517,12 +533,16 @@ class Boson(object):
             self.optimize_varf = True
             self.couplings_var = 0.5 * numpy.ones(self.nmodes)
 
+        self.add_dse = kwargs.get("add_dse", True)
+
         self.squeezed_cs = kwargs.get("squeezed_cs", False)
         self.optimize_vsq = kwargs.get("optimize_vsq", False)
         self.squeezed_var = numpy.zeros(self.nmodes)
         if "squeezed_var" in kwargs:
             self.squeezed_var = kwargs["squeezed_var"]
             self.optimize_vsq = False
+
+        # self.polarizations = numpy.zeros((3, self.nmodes), dtype=float) #replaced by vec
 
         # Pre-factors of PF Hamiltonian components from coupling strengths
         self.couplings = numpy.asarray(self.gfac, dtype=float)
@@ -563,6 +583,8 @@ class Boson(object):
         self.shift = kwargs.get("shift", False)
 
         # ------------------------------------
+        # TODO: reorganize the following
+        # get molecular attributes
         self.spin = mol.spin
         self.intor = mol.intor
         self.symmetry = mol.symmetry
@@ -579,7 +601,9 @@ class Boson(object):
         self.energy_nuc = mol.energy_nuc
         self.nelec = mol.nelec
         # ------------------------------------
-        return
+        if self.verbose > 3:
+            #self.print_summary()
+            self.dump_flags()
 
     # ---------------------
     # General boson methods
@@ -680,7 +704,35 @@ class Boson(object):
         return exp_val
 
 
-    def get_boson_dm(self, mode=None): # TODO: Remove eventually?
+    def get_boson_occ(self):
+        r"""Return photon ``mode`` density matrix.
+
+        Parameters
+        ----------
+        mode : int
+            Index for ``mode`` stored in the object.
+
+        Returns
+        -------
+        :class:`~numpy.ndarray`
+            photon mode density matrix
+        """
+
+        nocc = numpy.zeros(self.nmodes)
+        for mode in range(self.nmodes):
+            mdim = self.nboson_states[mode]
+            idx = 0
+            if mode > 0:
+                idx = sum(self.nboson_states[:mode])
+            bc = self.boson_coeff[idx:idx+mdim, 0].copy()
+
+            bc = bc * bc
+            n0 = numpy.array(range(self.nboson_states[mode]))
+            nocc[mode] = numpy.dot(bc, n0)
+            print('bc =', bc, '\n', n0)
+        return nocc
+
+    def get_boson_dm(self, mode=None):
         r"""Return photon ``mode`` density matrix.
 
         Parameters
@@ -700,8 +752,8 @@ class Boson(object):
 
         mdim = self.nboson_states[mode]
         idx = 0
-        if mode > 0: # non-vacuum state density, not tested
-            idx = sum(self.nboson_states[:mode]) + mode
+        if mode > 0:
+            idx = sum(self.nboson_states[:mode]) #  + mode
 
         bc = self.boson_coeff[idx:idx+mdim, 0].copy()
         return numpy.outer(numpy.conj(bc), bc)
@@ -715,15 +767,19 @@ class Boson(object):
         Store eigenvectors in :attr:`boson_coeff`, update
         photonic energy, :attr:`e_boson`.
 
+        Note: self.z_alpha can be different frm :math:`Tr[gD]` since self.z_alpha can
+        be a fixed input variable.
+
         .. math::
-            \hat{H}_\tt{photon}
-            &= \sum_\al \hat{H}^\al_\tt{photon} \\
-            \hat{H}^\al_\tt{photon}
-            &= \om_\al \cb{\al} \ab{\al}
-             + \sqrt{\frac{\om_\al}{2}} \bm{e}_\al
+            \hat{H}_\text{photon}
+            &= \sum_\alpha \hat{H}^\alpha_\text{photon} \\
+            \hat{H}^\alpha_\text{photon}
+            &= \omega_\alpha \hat{b}^{\dagger}_{\alpha} \hat{b}_{\alpha}
+             + \sqrt{\frac{\omega_\alpha}{2}} \boldsymbol{e}_\alpha
                \cdot \sum_{\mu\nu} \rho_{\mu\nu}
-               \cdot \mel*{\mu}{\la_\al \cdot \hat{D}}{\nu} (\cb{\al} + \ab{\al})
-        where :math:`\bm{\rho}` is the provided electronic density matrix, ``dm``.
+               \cdot \bra{\mu}{\lambda_\alpha \cdot \hat{D}}\ket{\nu} (\hat{b}^{\dagger}_{\alpha} + \hat{b}_{\alpha})
+
+        where :math:`\boldsymbol{\rho}` is the provided electronic density matrix, ``dm``.
 
         --------------------------------------------------------------------
 
@@ -731,22 +787,23 @@ class Boson(object):
         states as:
 
         .. math::
-            \cb{} \ab{} \ket{m} &= m \ket{m} \\
-                  \cb{} \ket{m} &= \sqrt{m+1} \ket{m+1} \\
-                  \ab{} \ket{m} &= \sqrt{m} \ket{m-1}
+            \hat{b}^{\dagger} \hat{b} \ket{m} &= m \ket{m} \\
+                  \hat{b}^{\dagger} \ket{m} &= \sqrt{m+1} \ket{m+1} \\
+                  \hat{b} \ket{m} &= \sqrt{m} \ket{m-1}
+
         In the Fock/particle number basis, the off-diagonal bilinear
         interaction terms are:
 
         .. math::
-            \mel*{n}{\cb{} + \ab{}}{m}
-            &= \mel*{n}{\cb{}}{m} + \mel*{n}{\ab{}}{m} \\
-            &= \mel*{n}{\sqrt{m+1}}{m+1} + \mel*{n}{\sqrt{m}}{m-1} \\
-            &= \d{m+1}{n} \sqrt{m+1} + \d{m-1}{n} \sqrt{m}
+            \bra{n}{\hat{b}^{\dagger} + \hat{b}}\ket{m}
+            &= \bra{n}{\hat{b}^{\dagger}}\ket{m} + \bra{n}{\hat{b}}\ket{m} \\
+            &= \bra{n}{\sqrt{m+1}}\ket{m+1} + \bra{n}{\sqrt{m}}\ket{m-1} \\
+            &= \delta_{m+1, n} \sqrt{m+1} + \delta_{m-1, n} \sqrt{m}
 
         .. note::
             In coherent-state representation, photonic Hamiltonian
             has only diagonal terms.
-            :math:`\hat{H}_{\tt{photon}}=\sum_{\al}\om_{\al}\cb{\al}\ab{\al}`
+            :math:`\hat{H}_{\text{photon}}=\sum_{\alpha}\omega_{\alpha}\hat{b}^{\dagger}_{\alpha}\hat{b}_{\alpha}`
 
 
         In the VSQ representation: (TBA)
@@ -804,7 +861,6 @@ class Boson(object):
 
         self.e_boson = Etot
         self.boson_coeff = c
-
         return self
 
 
@@ -835,7 +891,7 @@ class Boson(object):
     #     Keyword Arguments
     #     -----------------
     #     couplings_var : float, :class:`list[floats] <list>`, :class:`~numpy.ndarray`
-    #         Variational parameter values, :math:`f_\al`.
+    #         Variational parameter values, :math:`f_\alpha`.
     #         **Optional**
     #     optimize_varf : bool
     #         Whether to optimize variational parameters.
@@ -950,7 +1006,8 @@ class Boson(object):
         if self.origin_shift is not None:
             logger.info(self, 'origin_shift = %.3f   %.3f   %.3f', *(self.origin_shift))
         logger.info(self, 'optimize_varf = %s', self.optimize_varf)
-        logger.info(self, 'use_cs = %s', self.use_cs)
+        logger.info(self, 'use_cs  = %s', self.use_cs)
+        logger.info(self, 'add_dse = %s', self.add_dse)
         logger.info(self, 'nmodes = %d\n', self.nmodes)
         for a in range(self.nmodes):
             logger.info(self, '------ cavity mode #%s ------', (a + 1))
@@ -974,7 +1031,7 @@ class Boson(object):
     # ----------------------
 
     def update_cs(self):
-        r"""Template method to update :math:`z_\al` values in CS representation."""
+        r"""Template method to update :math:`z_\alpha` values in CS representation."""
         raise NotImplementedError("Subclasses must implement this method.")
 
     def get_gmat_so(self):
@@ -1012,6 +1069,9 @@ class Boson(object):
     def get_dipole_ao(self):
         r"""Template method to construct dipole moment matrix in AO basis."""
         raise NotImplementedError("Subclasses must implement this method.")
+
+    def get_geb_ao_1der(self, mode):
+        raise NotImplementedError
 
     def construct_g_dse_JK(self):
         r"""DSE-mediated JK matrix"""
@@ -1063,7 +1123,7 @@ class Photon(Boson):
         .. warning::
             Relate to the working equations, found in the theory,
             the values of :math:`z_\alpha` computed here differ by
-            a factor of :math:`-\frac{1}{\sqrt{2\om_\al}}`.
+            a factor of :math:`-\frac{1}{\sqrt{2\omega_\alpha}}`.
         """
 
         if self.use_cs:
@@ -1071,7 +1131,7 @@ class Photon(Boson):
         return self
 
 
-    def add_oei_ao(self, dm, s1e=None, residue=False):
+    def add_oei_ao(self, dm, s1e=None, residue=False, compute_grad=False):
         r"""Compute QED-RHF boson-mediated 1e- integrals.
 
         return DSE-mediated oei.. This is universal for bare HF or QED-HF.
@@ -1094,24 +1154,26 @@ class Photon(Boson):
         from the DSE term of the PF Hamiltonian:
 
         .. math::
-            \bm{h}_{\tt{DSE}} &= \bm{h}_{\tt{bare}} - \frac{1}{2}
-                                 \sum_\al \sum_{\mu\nu} \rho_{\mu\nu}
-                                 \cdot \bm{\tilde{q}}^\al_{\mu\nu} \\
-            \bm{\tilde{q}}^\al_{\mu\nu} &= \la_{\al}^2
-                                           \cdot \bm{Q}^\al_{\mu\nu}
-        where :math:`\bm{Q}^\al` is the polarized quadrupole moment matrix
+            \boldsymbol{h}_{\tt{DSE}} &= \boldsymbol{h}_{\tt{bare}} - \frac{1}{2}
+                                 \sum_\alpha \sum_{\mu\nu} \rho_{\mu\nu}
+                                 \cdot \boldsymbol{\tilde{q}}^\alpha_{\mu\nu} \\
+            \boldsymbol{\tilde{q}}^\alpha_{\mu\nu} &= \lambda_{\alpha}^2
+                                           \cdot \boldsymbol{Q}^\alpha_{\mu\nu}
+
+        where :math:`\boldsymbol{Q}^\alpha` is the polarized quadrupole moment matrix
         in the AO basis.
 
         In CS representation, when :attr:`use_cs` ``= True``, additional
         DSE-mediated contribution to the OEI is included:
 
         .. math::
-            \bm{h}_{\tt{CS}} &= \bm{h}_{\tt{DSE}} - \bm{\tilde{d}}^\al
-                                \sum_\al \sum_{\mu\nu} \rho_{\mu\nu}
-                                \cdot \mel*{\mu}{\hat{D}}{\nu} \\
-            \bm{\tilde{d}}^\al_{\mu\nu} &= \la_\al
-                                           \cdot \bm{D}^\al_{\mu\nu}
-        where :math:`\bm{D}^\al` is the polarized dipole moment matrix in
+            \boldsymbol{h}_{\tt{CS}} &= \boldsymbol{h}_{\tt{DSE}} - \boldsymbol{\tilde{d}}^\alpha
+                                \sum_\alpha \sum_{\mu\nu} \rho_{\mu\nu}
+                                \cdot \bra{\mu}{\hat{D}}\ket{\nu} \\
+            \boldsymbol{\tilde{d}}^\alpha_{\mu\nu} &= \lambda_\alpha
+                                           \cdot \boldsymbol{D}^\alpha_{\mu\nu}
+
+        where :math:`\boldsymbol{D}^\alpha` is the polarized dipole moment matrix in
         the AO basis.
 
         Also in CS representation, :math:`E_{\tt{QED-HF}}` includes DSE
@@ -1119,31 +1181,33 @@ class Photon(Boson):
 
         .. math::
             E_{\tt{QED-HF}} = E_{\tt{HF}}
-                            + \frac{1}{2} \sum_\al
+                            + \frac{1}{2} \sum_\alpha
                               \langle
-                              [ \la_\al \cdot
-                                (\hat{D} - \ev*{\hat{D}}_{\mu\nu})
+                              [ \lambda_\alpha \cdot
+                                (\hat{D} - \langle{\hat{D}}\rangle_{\mu\nu})
                               ]^2
                               \rangle
+
         that can also be included via the OEI, since:
 
         .. math::
             \langle
-            [ \la_\al
-            \cdot (\hat{D} - \ev*{\hat{D}}_{\mu\nu})]^2
+            [ \lambda_\alpha
+            \cdot (\hat{D} - \langle{\hat{D}}\rangle_{\mu\nu})]^2
             \rangle
-            &= \langle [ \la_\al
-               \cdot (\hat{D} - \ev*{\hat{D}}_{\mu\nu})]^2
+            &= \langle [ \lambda_\alpha
+               \cdot (\hat{D} - \langle{\hat{D}}\rangle_{\mu\nu})]^2
                \rangle
-               \cdot \frac{\Tr[\bm{S} \cdot \bm{\rho}]}
+               \cdot \frac{\text{Tr}[\boldsymbol{S} \cdot \boldsymbol{\rho}]}
                {N_{\tt{elec}}} \\
             &= \tt{Tr}
                \left[
-               \frac{[ \la_\al \cdot
-               (\hat{D} - \ev*{\hat{D}}_{\mu\nu})]^2}
-               {N_{\tt{elec}}} \bm{S} \cdot \bm{\rho}
+               \frac{[ \lambda_\alpha \cdot
+               (\hat{D} - \langle{\hat{D}}\rangle_{\mu\nu})]^2}
+               {N_{\tt{elec}}} \boldsymbol{S} \cdot \boldsymbol{\rho}
                \right]
-        where :math:`\bm{\rho}` is the provided electronic density matrix,
+
+        where :math:`\boldsymbol{\rho}` is the provided electronic density matrix,
         ``dm``.
 
         Parameters
@@ -1174,24 +1238,41 @@ class Photon(Boson):
 
         gvar2 = numpy.ones(self.nmodes)
         if residue:
-            gvar2 = self.couplings_res**2 # element-wise
+            if self.add_dse:
+                # (1-f) ^2
+                gvar2 = self.couplings_res**2 # element-wise
+            else:
+                # f^2 - 2f = f * (f-2)
+                gvar2 = self.couplings_var * (self.couplings_var - 2.0)
+            dg = - 2.00 * self.couplings_res # 2(f-1)
 
         oei = - lib.einsum("Xpq, X->pq", self.gmat, gvar2 * self.z_alpha)
-        if self.complete_basis:
-            oei -= 0.5 * lib.einsum("Xpq, X->pq", self.q_lambda_ao, gvar2)
-        else:
-            s_eval, s_evec = scipy.linalg.eigh(s1e)
-            idx = s_eval > 1e-15
-            s_inv = numpy.dot(s_evec[:, idx] / s_eval[idx], s_evec[:, idx].conj().T)
+        if compute_grad:
+            oei_grad = - lib.einsum("Xpq, X->pq", self.gmat, dg * self.z_alpha)
 
-            tmp_term = lib.einsum("Xpr, rs, Xsq-> Xpq", self.gmat, s_inv, self.gmat)
+        # the following part comes from the DSE
+        if self.add_dse:
+            if self.complete_basis:
+                tmp_term = - self.q_lambda_ao
+                # oei -= 0.5 * lib.einsum("Xpq, X->pq", self.q_lambda_ao, gvar2)
+            else:
+                s_eval, s_evec = scipy.linalg.eigh(s1e)
+                idx = s_eval > 1e-15
+                s_inv = numpy.dot(s_evec[:, idx] / s_eval[idx], s_evec[:, idx].conj().T)
+                tmp_term = lib.einsum("Xpr, rs, Xsq-> Xpq", self.gmat, s_inv, self.gmat)
+
             oei += 0.5 * lib.einsum("X, Xpq-> pq", gvar2, tmp_term)
+            if compute_grad:
+                oei_grad += 0.5 * lib.einsum("X, Xpq-> pq", dg, tmp_term)
             del (tmp_term)
 
+        # FIXME: this will cause problem to VT/VSQ gradient with respect to f as e_boson is not function of f
         # DSE + boson energy (beyond |0> state)
         z2s = (0.5 * numpy.sum(self.z_alpha**2 * gvar2) + self.e_boson)* s1e/self._mol.nelectron
         # z2s = (0.5 * numpy.sum(self.z_alpha**2 * gvar2))* s1e/self._mol.nelectron
         oei += z2s
+        if compute_grad:
+            oei_grad += 0.5 * numpy.sum(self.z_alpha**2 * dg) * s1e/self._mol.nelectron
 
         # bilinear term
         # off-diaognal (photonic) block
@@ -1199,8 +1280,8 @@ class Photon(Boson):
         for imode in range(self.nmodes):
             shift = numpy.eye(self.gmat.shape[1]) * self.z_alpha[imode] #/ mol.nelectron
             shift = s1e * self.z_alpha[imode]
-            gtmp = (self.gmat[imode] - shift) * self.couplings_res[imode]
-            gtmp *= numpy.sqrt(0.5 * self.omega[imode])
+            gtmp = (self.gmat[imode] - shift)
+            gtmp *= numpy.sqrt(0.5*self.omega[imode])
 
             ci = self.boson_coeff[idx : idx + self.nboson_states[imode], 0]
             pdm = numpy.outer(numpy.conj(ci), ci)
@@ -1208,10 +1289,15 @@ class Photon(Boson):
             h_od = numpy.diag(numpy.sqrt(numpy.arange(1, mdim)), k = 1) \
                + numpy.diag(numpy.sqrt(numpy.arange(1, mdim)), k = -1)
             ph_exp_val = numpy.sum(h_od * pdm)
-            oei += gtmp * ph_exp_val
+
+            oei += ph_exp_val * gtmp * self.couplings_res[imode]
+            if compute_grad:
+                # d(1-f) /df = -1
+                oei_grad -= ph_exp_val * gtmp
 
             idx += self.nboson_states[imode]
-
+        if compute_grad:
+            return oei, oei_grad
         return oei
 
 
@@ -1226,58 +1312,62 @@ class Photon(Boson):
     #     return quadrupole-modified OEI contribution, which arises
     #     from the DSE term of the PF Hamiltonian:
 
-    #     .. math::
-    #         \bm{h}_{\tt{DSE}} &= \bm{h}_{\tt{bare}} - \frac{1}{2}
-    #                              \sum_\al \sum_{\mu\nu} \rho_{\mu\nu}
-    #                              \cdot \bm{\tilde{q}}^\al_{\mu\nu} \\
-    #         \bm{\tilde{q}}^\al_{\mu\nu} &= \la_{\al}^2
-    #                                        \cdot \bm{Q}^\al_{\mu\nu}
-    #     where :math:`\bm{Q}^\al` is the polarized quadrupole moment matrix
-    #     in the AO basis.
+    #    .. math::
+    #        \boldsymbol{h}_{\tt{DSE}} &= \boldsymbol{h}_{\tt{bare}} - \frac{1}{2}
+    #                             \sum_\alpha \sum_{\mu\nu} \rho_{\mu\nu}
+    #                             \cdot \boldsymbol{\tilde{q}}^\alpha_{\mu\nu} \\
+    #        \boldsymbol{\tilde{q}}^\alpha_{\mu\nu} &= \lambda_{\alpha}^2
+    #                                       \cdot \boldsymbol{Q}^\alpha_{\mu\nu}
+    #
+    #    where :math:`\boldsymbol{Q}^\alpha` is the polarized quadrupole moment matrix
+    #    in the AO basis.
 
     #     In CS representation, when :attr:`use_cs` ``= True``, additional
     #     DSE-mediated contribution to the OEI is included:
 
-    #     .. math::
-    #         \bm{h}_{\tt{CS}} &= \bm{h}_{\tt{DSE}} - \bm{\tilde{d}}^\al
-    #                             \sum_\al \sum_{\mu\nu} \rho_{\mu\nu}
-    #                             \cdot \mel*{\mu}{\hat{D}}{\nu} \\
-    #         \bm{\tilde{d}}^\al_{\mu\nu} &= \la_\al
-    #                                        \cdot \bm{D}^\al_{\mu\nu}
-    #     where :math:`\bm{D}^\al` is the polarized dipole moment matrix in
-    #     the AO basis.
+    #    .. math::
+    #        \boldsymbol{h}_{\tt{CS}} &= \boldsymbol{h}_{\tt{DSE}} - \boldsymbol{\tilde{d}}^\alpha
+    #                            \sum_\alpha \sum_{\mu\nu} \rho_{\mu\nu}
+    #                            \cdot \bra{\mu}{\hat{D}}\ket{\nu} \\
+    #        \boldsymbol{\tilde{d}}^\alpha_{\mu\nu} &= \lambda_\alpha
+    #                                       \cdot \boldsymbol{D}^\alpha_{\mu\nu}
+
+    #    where :math:`\boldsymbol{D}^\alpha` is the polarized dipole moment matrix in
+    #    the AO basis.
 
     #     Also in CS representation, :math:`E_{\tt{QED-HF}}` includes DSE
     #     term:
 
-    #     .. math::
-    #         E_{\tt{QED-HF}} = E_{\tt{HF}}
-    #                         + \frac{1}{2} \sum_\al
-    #                           \langle
-    #                           [ \la_\al \cdot
-    #                             (\hat{D} - \ev*{\hat{D}}_{\mu\nu})
-    #                           ]^2
-    #                           \rangle
-    #     that can also be included via the OEI, since:
+    #    .. math::
+    #        E_{\tt{QED-HF}} = E_{\tt{HF}}
+    #                        + \frac{1}{2} \sum_\alpha
+    #                          \langle
+    #                          [ \lambda_\alpha \cdot
+    #                            (\hat{D} - \langle{\hat{D}}\rangle_{\mu\nu})
+    #                          ]^2
+    #                          \rangle
 
-    #     .. math::
-    #         \langle
-    #         [ \la_\al
-    #         \cdot (\hat{D} - \ev*{\hat{D}}_{\mu\nu})]^2
-    #         \rangle
-    #         &= \langle [ \la_\al
-    #            \cdot (\hat{D} - \ev*{\hat{D}}_{\mu\nu})]^2
-    #            \rangle
-    #            \cdot \frac{\Tr[\bm{S} \cdot \bm{\rho}]}
-    #            {N_{\tt{elec}}} \\
-    #         &= \tt{Tr}
-    #            \left[
-    #            \frac{[ \la_\al \cdot
-    #            (\hat{D} - \ev*{\hat{D}}_{\mu\nu})]^2}
-    #            {N_{\tt{elec}}} \bm{S} \cdot \bm{\rho}
-    #            \right]
-    #     where :math:`\bm{\rho}` is the provided electronic density matrix,
-    #     ``dm``.
+    #    that can also be included via the OEI, since:
+
+    #    .. math::
+    #        \langle
+    #        [ \lambda_\alpha
+    #        \cdot (\hat{D} - \langle{\hat{D}}\rangle_{\mu\nu})]^2
+    #        \rangle
+    #        &= \langle [ \lambda_\alpha
+    #           \cdot (\hat{D} - \langle{\hat{D}}\rangle_{\mu\nu})]^2
+    #           \rangle
+    #           \cdot \frac{\text{Tr}[\boldsymbol{S} \cdot \boldsymbol{\rho}]}
+    #           {N_{\tt{elec}}} \\
+    #        &= \tt{Tr}
+    #           \left[
+    #           \frac{[ \lambda_\alpha \cdot
+    #           (\hat{D} - \langle{\hat{D}}\rangle_{\mu\nu})]^2}
+    #           {N_{\tt{elec}}} \boldsymbol{S} \cdot \boldsymbol{\rho}
+    #           \right]
+
+    #    where :math:`\boldsymbol{\rho}` is the provided electronic density matrix,
+    #    ``dm``.
 
     #     Parameters
     #     ----------
@@ -1366,14 +1456,14 @@ class Photon(Boson):
             set to an array of zeros when not in CS representation.
 
         .. math::
-            J^\tt{DSE}_{\mu\nu} &= \sum_{\la\si} \rho_{\la\si}
-                                   \sum_\al (\mu\nu|\la\si)^\al
-                                 = \sum_{\la\si} \rho_{\la\si}
-                                   \sum_\al g^\al_{\mu\nu} g^\al_{\la\si} \\
-            K^\tt{DSE}_{\mu\nu} &= \sum_{\la\si} \rho_{\la\si}
-                                   \sum_\al (\mu\si|\la\nu)^\al
-                                 = \sum_{\la\si} \rho_{\la\si}
-                                   \sum_\al g^\al_{\mu\si} g^\al_{\la\nu}
+            J^\tt{DSE}_{\mu\nu} &= \sum_{\lambda\sigma} \rho_{\lambda\sigma}
+                                   \sum_\alpha (\mu\nu|\lambda\sigma)^\alpha
+                                 = \sum_{\lambda\sigma} \rho_{\lambda\sigma}
+                                   \sum_\alpha g^\alpha_{\mu\nu} g^\alpha_{\lambda\sigma} \\
+            K^\tt{DSE}_{\mu\nu} &= \sum_{\lambda\sigma} \rho_{\lambda\sigma}
+                                   \sum_\alpha (\mu\sigma|\lambda\nu)^\alpha
+                                 = \sum_{\lambda\sigma} \rho_{\lambda\sigma}
+                                   \sum_\alpha g^\alpha_{\mu\sigma} g^\alpha_{\lambda\nu}
 
         Parameters
         ----------
@@ -1439,9 +1529,9 @@ class Photon(Boson):
         photon ``mode`` and quadrupole moment matrix :attr:`quadrupole_ao`.
 
         .. math::
-            \bm{Q}_\al = \bm{e}_\al
-                         \cdot \mel*{\mu}{\hat{Q}}{\nu}
-                         \cdot \bm{e}_\al
+            \boldsymbol{Q}_\alpha = \boldsymbol{e}_\alpha
+                         \cdot \bra{\mu}{\hat{Q}}\ket{\nu}
+                         \cdot \boldsymbol{e}_\alpha
 
         Parameters
         ----------
@@ -1462,8 +1552,9 @@ class Photon(Boson):
         r"""Compute dipole self-energy matrix for all modes in AO basis.
 
         .. math::
-            \bm{\tilde{q}} = \sum_\al \cdot
-                             \mel*{\mu}{(\bm{\la}_\al\cdot\hat{D})^2}{\nu}
+            \boldsymbol{\tilde{q}} = \sum_\alpha \cdot
+                             \bra{\mu}{(\boldsymbol{\lambda}_\alpha\cdot\hat{D})^2}\ket{\nu}
+
         Function only runs if :attr:`q_lambda_ao` is not ``None``.
 
         Returns
@@ -1526,8 +1617,8 @@ class Photon(Boson):
         r"""Compute interaction matrix for all modes in AO basis.
 
         .. math::
-            \bm{\tilde{d}} = \sum_\al \cdot
-                             \mel*{\mu}{\bm{\la}_\al\cdot\hat{D}}{\nu}
+            \boldsymbol{\tilde{d}} = \sum_\alpha \cdot
+                             \mel*{\mu}{\boldsymbol{\la}_\alpha\cdot\hat{D}}{\nu}
         Function only runs if :attr:`gmat` is not ``None``.
 
 
@@ -1556,8 +1647,9 @@ class Photon(Boson):
         TODO: get_gmat_ao or this one will be deprecated
 
         .. math::
-            \bm{\tilde{d}} = \sum_\al \cdot
-                             \mel*{\mu}{\bm{\la}_\al\cdot\hat{D}}{\nu}
+            \boldsymbol{\tilde{d}} = \sum_\alpha \cdot
+                             \bra{\mu}{\boldsymbol{\lambda}_\alpha\cdot\hat{D}}\ket{\nu}
+
         Function only runs if :attr:`gmat` is not ``None``.
 
 
@@ -1584,13 +1676,15 @@ class Photon(Boson):
     def get_geb_ao(self, mode):
         r"""Return bilinear interaction term of ``mode`` in :class:`Boson`.
 
+        Gets the bilinear interaction term in the AO basis, i.e., the g in g(b+b^+).
+
         The bilinear interaction term of ``mode`` is :attr:`gmat[mode] <gmat>`,
         scaled by a frequency-dependent term:
 
         .. math::
-            \sqrt{\frac{\om_\al}{2}} \bm{\tilde{d}}^\al
-            = \sqrt{\frac{\om_\al}{2}}
-              \cdot \mel*{\mu}{\bm{\la}_\al \cdot \hat{D}}{\nu}
+            \sqrt{\frac{\omega_\alpha}{2}} \boldsymbol{\tilde{d}}^\alpha
+            = \sqrt{\frac{\omega_\alpha}{2}}
+              \cdot \bra{\mu}{\boldsymbol{\lambda}_\alpha \cdot \hat{D}}\ket{\nu}
 
         Parameters
         ----------
@@ -1602,8 +1696,12 @@ class Photon(Boson):
         :class:`~numpy.ndarray`
             Interaction matrix of mode scaled by frequency term.
         """
-        return (numpy.sqrt(0.5 * self.omega[mode]) * self.gmat[mode])
+        logger.debug(self, " construct bilinear interation term in AO")
+        g_eb = self.get_polarized_dipole_ao(mode)
+        logger.debug(self, f" Norm of gao without w {numpy.linalg.norm(g_eb)}")
+        g_eb *= self.couplings_bilinear[mode]
 
+        return g_eb
 
     def get_bdag_minus_b_expval(self, mode): # TODO: Probably remove this eventually
 
@@ -1629,7 +1727,7 @@ class Photon(Boson):
         """
 
         mf = self._mf
-        self.nmo = 2 * self.nao
+        self.nmo = 2 * self._mol.nao_nr()
         if mf.mo_coeff is None:
             mf.kernel()
         if mf.mo_occ.ndim == 1:
@@ -1854,6 +1952,8 @@ class Phonon(Boson):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        self.vmat = None  #
+
     def relax(self):
         raise NotImplementedError("Method not implemented!")
 
@@ -1871,8 +1971,13 @@ if __name__ == "__main__":
     mol.build()
 
     nmodes = 1
+
     omega = numpy.zeros(nmodes)
     omega[0] = 0.5
+
+    gfac = numpy.zeros(nmodes)
+    gfac[0] = 0.05
+
     vec = numpy.zeros((nmodes, 3))
     vec[0, :] = 0.05 * numpy.asarray([0.0, 0.0, 1.0])
 
@@ -1883,10 +1988,13 @@ if __name__ == "__main__":
     hf.diis_space = 10
     mf = hf.run()
 
+    qed = Photon(mol, mf=mf, omega=omega, vec=vec, gfac=gfac)
+    qed.kernel()
+
     for i in range(nmodes):
-        g_eb = hf.qed.get_geb_ao(i)
+        g_eb = qed.get_geb_ao(i)
         print("e-ph coupling matrix of mode ", i, "is \n", g_eb)
 
     # get I
-    I = hf.qed.get_I()
-    F = hf.qed.g_fock()
+    I = qed.get_I()
+    F = qed.g_fock()

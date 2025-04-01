@@ -21,7 +21,7 @@ This folder implements the models for electronic structure, including:
 
 .. math::
 
-   H0 = \sum_j \epsilon_j c^\dagger_j c_j - t \sum_{j}(c^\dagger_{j+1}c_j + h.c.)
+   H_0 = \sum_j \epsilon_j c^\dagger_j c_j - t \sum_{j}(c^\dagger_{j+1}c_j + h.c.)
 
 2) Su-Schrieffer-Heeger (SSH):
 
@@ -29,7 +29,7 @@ This folder implements the models for electronic structure, including:
    :nowrap:
 
    \begin{align*}
-   H &= H0 + H_{int} + H_{ph} &\\
+   H &= H_0 + H_{int} + H_{ph} &\\
    H_{ph} &=  &\\
    H_{int} &= &
    \end{align*}
@@ -39,7 +39,7 @@ This folder implements the models for electronic structure, including:
 .. math::
 
    H = -t \sum_{js} (c^\dagger_{j+1,s} c_{j,s}+ hc) + U\sum_j n_{ju} n_{jd} \\
-   + g\sum_{js} (b^\dagger_j + b_j) n_{j,\sigma} + omega\sum_j b^\dagger_j b_j.
+   + g\sum_{js} (b^\dagger_j + b_j) n_{j,\sigma} + \omega\sum_j b^\dagger_j b_j.
 
 or
 
@@ -47,7 +47,7 @@ or
    :nowrap:
 
    \begin{align*}
-   H &= H0 + H_U + H_{int} + H_{ph}, &\\
+   H &= H_0 + H_U + H_{int} + H_{ph}, &\\
    H_U &= U\sum_j n_{ju} n_{jd} &\\
    H_{int} &= g\sum_{js} (b^\dagger_j + b_j) n_{j,\sigma} &\\
    H_{ph}&= \omega\sum_j b^\dagger_j b_j. &
@@ -71,8 +71,10 @@ where :math:`\Delta_j` and :math:`\Gamma_j` are random variables.
 
 """
 
-from . import aggregates
-from . import hh_model
-from . import hubbard
-from . import shin_metiu
-from . import ssh
+from openms import models
+
+from openms.models import hh_model
+from openms.models import hubbard
+from openms.models import aggregates  # disordered molecular aggregates
+
+from .shin_metiu import Shin_Metiu

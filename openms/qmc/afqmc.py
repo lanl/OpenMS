@@ -53,6 +53,16 @@ For a generic Hamiltonian, we can always separate it into one-body and two-body 
               c^\dagger_i c^\dagger_j c_k c_l
               \equiv \hat{H}_1 + \hat{H}_2
 
+.. note::
+
+    - There are two standard notations for integrals in terms of molecular spin orbitals, denoted “physicists’ notation” and “chemists’ notation.”
+    - The physicists’ notation lists all complex-conjugate functions to the left, and then non-complex-conjugate functions to the right.
+    - For two-electron in- tegrals, within a pair of complex-conjugate functions (or non-complex-conjugate functions), the orbital
+      for electron 1 would be listed first, followed by the orbital for electron 2.
+    - In chemists’ notation, by contrast, one lists the functions for electron 1 on the left, followed by functions for electron 2 on the right.
+      Within each pair, one lists the complex-conjugate functions first, followed by the non-complex-conjugate functions
+
+
 we need to rewrite the Hamiltonian into the so-called MC format, i.e., rewrite
 the two-body term as squares of one-body operators in order to do Hubbard-Stratonovich
 transformation, which can be achieved by the Cholesky decomposition of eri:
@@ -61,25 +71,70 @@ transformation, which can be achieved by the Cholesky decomposition of eri:
 
      (ij|kl) = \sum_\gamma L^*_{\gamma,il} L_{\gamma,kj}
 
+.. note::
+
+   In chemist's notation, the decomposition is :math:`[ij|kl] = \sum_\gamma L^*_{\gamma,ij} L_{\gamma,kl}`
+
 The two-body interactions becomes
 
 .. math::
 
      H_2 = & \frac{1}{2} \sum_{ijkl} V_{ijkl} c^\dagger_i c^\dagger_j c_k c_l \\
-         = & \frac{1}{2} \sum_{ijkl} [V_{ijkl} c^\dagger_i c_l c^\dagger_j c_k- \sum_{ijkl} c^\dagger_i c_l \delta_{jl}] \\
+         = & \frac{1}{2} \sum_{ijkl} [V_{ijkl} c^\dagger_i c_l c^\dagger_j c_k- \sum_{ijkl}V_{ijkl} c^\dagger_i c_k \delta_{jl}] \\
          = & \frac{1}{2} \sum_{ijkl}\sum_\gamma (L^*_{\gamma,il} c^\dagger_i c_l) (L_{\gamma,kj}c^\dagger_j c_k)
            - \frac{1}{2} \sum_{ijkj} V_{ijkj} c^\dagger_i c_k
 
 Hence, the last term in above equation is a single-particle operator, which is defined as the
-shifted_h1e in the code.
+shifted_h1e in the code. The final MC Hamiltonian is rewritten as:
 
-Finally,
+.. math::
+     H_{mc} = \sum_{ij} [h_{ij} - \frac{1}{2} \sum_{ikjk} V_{ikjk} ] c^\dagger_i c_j
+         + \frac{1}{2} \sum_{ij}\sum_\gamma (L^*_{\gamma,ij} c^\dagger_i c_j)^2
+
+
+In practical calculations, we substract the mean-field background from the interaction operators,
+
+.. math::
+    \bar{L}_\gamma = \bra{\Psi_T}\hat{L}_\gamma\ket{\Psi_T}.
+
+Consequently, the MC Hamiltnian is rewritten as
+
+.. math::
+    \hat{H}_{mc} = \sum_{ij} [h_{ij} - \frac{1}{2} \sum_{ikjk} V_{ikjk} ] c^\dagger_i c_j
+                 + \sum_\gamma [\bar{L}_\gamma (\hat{L}_\gamma -\bar{L}_\gamma)
+                 + \frac{1}{2}\bar{L}^2_\gamma
+                 + \frac{1}{2}(\hat{L}_\gamma-\bar{L}_\gamma)^2].
+
+
+Finally, the Hubbard-Stratonovich transformation of the two-body evolution operator is
 
 .. math::
 
   e^{-\Delta\tau H} = \int d x p(x) B(x)
 
-where :math:`B(x)` is the Auxilary field.
+where :math:`B(x)` is the Auxilary field. Particularly,
+
+.. math::
+    e^{-\Delta\tau \hat{L}^2_\gamma/2}
+    = & \int dx\frac{1}{\sqrt{2\pi}} e^{-x^2/2}
+      e^{x\sqrt{-\Delta\tau}\hat{L}_\gamma}  \\
+    = & \int dx\frac{1}{\sqrt{2\pi}} e^{-x^2/2} e^{x\sqrt{-\Delta\tau}\bar{L}_\gamma}
+      e^{x\sqrt{-\Delta\tau}(\hat{L}_\gamma-\bar{L}_\gamma)}
+
+A dynamic force is defined as
+
+..  math::
+    F_\gamma \equiv \sqrt{-\Delta\tau}\langle \hat{L}_\gamma\rangle
+
+Hence, the Stratonovich transformation is rewritten as
+
+.. math::
+
+   e^{-\Delta\tau \hat{L}^2_\gamma/2}
+   = & \int dx\frac{1}{\sqrt{2\pi}} e^{-x^2/2} e^{xF} e^{x(\sqrt{-\Delta\tau}\hat{L}_\gamma-F)} \\
+   = & \int dx\frac{1}{\sqrt{2\pi}} e^{-(x-F)^2/2} e^{\frac{1}{2}F^2-xF} e^{x\sqrt{-\Delta\tau}\hat{L}_\gamma} \\
+   \equiv & \int dx P_I(x) N_I(x) e^{x\sqrt{-\Delta\tau}\hat{L}_\gamma}.
+
 
 Importance sampling
 ~~~~~~~~~~~~~~~~~~~
@@ -118,10 +173,10 @@ class AFQMC(qmc.QMCbase):
         self.exp_h1e = None
 
     def dump_flags(self):
-        r"""
-        Dump flags
+        r""" Dump flags
         """
-        logger.note(self, f"\n========  AFQMC simulation using OpenMS package ========\n")
+        super().dump_flags()
+
 
     def hs_transform(self, h1e):
         r"""
@@ -134,6 +189,7 @@ class AFQMC(qmc.QMCbase):
         """
         hs_fields = None
         return hs_fields
+
 
     def build_propagator(self, h1e, eri, ltensor):
         r"""Pre-compute the propagators"""
@@ -152,12 +208,21 @@ class AFQMC(qmc.QMCbase):
 
         trace_eri = backend.einsum("npr,nrq->pq", ltensor.conj(), ltensor)
         shifted_h1e = h1e - 0.5 * trace_eri
+        # for p, q in itertools.product(range(h1e.shape[0]), repeat=2):
+        #    shifted_h1e[p, q] = h1e[p, q] - 0.5 * backend.trace(eri[p, :, :, q])
         shifted_h1e = shifted_h1e - backend.einsum(
             "n, npq->pq", self.mf_shift, 1j * ltensor
         )
 
         self.TL_tensor = backend.einsum("pr, npq->nrq", self.trial.psi.conj(), ltensor)
         self.exp_h1e = scipy.linalg.expm(-self.dt / 2.0 * shifted_h1e)
+        logger.debug(
+            self, "norm of shifted_h1e: %15.8f", backend.linalg.norm(shifted_h1e)
+        )
+        logger.debug(
+            self, "norm of TL_tensor:   %15.8f", backend.linalg.norm(self.TL_tensor)
+        )
+
 
     def propagation_onebody(self, phi_w):
         r"""Propgate one-body term"""
@@ -323,6 +388,7 @@ class QEDAFQMC(AFQMC):
 
         # Cavity Parameters
         if cavity_freq is not None:
+            self.coherent_state = True
             self.cavity_freq = cavity_freq
             self.cavity_coupling = cavity_coupling
             self.cavity_vec = cavity_vec / backend.linalg.norm(cavity_vec)
@@ -391,6 +457,11 @@ class QEDAFQMC(AFQMC):
                 self.dipole_ao_polarized,
             )
 
+            # YZ: FIXME: transform h1e_DSE and eri_DSE into OAO
+
+            # create qed mf object
+            # self.qedmf = QEDRHF(mol, *args, **kwargs)
+
     def get_integrals(self):
         r"""
         1) add DSE-mediated eri and oei
@@ -401,6 +472,17 @@ class QEDAFQMC(AFQMC):
 
         # This is the fcidump way of doing things. Everything here is in AO basis
         h1e, eri = self.make_read_fcidump(self.NAO)
+
+        if self.coherent_state:
+            # substract the mean-field reference (coherent state)
+            rho_mf = backend.einsum( "FSaj,FSbj->ab", self.trial.wf, self.trial.wf)
+            dipole_mf = backend.einsum( "mab,ab->m", self.dipole_ao_polarized, rho_mf)
+            dipole_mf = backend.array([backend.identity( self.NAO ) * dipole_mf[m] for m in range(self.nmodes) ]) # (NMode, NAO, NAO)
+
+            self.mu_shifted  = self.dipole_ao_polarized - dipole_mf # \hat{\mu} - <\mu>
+            self.MuQc = backend.einsum("m,FG,mab->FGab", self.bilinear_factor, self.aT_plus_a, self.mu_shifted) # Replace with shifted version
+            eri_DSE  = 2 * backend.einsum("m,mab,mcd->abcd", self.DSE_factor, self.mu_shifted, self.mu_shifted )
+
         h1e += self.h1e_DSE
         eri += self.eri_DSE
 
@@ -441,7 +523,7 @@ class QEDAFQMC(AFQMC):
 
 
     def propagate_bilinear_coupling(self):
-        # Full-step Bilinear propagation
+        # Half-step Bilinear propagation
 
         # BMW:
         # I put Taylor expansion here to keep the four-index matrix notation for einsum.
@@ -451,10 +533,14 @@ class QEDAFQMC(AFQMC):
 
         temp = self.walker_tensors.copy()
         for order_i in range(self.taylor_order):
-            temp = backend.einsum("FGab,zGSbj->zFSaj", -self.dt * self.MuQc, temp) / (
-                order_i + 1.0
-            )
+            temp = backend.einsum("FGab,zGSbj->zFSaj", -0.5 * self.dt * self.MuQc, temp) / (order_i + 1.0)
             self.walker_tensors += temp
+
+            # print("\n")
+            # print( "\tCavity Frequency = %1.4f a.u." % self.cavity_freq[0])
+            # print( "\tLight-Matter Coupling (\\lambda = 1/\sqrt(2 wc) A0) = %1.4f a.u." % self.cavity_coupling[0])
+            # print( "\tCavity Polarization Direction: %1.3f %1.3f %1.3f" % (self.cavity_vec[0,0], self.cavity_vec[0,1], self.cavity_vec[0,2]) )
+            # print("\n")
 
     def propagate_photon_hamiltonian( self ):
         # Half-step photon propagation
@@ -476,11 +562,15 @@ class QEDAFQMC(AFQMC):
 
         # 1-body propagator propagation
         # e^{-dt/2*H1e}
-        # one_body_op_power   = scipy.linalg.expm(-self.dt/2 * h1e)
-        # self.walker_tensors = backend.einsum('ab,zFSbk->zFSak', one_body_op_power, self.walker_tensors)
-        self.walker_tensors = backend.einsum(
-            "ab,zFSbk->zFSak", self.exp_h1e, self.walker_tensors
-        )
+        one_body_op_power   = scipy.linalg.expm(-self.dt/2 * h1e)
+        self.walker_tensors = backend.einsum('ab,zFSbk->zFSak', one_body_op_power, self.walker_tensors)
+        # self.walker_tensors = backend.einsum(
+        #    "ab,zFSbk->zFSak", self.exp_h1e, self.walker_tensors
+        # )
+
+        #### PROPAGATE QED TERMS BY HALF STEP ####
+        self.propagate_photon_hamiltonian()
+        self.propagate_bilinear_coupling()
 
         # 2-body propagator propagation
         # exp[(x-F) * L], F = sqrt(-dt) <L_n>
@@ -495,17 +585,18 @@ class QEDAFQMC(AFQMC):
             )
             self.walker_tensors += temp
 
-        #### PROPAGATE QED TERMS ####
+        #### PROPAGATE QED TERMS BY HALF STEP ####
         # FIXME: split into  two -1/2 \Delta\tau propagation, like the one-body term
         self.propagate_bilinear_coupling()
+        self.propagate_photon_hamiltonian()
         #############################
 
         # 1-body propagator propagation
         # e^{-dt/2*H1e}
-        # self.walker_tensors = backend.einsum('ab,zFSbk->zFSak', one_body_op_power, self.walker_tensors)
-        self.walker_tensors = backend.einsum(
-            "ab,zFSbk->zFSak", self.exp_h1e, self.walker_tensors
-        )
+        self.walker_tensors = backend.einsum('ab,zFSbk->zFSak', one_body_op_power, self.walker_tensors)
+        # self.walker_tensors = backend.einsum(
+        #    "ab,zFSbk->zFSak", self.exp_h1e, self.walker_tensors
+        #)
 
         # (x*\bar{x} - \bar{x}^2/2)
         N_I = backend.einsum("zn, zn->z", xi, F) - 0.5 * backend.einsum(
@@ -529,7 +620,7 @@ if __name__ == "__main__":
     bond = 1.6
     natoms = 2
     atoms = [("H", i * bond, 0, 0) for i in range(natoms)]
-    mol = gto.M(atom=atoms, basis="sto-6g", unit="Bohr", verbose=3)
+    mol = gto.M(atom=atoms, basis="sto6g", unit="Bohr", verbose=3)
 
     num_walkers = 500
     afqmc = AFQMC(
@@ -537,6 +628,7 @@ if __name__ == "__main__":
         dt=0.005,
         total_time=2.0,
         num_walkers=num_walkers,
+        taylor_order=6,
         energy_scheme="hybrid",
         verbose=4,
     )
@@ -553,7 +645,7 @@ if __name__ == "__main__":
     fcisolver = fci.FCI(mf)
     fci_energy = fcisolver.kernel()[0]
 
-    print(fci_energy)
+    print('fci_energy is: ', fci_energy)
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots()

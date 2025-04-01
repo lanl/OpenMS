@@ -1,5 +1,6 @@
 
 #include "qed.hpp"
+// #include "qmc.hpp"
 #include <pybind11/pybind11.h>
 #include <pybind11/eigen.h>   // convert eigen3 to numpy array
 #include "vt_qedhf.hpp"
@@ -13,5 +14,5 @@ PYBIND11_MODULE(_qedhf, m) {
     m.def("gaussian_factor_vt_qedhf", &gaussian_factor_vt_qedhf);
     m.def("test_gaussian", &test_gaussian);
     m.def("eigen3_exampleFunction", &eigen3_exampleFunction);
+    // m.def("qmc_exx_chols", &exx_chols, "Calculate exx_chols", pybind11::arg("ltensor"), pybind11::arg("Gf"));
 }
-

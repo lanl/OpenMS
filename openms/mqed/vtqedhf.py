@@ -214,18 +214,17 @@ class RHF(scqedhf.RHF):
             ci = self.qed.boson_coeff[idx : idx + mdim, idx]
             pdm = numpy.outer(numpy.conj(ci), ci)
 
-            derivative = self.qed.displacement_deriv(imode, tmp * diff_eta, pdm)
+            derivative = self.qed.displacement_deriv_vt(imode, tmp * diff_eta, pdm)
 
         # Apply vacuum derivative formula
         else:
             derivative = -numpy.exp((-0.5 * (tmp * diff_eta) ** 2)) \
                           * ((tmp * diff_eta) ** 2)
+            derivative /= self.qed.couplings_var[imode]
 
         # in principle, the couplings_var should be > 0.0
         if self.qed.couplings_var[imode] < -0.05 or self.qed.couplings_var[imode] > 1.05:
             logger.warn(self, f"Warning: Couplings_var should be in [0,1], which is {self.qed.couplings_var[imode]}")
-
-        derivative /= self.qed.couplings_var[imode]
 
         if onebody:
             return derivative.reshape(self.nao, self.nao)

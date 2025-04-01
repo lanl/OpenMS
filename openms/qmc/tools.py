@@ -220,6 +220,8 @@ def chols_full(mol, eri=None, thresh=1.e-12, aosym="s1", g=None):
         Cholesky tensor (in AO basis) from decomposition.
     """
 
+    # print("full bock is used in cholesky decomposition")
+
     if eri is None:
         eri = mol.intor('int2e_sph', aosym='s1')
     nao = eri.shape[0]
@@ -229,6 +231,10 @@ def chols_full(mol, eri=None, thresh=1.e-12, aosym="s1", g=None):
     eri = eri.reshape((nao**2, -1))
     u, s, v = scipy.linalg.svd(eri)
     del eri
+    # print("u.shape", u.shape)
+    # print("v.shape", v.shape)
+    # print("s.shape", s.shape)
+    # print(s>1.e-12)
 
     idx = (s > thresh)
     ltensor = (u[:,idx] * numpy.sqrt(s[idx])).T
@@ -279,6 +285,8 @@ def chols_blocked(mol, thresh=1.e-6, max_chol_fac=15, g=None):
         l = mol.bas_angular(i)
         nc = mol.bas_nctr(i)
         end_index += (2 * l + 1) * nc
+        # print("test-yz:  agular of each basis = ", l)
+        # print("test-yz:  end index            = ", end_index)
         indices4bas.append(end_index)
 
     # Compute initial diagonal block

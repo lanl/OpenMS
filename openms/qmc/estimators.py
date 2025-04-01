@@ -1,4 +1,5 @@
 import numpy as backend
+import numpy as np
 import scipy
 import time
 
@@ -300,7 +301,9 @@ def ecoul_rltensor_uhf(rltensora, Ghalfa, rltensorb=None, Ghalfb=None):
         ecoul = 0.5 * backend.sum(LG * LG, axis=1)
     return ecoul
 
+#from numba import njit
 
+# @njit
 def exx_rltensor_Ghalf(rltensor, Ghalf):
     """Compute exchange contribution for real Choleskies with RHF/UHF trial.
 
@@ -354,6 +357,8 @@ def exx_rltensor_Ghalf(rltensor, Ghalf):
             for l in range(nchol):
                 LG = backend.dot(rltensor[l].T, Ghalf[i]) # ij
                 exx[i] += backend.dot(LG.ravel(), LG.T.ravel())
+                # LG = rltensor[l].T @ Ghalf[i]
+                # exx[i] += np.sum(LG * LG.T)
         exx *= 0.5
 
     return exx
@@ -444,7 +449,7 @@ def local_eng_eboson(omega, nboson_states, geb, Gfermions, Gboson):
         a = backend.diag(backend.sqrt(backend.arange(1, mdim)), k=1)
         h_od = a + a.T
         Hb[idx : idx + mdim, idx : idx + mdim] = h_od * zalpha[imode]
-    eg = backend.einsum("NM,zNM->z", Hb, Gboson)
+    eg = - backend.einsum("NM,zNM->z", Hb, Gboson)
     return eg
 
 

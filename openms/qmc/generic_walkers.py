@@ -147,6 +147,8 @@ class BaseWalkers(object):
         self.total_weight = total_weight
         self.weights_org = self.weights.copy()
         self.weights = self.weights / ratio
+        # print("backend.sum(self.weights_org) = ", backend.sum(self.weights_org))
+        # print("backend.sum(self.weights)     = ", backend.sum(self.weights), backend.sum(self.weights_org))
 
         population_control_factory(self, method=method)
 
@@ -212,6 +214,11 @@ class Walkers_so(BaseWalkers):
         self.phiwa = self.phiw[:, :, : self.nalpha]
         if trial.ncomponents > 1:
             self.phiwb = self.phiw[:, :, self.nalpha :]
+            # logger.debug(self, f"Debug: phiwa.shape = {self.phiwa.shape}")
+            # logger.debug(self, f"Debug: phiwb.shape = {self.phiwb.shape}")
+
+        # logger.debug(self, f"Debug: phiw.shape = {self.phiw.shape}")
+        # logger.debug(self, f"Debug: initial_walker is {init_walker}")
 
         # make bosonic walkers
         if trial.boson_psi is not None:
@@ -293,6 +300,8 @@ class Walkers_so(BaseWalkers):
 
         # get DM per mode per walker
         boson_DM, boson_mode_DM = self.get_boson_dm(trial, boson_phi)
+        # logger.debug(self, f"boson_DM = {boson_DM.shape}\n {boson_DM}")
+        # logger.debug(self, f"boson_mode_DM = {boson_mode_DM[0]}")
 
         # matrix representation of Q_b = b^\dag_a + b_a: [nfock, nfock]
         # Q_{a, nm} = <m| b^\dag_a + b_a|n>
@@ -305,6 +314,7 @@ class Walkers_so(BaseWalkers):
             Qmat = backend.diag(backend.sqrt(backend.arange(1, mdim)), k = 1) \
                    + backend.diag(backend.sqrt(backend.arange(1, mdim)), k = -1)
             Qalpha[mode_index] = backend.sum(Qmat * sum_boson_DM[mode_index])
+            # Qalpha[mode_index] = backend.sum(Qmat * boson_mode_DM[mode_index])
         # Tr[rho_{a, nm} * Q_{a, nm}]
         logger.debug(self, f"Debug: Updated Qalpha = {Qalpha}")
 

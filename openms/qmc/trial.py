@@ -369,6 +369,7 @@ def calc_trial_walker_ovlp_gf(walker, trial, return_signs=False):
         walker.boson_Ghalf = walker.boson_phiw * inv_ovlp[:, None]
         nvals = backend.arange(len(trial.boson_psi))
         walker.boson_Gf = backend.einsum("zM, N->zMN", walker.boson_Ghalf, nvals * trial.boson_psi.conj())
+        #walker.boson_Gf = backend.einsum("zN, N->zN", walker.boson_Ghalf, nvals * trial.boson_psi.conj())
 
 
     sign_b = None
@@ -538,6 +539,8 @@ def permutation_sign(anh_idx, cre_idx, ref_det, target_det):
 
 
 def initialize_boson_trial_with_z(zalpha, boson_states):
+    # TODO: change dimension to [nmodes, max_occ] instead of
+    # 1D array
     from math import factorial
 
     nmodes = len(zalpha)
@@ -793,6 +796,7 @@ class TrialHF(TrialWFBase):
         # for many-bosons, there should be a permenant
         if walkers.boson_phiw is not None:
             sb = backend.dot(walkers.boson_phiw, self.boson_psi.conj())
+            # sb = backend.einsum("N, zN->z", self.boson_psi.conj(), walkers.boson_phiw)
         return sb
 
 
@@ -830,8 +834,10 @@ class TrialHF(TrialWFBase):
         # shape of walkers.Ghalf   : [nwalker, nao, nalpha]
         # shape of rotated ltensor : [nchol, nao, nalpha]
 
+        # vbias = (2.0 / self.ncomponents) * backend.einsum("nqi, zqi->zn", self.rltensora, walkers.Ghalfa)
         vbias = (2.0 / self.ncomponents) * backend.tensordot(walkers.Ghalfa, self.rltensora, axes=([1, 2], [1, 2]))
         if self.ncomponents > 1:
+            # vbias += backend.einsum("nqi, zqi->zn", self.rltensorb, walkers.Ghalfb)
             vbias += backend.tensordot(walkers.Ghalfb, self.rltensorb, axes=([1, 2], [1, 2]))
         return vbias # Gf, vbias
 
@@ -842,6 +848,7 @@ class TrialHF(TrialWFBase):
         # boson_Gf shape: (nwalkers, nfock, nfock)
 
         vbias = backend.einsum("nMN, zMN->zn", chols, walkers.boson_Gf)
+        # vbias = backend.einsum("nMN, zN->zn", chols, walkers.boson_Gf)
         return vbias
 
 

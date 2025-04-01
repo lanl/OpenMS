@@ -172,6 +172,7 @@ class TrivialFock(TrialBosonBase):
         alpha: array of coherent state amplitudes (shape: (N,))
         """
 
+        print("Build trial in Fock space")
         count = 0
         self.boson_psi = np.zeros(self.ndim)
         for n_vec in backend.ndindex(*(self.nfock, ) * self.nmodes):
@@ -280,6 +281,10 @@ class TrialQ(TrialBosonBase):
         kin = -0.5 * backend.sum(self.laplacian(Q)) / self.mass
         pot = 0.5 * self.mw * self.freq * backend.sum(Q * Q)
         etot = kin + pot - 0.5 * self.freq * nsites
+
+        # print("kinetic energy =    ", kin)
+        # print("potential energy =  ", pot)
+        # print("no. of boson sites =", nsites)
 
         return etot
 

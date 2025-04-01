@@ -465,6 +465,7 @@ class QMCbase(object):
         # TODO: may use a dict to switch different propagator
         t0 = time.time()
         logger.note(self, task_title("Prepare propagator"))
+        # if self.fbinteraction and not self.propagator_options["turnoff_bosons"]:
         if self.fbinteraction:
             logger.note(
                 self,
@@ -625,6 +626,8 @@ class QMCbase(object):
                 if not self.propagator_options["turnoff_bosons"]:
                     ltensor = backend.concatenate((ltensor, self.chol_bilinear_e), axis=0)
 
+                logger.debug(self, f"Debug: Decouple scheme = {decouple_scheme}")
+                logger.debug(self, f"Debug: Decomposing bilinear results in {len(self.chol_bilinear[0])} AFs")
 
             for i in range(ltensor.shape[0]):
                 evals, evecs = scipy.linalg.eigh(ltensor[i])

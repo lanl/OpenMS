@@ -35,6 +35,7 @@ def branching_dp_dynamics(walkers, weights, min_weight=0.2, max_weight=2.0):
     sort_indices = np.argsort(np.abs(mod_weights))
     indices_upper = numpy.where(mod_weights > max_weight)[0]
     indices_lower = numpy.where(mod_weights < min_weight)[0]
+    # print("idx for walker > max_weight", indices_upper)
 
     s, e = 0, len(mod_walkers) - 1
     while s <= e and len(new_walkers) < target_population:
@@ -50,12 +51,14 @@ def branching_dp_dynamics(walkers, weights, min_weight=0.2, max_weight=2.0):
             r = np.random.rand()
             if r < np.abs(mod_weights[sort_indices[e]]) / wab:
                 # Clone large weight walker
+                # print("cloning large weight walker")
                 new_walkers.append(mod_walkers[sort_indices[s]])
                 new_weights.append(0.5 * wab)
 
                 # Modify original walker
                 mod_weights[sort_indices[e]] = 0.5 * wab
             else:
+                # print("cloning small weight walker")
                 # Clone small weight walker
                 new_walkers.append(mod_walkers[sort_indices[e]])
                 new_weights.append(0.5 * wab)
@@ -66,6 +69,7 @@ def branching_dp_dynamics(walkers, weights, min_weight=0.2, max_weight=2.0):
             s += 1
             e -= 1
         else:
+            #print("add remain walkers")
             # Add remaining walkers if not reached target population
             if len(new_walkers) < target_population:
                 new_walkers.append(mod_walkers[sort_indices[e]])
@@ -109,8 +113,10 @@ def branching_dp_constant(walkers, weights, min_weight=0.2, max_weight=4.0):
     s, e = 0, nwalkers - 1
     while s < e:
         # Check if pair needs branching
+        #print("Debug: check pair branching or not")
         if (np.abs(new_weights[sort_indices[s]]) < min_weight or
             np.abs(new_weights[sort_indices[e]]) > max_weight):
+            #print("Debug: start cloning and deleting")
 
             # Compute total weight of the pair
             wab = (np.abs(new_weights[sort_indices[s]]) +
@@ -175,6 +181,7 @@ def branching_dp0(walkers, weights, min_weight=0.1, max_weight=2.0):
         # Check if pair needs branching
         if (sort_walker_info[start]['weight'] < min_weight or
             sort_walker_info[end]['weight'] > max_weight):
+            #print("Deug-yz: staring cloing or killing")
 
             # Compute total weight of the pair
             w_se = (sort_walker_info[start]['weight'] +
@@ -251,6 +258,7 @@ def branching_control(walkers, bound=2.0):
     total_weight = numpy.sum(walkers.weights)
     target = walkers.total_weight0 / nwalkers # target weight per walker
 
+    # print("Debug: target weight per walker is", target)
     indices_upper = numpy.where(walkers.weights > upper_bound)[0]
     indices_lower = numpy.where(walkers.weights < lower_bound)[0]
     indices_rest = numpy.where((arr >= lower_bound) & (arr <= upper_bound))[0]
@@ -261,12 +269,17 @@ def branching_control(walkers, bound=2.0):
     residual = walkers.weights / target - integer_copies
     total_integer = numpy.sum(integer_copies)
 
+    # print("Debug: waker weights  = ", walkers.weights)
+    # print("Debug: integer copies = ", len(integer_copies), integer_copies)
+
     new_phi = []
     new_weights = []
 
     # First, add the integer number of copies for each walker
     count = 0
     for i in indices_upper: # range(nwalkers):
+        # print("weigths = ",i,  walkers.weights[i], integer_copies[i])
+        # print(f"making {integer_copies[i]} copies")
         for _ in range(integer_copies[i]):
             new_phi.append(numpy.copy(walkers.phiw[i]))
             new_weights.append(target)
@@ -276,6 +289,7 @@ def branching_control(walkers, bound=2.0):
 
     # Calculate how many extra walkers we need to reach nwalkers.
     extra_needed = nwalkers - count
+    # print(f"{extra_needed} more walkers needed")
 
     if extra_needed > 0:
         # If the residuals sum to > 0, normalize them to get selection probabilities.
@@ -350,10 +364,17 @@ def stochastic_reconfiguration(phiw, weights):
     norm_weights = weights / total_weight  # Normalize weights so they sum to 1
     cumulative_sum = np.cumsum(norm_weights)
 
+    #print("max(norm_weights):", max(norm_weights))
+    #print("min(norm_weights):", min(norm_weights))
+    #print("(norm_weights):", norm_weights)
+
     # Generate N equally spaced positions in [0,1) with a random starting offset.
     start = np.random.uniform(0, 1/N)
 
     positions = start + np.arange(N) / N
+
+    # print("positions      =", positions)
+    # print(" cumulative_sum=", cumulative_sum)
 
     new_phiw = []
     new_weights = []
@@ -368,8 +389,38 @@ def stochastic_reconfiguration(phiw, weights):
             j += 1
 
     new_weights = np.array(new_weights)
+    # print("old weights = ", weights)
+    # print("new weights = ", new_weights)
 
     return new_phiw, new_weights
+
+
+def energy_offset_adjustment_with_resampling(phiw, weights, local_energies, dt, target_population=1.0):
+    """
+    Adjust the weights using an energy offset and then resample so that the number of walkers remains fixed.
+
+    Parameters:
+      phiw            : np.ndarray of shape [N, nao, nao]
+      weights         : np.ndarray of shape [N]
+      local_energies  : np.ndarray of shape [N] containing the local energies for each walker.
+      dt              : float, the time step used in the propagation.
+      target_population: float, the target average weight (default is 1.0).
+
+    Returns:
+      new_phiw    : np.ndarray of shape [N, nao, nao]
+      new_weights : np.ndarray of shape [N] (uniform weights after resampling)
+    """
+    N = len(weights)
+    avg_weight = np.mean(weights)
+    # Compute an energy offset. One common choice is to set:
+    energy_offset = np.log(avg_weight / target_population)
+
+    # Adjust the weights based on the local energies and the offset.
+    # The new weight for each walker is: w_new = w_old * exp(-dt*(local_energy - energy_offset))
+    new_weights = weights * np.exp(-dt * (local_energies - energy_offset))
+
+    # Resample the ensemble to obtain exactly N walkers with uniform weight.
+    return stochastic_reconfiguration(phiw, new_weights)
 
 
 # method dict
@@ -386,6 +437,10 @@ def population_control_factory(walkers, method="branching"):
     if method in control_func_dict:
         control_func = control_func_dict[method]
 
+        # print(f"Max(weights) before control: {backend.max(walkers.weights):.3f}")
+        # print(f"Min(weights) before control: {backend.min(walkers.weights):.3f}")
+        # print(f"Sum(weights) before control: {backend.sum(walkers.weights):.3f}")
+
         # pack the walker WF (phiwa, phib, boson_phiw) in one list
         packed_walkers = walkers._pack_walkers()
         new_walkers, weights = control_func(packed_walkers, walkers.weights)
@@ -396,9 +451,113 @@ def population_control_factory(walkers, method="branching"):
 
 
 
+
+# -------------- old functions -----------------
+
+# Simple Branching (Cloning/Killing) without resctriction on the num of walkers
+def branching_population_control(walkers, upper_bound=2.0, lower_bound=0.5):
+    """
+    walkers: list of walker objects
+    weights: list of corresponding weights
+    upper_bound: above which we clone walkers
+    lower_bound: below which walkers are stochastically removed
+    """
+
+    new_phiw = []
+    new_weights = []
+
+    indices_upper = numpy.where(walkers.weights > upper_bound)[0]
+    indices_lower = numpy.where(walkers.weights < lower_bound)[0]
+
+    for phiw, weight in zip(walkers.phiw, walkers.weights):
+        if weight > upper_bound:
+            # Determine how many copies to make (at least one)
+            num_copies = int(weight // upper_bound)
+            # Divide weight equally among copies
+            new_w = weight / num_copies
+            for _ in range(num_copies):
+                new_phiw.append(copy.deepcopy(phiw))
+                new_weights.append(new_w)
+        elif weight < lower_bound:
+            # Kill the walker probabilistically
+            if random.random() < weight / lower_bound:
+                new_phiw.append(phiw)
+                new_weights.append(lower_bound)
+            # else: discard walker (do nothing)
+        else:
+            new_phiw.append(phiw)
+            new_weights.append(weight)
+
+    return new_phiw, new_weights
+
+
+
+# Systematic Resampling (Reconfiguration)
+def systematic_resampling(walkers, weights):
+    """
+    walkers: list of walker objects
+    weights: list or NumPy array of weights
+    Returns a new list of walkers and uniform weights.
+    """
+    N = len(walkers)
+    total_weight = np.sum(weights)
+    norm_weights = np.array(weights) / total_weight
+    cumulative_sum = np.cumsum(norm_weights)
+    # Starting point: uniformly random in [0, 1/N]
+    start = np.random.uniform(0, 1/N)
+    positions = start + np.arange(N) / N
+
+    new_walkers = []
+    new_weights = [total_weight / N] * N
+    i, j = 0, 0
+    while i < N:
+        if positions[i] < cumulative_sum[j]:
+            # Append a copy of walker j
+            new_walkers.append(copy.deepcopy(walkers[j]))
+            i += 1
+        else:
+            j += 1
+    return new_walkers, new_weights
+
+
+#Energy Offset Adjustment (Dynamic Shift)
+def adjust_energy_offset(walkers, weights, target_population=1.0):
+    """
+    Adjusts the energy offset based on the total weight of the walkers.
+    The idea is to set an offset such that the average weight is driven toward target_population.
+    """
+    total_weight = np.sum(weights)
+    N = len(walkers)
+    avg_weight = total_weight / N
+    # For example, update the offset by the logarithm of the average weight.
+    # In a full AFQMC simulation, this offset is used in the propagator.
+    energy_offset = np.log(avg_weight / target_population)
+    return energy_offset
+
+
+def demo_pair_branching():
+    # Simulated walkers with varying weights
+    walkers = [f'walker_{i}' for i in range(10)]
+    weights = np.array([0.05, 0.2, 0.8, 1.2, 0.3, 2.5, 0.1, 3.0, 0.4, 15.0])
+
+    print("Original Walkers:")
+    for w, wt in zip(walkers, weights):
+        print(f"{w}: {wt}")
+
+    # Apply pair branching
+    new_walkers, new_weights = pair_branch(walkers, weights)
+
+    print("\nAfter Pair Branching:")
+    for w, wt in zip(new_walkers, new_weights):
+        print(f"{w}: {wt}")
+
+
+
 if __name__ == '__main__':
     r"""
     """
     nwalkers = 500
     # generate a random walkers with weights to test the control methods
     from openms.qmc.generic_walkers import make_walkers
+
+    # demo_pair_branching()

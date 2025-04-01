@@ -598,7 +598,7 @@ class RHF(qedhf.RHF):
                 onebody_deta[p] -= 2.0 * dm_do[imode, p,p] * g_DO[imode, p] / self.qed.omega[imode]
 
             fc_derivative = self.gaussian_derivative_vectorized(self.eta, imode)
-            tmp1 = self.h1e_DO * dm_do[imode] * fc_derivative
+            tmp1 = 2.0 * self.h1e_DO * dm_do[imode] * fc_derivative
             tmp2 = (2.0 * dm_do[imode].diagonal().reshape(-1, 1) * dm_do[imode].diagonal() \
                    - dm_do[imode] * dm_do[imode].T) \
                    * g_DO[imode].reshape(1, -1) / self.qed.omega[imode]
@@ -607,7 +607,7 @@ class RHF(qedhf.RHF):
             del fc_derivative, tmp1, tmp2
 
             fc_derivative = self.gaussian_derivative_vectorized(self.eta, imode, onebody=False)
-            fc_derivative *= (self.eri_DO - 0.5 * self.eri_DO.transpose(0, 3, 2, 1))
+            fc_derivative *= (2.0 * self.eri_DO - self.eri_DO.transpose(0, 3, 2, 1))
 
             tmp = lib.einsum('pqrs, rs-> pq', fc_derivative, dm_do[imode], optimize=True)
             twobody_deta = lib.einsum('pq, pq-> p', tmp, dm_do[imode], optimize=True)
@@ -789,8 +789,8 @@ class RHF(qedhf.RHF):
 
         # Apply vacuum derivative formula
         else:
-            derivative = numpy.exp((-0.5 * (tmp * diff_eta) ** 2)) \
-                         * -2.0 * ((tmp ** 2) * diff_eta)
+            derivative = -numpy.exp((-0.5 * (tmp * diff_eta) ** 2)) \
+                         * ((tmp ** 2) * diff_eta)
 
         if onebody:
             return derivative.reshape(self.nao, self.nao)

@@ -36,11 +36,19 @@ else:
 import openms.__config__
 
 
-def task_title(msg):
-    length = 80
-    len1 = (length - len(msg) ) // 2
-    len2 = length - len(msg) - len1
-    return f"\n{'-' * len1} {msg} {'-' * len2}"
+def task_title(msg, level=1):
+    if level == 0:
+        length = 80
+        len1 = (length - len(msg) ) // 2
+        len2 = length - len(msg) - len1
+        info = f"\n{'=' * length}"
+        info += f"\n{' ' * len1} {msg}\n{'=' * length} "
+    else:
+        length = 80
+        len1 = (length - len(msg) ) // 2
+        len2 = length - len(msg) - len1
+        info = f"\n{'-' * len1} {msg} {'-' * len2}"
+    return info
 
 class Logger(object):
 

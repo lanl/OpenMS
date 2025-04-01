@@ -6,6 +6,10 @@ where 1) \mathcal{L}_{ee} accounts for the electron-electron scattering
       2) \mathcal{L}_{eph} accounts for the electron-phonon scatterings
 
 
-PS: This code may be re-arranged into a separate package.
+This code is based on my previous implementation of hot-carrier relaxation
+in EPW. It contains two major features: 1) computation of plasmon damping
+and hot-electron generation (via different machanisms, e-e, e-ph, e-surface
+scatterings), 2) Momentum and energy-resolved real-time hot-carrier relaxation.
 
+PS: This code may be re-arranged into a separate package.
 

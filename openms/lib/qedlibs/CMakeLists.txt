@@ -42,7 +42,10 @@ if(NOT EIGEN3_PATH)
         message(FATAL_ERROR "EIGEN3_PATH is not defined!!! Please download eigen3 (https://gitlab.com/libeigen/eigen/-/archive/3.3.9/eigen-3.3.9.tar.gz) and privde the path as EIGEN3_PATH (no need to compile it)")
 endif()
 
-pybind11_add_module(qedhf MODULE vt_qedhf.cpp qed.cpp qed.hpp
+pybind11_add_module(qedhf MODULE
+vt_qedhf.cpp
+qed.cpp
+# qmc.cpp
 bindings.cpp)
 
 set_target_properties(

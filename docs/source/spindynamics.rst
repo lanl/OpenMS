@@ -1,5 +1,7 @@
+
+**************************************
 Spin Dynamics in spin and phonon baths
-======================================
+**************************************
 
 This is a module for studying the quantum dynamics of spins, in the presence of both spin and phonon baths..
 

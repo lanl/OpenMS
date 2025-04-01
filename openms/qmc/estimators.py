@@ -1,4 +1,49 @@
 import numpy as backend
+import scipy
+import time
+
+
+# for each observables, we may save several quantities using a small class
+#  to handle the these data
+
+class observables(object):
+    def __init__(self, name, *args, **kargs):
+        self.name = name
+
+        self._expectation = {}
+        self.build()
+
+    def build(self):
+
+        if self.name == "energy":
+            # etot = unscaled_etot / total_weights
+            self._expectation = {
+                "etot": 0.0 + 0.0j,  # scaled total energy sum(weight * e) / sum(weights)
+                "total_weights": 0.0 + 0.0j,  # sum(wights)
+                "unscaled_etot": 0.0 + 0.0j,  # sum(weight* e), unscaled total energy
+                "unscaled_e1": 0.0 + 0.0,  # sum(weight * E1), unscaled one-body energy
+                "unscaled_e2": 0.0 + 0.0,  # sum(weight * E2), unscaled two-body energy
+            }
+         # quantities to be stored for occupation analysis
+
+    def update(self, values):
+        r"""update the data
+        """
+        pass
+
+
+    @property
+    def size(self):
+        return len(self._expectation)
+
+
+    def reset(self):
+        r"""reset the value to zero"""
+        for key, value in self._expectation:
+            if isinstance(v, np.ndarray):
+                self._expectation[key] = np.zeros_like(value)
+            else:
+                self._expectation[key] = 0.0 + 0.0j
 
 
 def get_wfn(weights, psiw):
@@ -18,10 +63,38 @@ def get_wfn(weights, psiw):
     return wfn / backend.sqrt(norm)
 
 
+# -------------------------------
+# Gf estimators
+# -------------------------------
+
+
 def bosonic_GF(T, W):
-    r""" compute the bosonic green's function"""
-    # TODO
-    pass
+    r"""compute the bosonic green's function
+
+    Parameters
+    ----------
+    T: ndarray
+       Trial WF
+    W: ndarray
+       Walker WF
+
+    Returns
+    -------
+    Gf: ndarray
+       Walker GF
+    Ghalf: ndarray
+       Walker half-rotated GF
+    """
+
+    # T shape is nfock
+    # W shape is (nwalker, nfock)
+
+    # TODO:
+    TW = backend.dot(W.T, T.conj())
+    Ghalf = backend.dot(scipy.linalg.inv(TW), W.T)
+    Gf = backend.dot(T.conj(), Ghalf)
+    return Gf, Ghalf
+
 
 def GF(T, W):
     r"""
@@ -35,6 +108,20 @@ def GF(T, W):
 
     where :math:`T/W` are the matrix associated with the SD
     (trial and walker), respectively :math:`\ket{\Psi_{T/W}}`
+
+    Parameters
+    ----------
+    T: ndarray
+       Trial WF
+    W: ndarray
+       Walker WF
+
+    Returns
+    -------
+    Gf: ndarray
+       Walker GF
+    Ghalf: ndarray
+       Walker half-rotated GF
     """
 
     TW = backend.dot(W.T, T.conj())
@@ -62,6 +149,33 @@ def GF_so(T, W, na, nb):
         Gfb_half = backend.zeros((0, Gfa_half.shape[1]), dtype=Gfa_half.dtype)
     return backend.array([Gfa, Gfb]), [Gfa_half, Gfb_half]
 
+
+# -----------------------------------------------------------
+# energy estimators for coupled electron-boson interactions
+# -----------------------------------------------------------
+
+#
+# TODO: make a dict to map different combinaiton of trial and walkers
+# to specific function for computing energy and other properties
+# To do so, we have two steps:
+#    1): generate trial_walker header:
+#    2): map the trial_walker header to certian function according
+# to the dict below
+
+# function to handle different energy measurement case
+def measure_energy(trial, walkers, h1e, ltensors, enuc):
+    r"""Measure ground state energy based on walker weights and GF
+
+    According to the type of walkers, the energy measurement is
+    directed to different functions.
+    """
+
+    # TODO:
+
+    pass
+
+
+# local energy for coupled fermion-boson system
 
 def local_eng_eb_2nd(h1e, chols, geb, freq, Gf, Gb, spin_fac=0.5):
     r"""compute the local enegy of the coupled electron-boson system
@@ -111,9 +225,157 @@ def local_eng_eb_1st(h1e, eri, gmat, mass, freq, Gf, Q, laplacian, spin_fac=0.5)
     return [etot, E_electron, E_boson, e_eb]
 
 
-def local_eng_boson_2nd(freq, nfock, Gb):
-    r"""compute local energy of bosons in 2nd quantizaiton"""
-    pass
+# -----------------------------
+# bosonic energy estimators
+# -----------------------------
+
+
+def local_energy_SD_RHF(trial, walkers, enuc = 0.0):
+    r"""Compute local energy with half-rotated integrals
+    """
+    # Ghalfa/b: [nwalkers, nao, na/nb]
+    # rh1a/b: [nao, na/nb]
+    e1 = 2.0 * backend.einsum("qi, zqi->z", trial.rh1a, walkers.Ghalfa)
+    e1 += enuc
+
+    # coulomb energy
+    LG = backend.einsum("nqi, zqi->zn", trial.rltensora, walkers.Ghalfa)
+    ecoul =  2.0 * backend.einsum("zn, zn->z", LG, LG)
+
+    # exchange
+    exx = 2.0 * exx_rltensor_Ghalf(trial.rltensora, walkers.Ghalfa)
+
+    e2 = ecoul - exx
+
+    return e1, e2
+
+
+def ecoul_rltensor_uhf(rltensora, rltensorb, Ghalfa, Ghalfb):
+    r"""Compute Coulomb energy
+
+    Parameters
+    ----------
+
+    """
+    LG = backend.einsum("nqi, zqi->zn", rltensora, Ghalfa)
+    LG += backend.einsum("nqi, zqi->zn", rltensorb, Ghalfb)
+
+    return 0.5 * backend.einsum("zn, zn->z", LG, LG)
+
+
+def exx_rltensor_Ghalf(rltensor, Ghalf):
+    """Compute exchange contribution for real Choleskies with RHF/UHF trial.
+
+    Parameters
+    ----------
+    rltensor : :class:`numpy.ndarray`
+        Half-rotated cholesky for one spin.
+    Ghalf : :class:`numpy.ndarray`
+        Walker's half-rotated Green's function
+        Shape is (nwalkers, nao, nsigma).
+
+    .. math::
+
+        E_k = & L_{n, pr} * G_{ps} * [L_{n, qs} * G_{qr}] \\
+            = & [LG]_{n,rs} * [LG]_{n, rs}
+
+    Returns
+    -------
+    exx : :class:`numpy.ndarray`
+        Exchange energy for all walkers.
+    """
+
+
+
+    t0 = time.time()
+    LG = backend.einsum('nqi, zqj->znij', rltensor, Ghalf)
+    t2 = time.time() - t0
+    # print(f"Debug: compare wall time {t1} vs {t2}")
+
+    # Compute exchange contribution
+    exx = 0.5 * backend.einsum('znij, znji->z', LG, LG)
+
+    return exx
+
+
+def local_energy_SD_UHF(trial, walkers, enuc = 0.0):
+    r"""Compute local energy with half-rotated integrals
+    """
+    # Ghalfa/b: [nwalkers, nao, na/nb]
+    # rh1a/b: [nao, na/nb]
+    e1 = backend.einsum("qi, zqi->z", trial.rh1a, walkers.Ghalfa)
+    e1 += backend.einsum("qi, zqi->z", trial.rh1b, walkers.Ghalfb)
+    e1 += enuc
+
+    # coulomb energy
+    ecoul = ecoul_rltensor_uhf(trial.rltensora, trial.rltensorb, walkers.Ghalfa, walkers.Ghalfb)
+    exx = exx_rltensor_Ghalf(trial.rltensora, walkers.Ghalfa)
+    exx += exx_rltensor_Ghalf(trial.rltensorb, walkers.Ghalfb)
+
+    e2 = ecoul - exx
+
+    return e1, e2
+
+def local_eng_boson_2nd(omega, nboson_states, Gb):
+    r"""compute the local bosonic energies with bosonic GF (Gb) in
+    compute local energy of bosons in 2nd quantizaiton
+
+    omega: ndarray
+    nboson_states: ndarray [nfock, ..., nfock_n]
+    Gb: ndarray, bosonic green function
+    """
+    # bosonc energy
+    basis = backend.asarray(
+        [backend.arange(mdim) for mdim in nboson_states]
+    )
+
+    waTa = backend.einsum("m, mF->mF", omega, basis).ravel()
+    eb = backend.einsum("F,zFF->z", waTa, Gb)
+    return eb
+
+
+def local_eng_eboson(omega, nboson_states, geb, Gfermions, Gboson):
+    r"""
+    Gfermions: tuple of Fermionic GFs for up and down spin (if available)
+
+    Parameters
+    ----------
+    omega: 1d array
+        frequencies of bosons
+    nboson_states: 1d array
+        number of Fock state for each bosonic mode
+    geb: ndarray
+        electron-boson coupling matrix
+    Gfermions: ndarray
+        Fermionic GFS
+    Gboson: ndarray
+        bosonic GFs
+
+    Returns
+    -------
+    eg: ndarray
+        electron-boson interacting energy
+    """
+
+    nmodes = len(omega)
+
+    zalpha = backend.einsum("npq, zpq->zn", geb, Gfermions[0])
+    if Gfermions[1] is not None:
+        zalpha += backend.einsum("npq, zpq->zn", geb, Gfermions[1])
+
+    boson_size = sum(nboson_states)
+    Hb = backend.zeros((boson_size, boson_size), dtype=backend.complex128)
+    idx = 0
+    for imode in range(nmodes):
+        mdim = nboson_states[imode]
+        a = backend.diag(backend.sqrt(backend.arange(1, mdim)), k=1)
+        h_od = a + a.T
+        Hb[idx : idx + mdim, idx : idx + mdim] = h_od * zalpha[imode]
+    eg = backend.einsum("NM,zNM->z", Hb, Gboson)
+    return eg
+
+
+local_eng_boson = local_eng_boson_2nd
 
 
 def local_eng_boson_1st(nao, mass, freq, Q):
@@ -122,6 +384,11 @@ def local_eng_boson_1st(nao, mass, freq, Q):
     kin = -0.5 * backend.sum(Lap) / mass - 0.5 * freq * nao
     pot = 0.5 * freq**2 * mass * backend.sum(Q * Q)
     return kin + pot
+
+
+# -------------------------------
+# electronic energy estimators
+# -------------------------------
 
 
 def local_eng_elec_chol_new(h1e, ltensor, Gf):
@@ -159,7 +426,7 @@ def local_eng_elec_chol_new(h1e, ltensor, Gf):
     return energy
 
 
-def local_eng_elec_chol(TL_theta, h1e, eri, vbias, Gf):
+def local_eng_elec_chol(TL_theta, h1e, vbias, Gf):
     r"""Compute local energy from oei, eri and GF
 
     Args:
@@ -220,6 +487,19 @@ def local_eng_elec(h1e, eri, Gf, spin_fac=0.5):
     pot = (ecoul - exx) * spin_fac
 
     return kin + pot
+
+
+local_eng_elec_spin = local_eng_elec
+
+
+#
+
+_available_observables = {
+    "energy": measure_energy,  # total ground state energy
+    # "local_energy": measure_local_energy,  # local energy per site
+    # "occupation": measure_occupation,  # Fermionic occupation
+    # "boson_occ": measure_bosonic_occupation,  # occupation of boson
+}
 
 
 if __name__ == "__main__":

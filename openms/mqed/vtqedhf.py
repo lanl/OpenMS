@@ -85,7 +85,7 @@ def entropy(rho):
 
     .. math::
 
-        S = - K_B Tr[\rho\ln(\rho)]
+        S = - K_B Tr[\rho \text{ln}(\rho)]
     """
     e, _ = linalg.eigh(rho)
     e = e[e > 0]

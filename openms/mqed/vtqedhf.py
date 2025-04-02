@@ -81,7 +81,7 @@ def newton_update(var, gradient, precond0):
 
 
 def entropy(rho):
-    r"""Compute lentropy for given density matrix
+    r"""Compute entropy for given density matrix
 
     .. math::
 

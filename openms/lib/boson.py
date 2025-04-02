@@ -1209,7 +1209,7 @@ class Photon(Boson):
         from the DSE term of the PF Hamiltonian:
 
         .. math::
-            \boldsymbol{h}_{\tt{DSE}} &= \boldsymbol{h}_{\tt{bare}} - \frac{1}{2}
+            \boldsymbol{h}_{\text{DSE}} &= \boldsymbol{h}_{\text{bare}} - \frac{1}{2}
                                  \sum_\alpha \sum_{\mu\nu} \rho_{\mu\nu}
                                  \cdot \boldsymbol{\tilde{q}}^\alpha_{\mu\nu} \\
             \boldsymbol{\tilde{q}}^\alpha_{\mu\nu} &= \lambda_{\alpha}^2
@@ -1222,20 +1222,22 @@ class Photon(Boson):
         DSE-mediated contribution to the OEI is included:
 
         .. math::
-            \boldsymbol{h}_{\tt{CS}} &= \boldsymbol{h}_{\tt{DSE}} - \boldsymbol{\tilde{d}}^\alpha
+            \boldsymbol{h}_{\tt{CS}} &= \boldsymbol{h}_{\text{DSE}}
+                                        - \boldsymbol{\tilde{d}}^\alpha
                                 \sum_\alpha \sum_{\mu\nu} \rho_{\mu\nu}
                                 \cdot \bra{\mu}{\hat{D}}\ket{\nu} \\
-            \boldsymbol{\tilde{d}}^\alpha_{\mu\nu} &= \lambda_\alpha
-                                           \cdot \boldsymbol{D}^\alpha_{\mu\nu}
+            \boldsymbol{\tilde{d}}^\alpha_{\mu\nu}
+                                     &= \lambda_\alpha
+                                        \cdot \boldsymbol{D}^\alpha_{\mu\nu}
 
         where :math:`\boldsymbol{D}^\alpha` is the polarized dipole moment matrix in
         the AO basis.
 
-        Also in CS representation, :math:`E_{\tt{QED-HF}}` includes DSE
+        Also in CS representation, :math:`E_{\text{QED-HF}}` includes DSE
         term:
 
         .. math::
-            E_{\tt{QED-HF}} = E_{\tt{HF}}
+            E_{\text{QED-HF}} = E_{\text{HF}}
                             + \frac{1}{2} \sum_\alpha
                               \langle
                               [ \lambda_\alpha \cdot
@@ -1254,12 +1256,12 @@ class Photon(Boson):
                \cdot (\hat{D} - \langle{\hat{D}}\rangle_{\mu\nu})]^2
                \rangle
                \cdot \frac{\text{Tr}[\boldsymbol{S} \cdot \boldsymbol{\rho}]}
-               {N_{\tt{elec}}} \\
-            &= \tt{Tr}
+               {N_{\text{elec}}} \\
+            &= \text{Tr}
                \left[
                \frac{[ \lambda_\alpha \cdot
                (\hat{D} - \langle{\hat{D}}\rangle_{\mu\nu})]^2}
-               {N_{\tt{elec}}} \boldsymbol{S} \cdot \boldsymbol{\rho}
+               {N_{\text{elec}}} \boldsymbol{S} \cdot \boldsymbol{\rho}
                \right]
 
         where :math:`\boldsymbol{\rho}` is the provided electronic density matrix,
@@ -1368,7 +1370,7 @@ class Photon(Boson):
     #     from the DSE term of the PF Hamiltonian:
 
     #    .. math::
-    #        \boldsymbol{h}_{\tt{DSE}} &= \boldsymbol{h}_{\tt{bare}} - \frac{1}{2}
+    #        \boldsymbol{h}_{\text{DSE}} &= \boldsymbol{h}_{\text{bare}} - \frac{1}{2}
     #                             \sum_\alpha \sum_{\mu\nu} \rho_{\mu\nu}
     #                             \cdot \boldsymbol{\tilde{q}}^\alpha_{\mu\nu} \\
     #        \boldsymbol{\tilde{q}}^\alpha_{\mu\nu} &= \lambda_{\alpha}^2
@@ -1381,7 +1383,8 @@ class Photon(Boson):
     #     DSE-mediated contribution to the OEI is included:
 
     #    .. math::
-    #        \boldsymbol{h}_{\tt{CS}} &= \boldsymbol{h}_{\tt{DSE}} - \boldsymbol{\tilde{d}}^\alpha
+    #        \boldsymbol{h}_{\text{CS}} &= \boldsymbol{h}_{\text{DSE}}
+    #                                    - \boldsymbol{\tilde{d}}^\alpha
     #                            \sum_\alpha \sum_{\mu\nu} \rho_{\mu\nu}
     #                            \cdot \bra{\mu}{\hat{D}}\ket{\nu} \\
     #        \boldsymbol{\tilde{d}}^\alpha_{\mu\nu} &= \lambda_\alpha
@@ -1390,11 +1393,11 @@ class Photon(Boson):
     #    where :math:`\boldsymbol{D}^\alpha` is the polarized dipole moment matrix in
     #    the AO basis.
 
-    #     Also in CS representation, :math:`E_{\tt{QED-HF}}` includes DSE
+    #     Also in CS representation, :math:`E_{\text{QED-HF}}` includes DSE
     #     term:
 
     #    .. math::
-    #        E_{\tt{QED-HF}} = E_{\tt{HF}}
+    #        E_{\text{QED-HF}} = E_{\text{HF}}
     #                        + \frac{1}{2} \sum_\alpha
     #                          \langle
     #                          [ \lambda_\alpha \cdot
@@ -1413,12 +1416,12 @@ class Photon(Boson):
     #           \cdot (\hat{D} - \langle{\hat{D}}\rangle_{\mu\nu})]^2
     #           \rangle
     #           \cdot \frac{\text{Tr}[\boldsymbol{S} \cdot \boldsymbol{\rho}]}
-    #           {N_{\tt{elec}}} \\
-    #        &= \tt{Tr}
+    #           {N_{\text{elec}}} \\
+    #        &= \text{Tr}
     #           \left[
     #           \frac{[ \lambda_\alpha \cdot
     #           (\hat{D} - \langle{\hat{D}}\rangle_{\mu\nu})]^2}
-    #           {N_{\tt{elec}}} \boldsymbol{S} \cdot \boldsymbol{\rho}
+    #           {N_{\text{elec}}} \boldsymbol{S} \cdot \boldsymbol{\rho}
     #           \right]
 
     #    where :math:`\boldsymbol{\rho}` is the provided electronic density matrix,
@@ -1673,7 +1676,7 @@ class Photon(Boson):
 
         .. math::
             \boldsymbol{\tilde{d}} = \sum_\alpha \cdot
-                             \mel*{\mu}{\boldsymbol{\la}_\alpha\cdot\hat{D}}{\nu}
+                             \mel*{\mu}{\boldsymbol{\lambda}_\alpha\cdot\hat{D}}{\nu}
         Function only runs if :attr:`gmat` is not ``None``.
 
 

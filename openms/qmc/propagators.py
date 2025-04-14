@@ -5,7 +5,9 @@ import numpy as backend
 import scipy
 
 from openms.lib.logger import task_title
+from openms.__mpi__ import MPI, original_print
 from abc import abstractmethod, ABC
+
 
 # this function will be moved into lib/boson
 def boson_adag_plus_a(nmodes, boson_states, za):
@@ -346,6 +348,12 @@ class Phaseless(PropagatorBase):
         logger.debug(self, f"Debug: e2 (unnormalized) is {e2}")
         # logger.debug(self, f"Debug: time of computing energy is {time.time() - t0}")
 
+        if walkers._mpi.size > 1:
+            norm = walkers._mpi.comm.allreduce(norm, op=MPI.SUM)
+            e1 = walkers._mpi.comm.allreduce(e1, op=MPI.SUM)
+            e2 = walkers._mpi.comm.allreduce(e2, op=MPI.SUM)
+            etot = walkers._mpi.comm.allreduce(etot, op=MPI.SUM)
+
         ##  weights * eloc
         # energy = energy / backend.sum(walkers.weights)
         return [etot, norm, e1, e2]
@@ -402,7 +410,7 @@ class Phaseless(PropagatorBase):
         # ltensor: [nchol, nao, nao]
 
         # TODO: further improve the efficiency of this part
-        # TODO: like may use symmetry in ltensor to imporve the efficiency of this part
+        # TODO: may use symmetry in ltensor to imporve the efficiency of this part
 
         t0 = time.time()
         sqrtdt = 1j * backend.sqrt(self.dt)

@@ -21,6 +21,11 @@ Walkers functions (TBA)
 This class contains the walkers WF and weights
 The walkers are adjusted according to the type of trial WF
 
+In the MPI implementation, we parallel the calculation along walkers
+since walkers are independent in the time-consuming parts (like
+energy estimation and propagation). However, attention should be paid
+to the places where global walkers' information is needed, like
+pop control. Etc.
 """
 
 import sys, time
@@ -28,6 +33,7 @@ from abc import abstractmethod
 import numpy as backend
 from pyscf.lib import logger
 from openms.lib.logger import task_title
+from openms.__mpi__ import MPI, original_print
 
 
 default_walker_options = {
@@ -72,7 +78,21 @@ class BaseWalkers(object):
         self.nbeta = trial.nbeta
         self.ncomponents = trial.ncomponents
 
-        self.nwalkers = kwargs.get("nwalkers", 100)
+        nwalkers = kwargs.get("nwalkers", 100)
+
+        # If MPI is used we will use global_xx for the globally (reduced/gathered) variables
+        from openms.__mpi__ import MPI, CommType, MPIWrapper, original_print
+        self._mpi = MPIWrapper()
+        size = self._mpi.size
+        if self._mpi.size > 1:
+            self.global_nwalkers = nwalkers
+            self.walker_counter = [nwalkers // size + (1 if i < nwalkers % size else 0) for i in range(size)]
+            self.displs = [sum(self.walker_counter[:i]) for i in range(size)]
+            nwalkers = self.walker_counter[self._mpi.rank]
+            original_print(f"local nwalker of rank {self._mpi.rank} is {nwalkers}")
+        #
+        self.nwalkers = nwalkers
+
         self.logshift = backend.zeros(self.nwalkers)
 
         # variables for weights and weights control
@@ -80,7 +100,7 @@ class BaseWalkers(object):
         self.weights_org = self.weights.copy()
         self.weight_min = 0.1
         self.weight_max = 10.0
-        #
+
         self.total_weight0 = self.nwalkers
         self.total_weight = self.nwalkers
 
@@ -103,12 +123,20 @@ class BaseWalkers(object):
         self.spin_restricted = False
         # print("nwalkers in walkerfunciton is", self.nwalkers)
 
+
     def dump_flags(self):
         r"""
         dump flags
         """
         logger.note(self, task_title("Flags of walkers"))
         logger.note(self, f" Number of walkers        : {self.nwalkers:5d}")
+
+
+    @property
+    def raw_norm(self):
+
+        norm = backend.sum(self.weights_org)
+        return self._mpi.comm.allreduce(norm, op=MPI.SUM)
 
     @abstractmethod
     def orthogonalization(self):
@@ -147,6 +175,7 @@ class BaseWalkers(object):
         self.total_weight = total_weight
         self.weights_org = self.weights.copy()
         self.weights = self.weights / ratio
+
         # print("backend.sum(self.weights_org) = ", backend.sum(self.weights_org))
         # print("backend.sum(self.weights)     = ", backend.sum(self.weights), backend.sum(self.weights_org))
 

@@ -5,6 +5,30 @@ import numpy as backend
 import scipy
 import time
 
+def stochastic_thc(L, n_stoch, method="gaussian", seed=None, n_svd_keep=0):
+    """
+    Enhanced stochastic THC decomposition with multiple variance reduction methods.
+
+    Parameters:
+        L           : numpy.ndarray, shape (n_chol, n_orb, n_orb)
+                      Cholesky vectors L[gamma, p, q]
+        n_stoch     : int
+                      Number of stochastic vectors
+        method      : str
+                      Sampling strategy: 'gaussian', 'qr', 'sobol', 'rademacher',
+                      'hybrid', or 'svd'
+        seed        : int or None
+                      Random seed for reproducibility
+        n_svd_keep  : int
+                      Number of SVD components to keep for 'hybrid' method
+
+    Returns:
+        X : numpy.ndarray, shape (n_chol, n_orb, n_stoch)
+        U : numpy.ndarray, shape (n_orb, n_stoch)
+    """
+    n_chol, n_orb, _ = L.shape
+    rng = numpy.random.default_rng(seed)
+
 
 def bilinear_decomposition(Afac, Bfac, chol_eb, decouple_scheme):
     r"""

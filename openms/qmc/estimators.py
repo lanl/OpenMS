@@ -2,6 +2,7 @@ import numpy as backend
 import numpy as np
 import scipy
 import time
+from openms.lib.misc import deprecated
 
 # for each observables, we may save several quantities using a small class
 #  to handle the these data
@@ -303,9 +304,74 @@ def ecoul_rltensor_uhf(rltensora, Ghalfa, rltensorb=None, Ghalfb=None):
 
 #from numba import njit
 
+
+# @njit
+def exx_THC_Ghalf(rX, U, Ghalf):
+    r"""Compute exchange energy via the THC methods
+
+    Not done yet!!!
+
+    .. math::
+
+        L^\gamma_{\mu\nu} \simeq \sum_P V^\gamma_{\mu P} W_P^\gamma U^\gamma_{\nu P}
+                          = \sum_P X_{\gamma, \mu P} U^\gamma_{\nu P}
+
+    where :math:`X_{\gamma, \mu P} = V^\gamma_{\mu P} W^\gamma_P`.
+    With THC, :math:`f^\gamma_{ij}` can be further written as
+
+    .. math::
+        f^\gamma_{ij} = & \sum_{pr\mu} T_{pi} [(U^\gamma_{p\mu} \sigma^\gamma_{\mu}) U^\gamma_{r\mu}] \Theta_{rj} \\
+                      = & \sum_{pr\mu} [T_{pi} X^\gamma_{p\mu}] [U^\gamma_{r\mu} \Theta_{rj}] \\
+                      = & \sum_{\mu} A_{\gamma, i\mu} B_{\gamma,j\mu}
+
+    Parameters
+    ----------
+    rX : :class:`numpy.ndarray`
+        Half-rotated HTC tensor
+    U : :class:`numpy.ndarray`
+        Second THC
+    Ghalf : :class:`numpy.ndarray`
+        Walker's half-rotated Green's function
+        Shape is (nwalkers, nao, nsigma).
+
+    Returns
+    -------
+    exx : :class:`numpy.ndarray`
+        Exchange energy for all walkers.
+    """
+
+    # TODO: Double check the code
+
+    # rX is the rotated X, [rX]_{qP} = \sum_p T_{pq} X_{pP}
+    nwalkers = Ghalf.shape[0]
+    nchol = rltensor.shape[0]
+    exx = backend.zeros(nwalkers, dtype=backend.complex128)
+    for i in range(nwalkers):
+        for l in range(nchol):
+            B = backend.dot(U[l].T, Ghalf[i]) # \mu j
+            LG = backend.dot(rX[l], B) # ij
+            exx[i] += backend.dot(LG.ravel(), LG.T.ravel())
+    exx *= 0.5
+
+    return exx
+
+
 # @njit
 def exx_rltensor_Ghalf(rltensor, Ghalf):
-    """Compute exchange contribution for real Choleskies with RHF/UHF trial.
+    r"""Compute exchange contribution for real Choleskies with RHF/UHF trial.
+
+    Note that :math:`G_{pq} = \sum_i T_{pi} \Theta_{qi}`.
+    The exchange energy is written as:
+
+    .. math::
+        E_X & = \sum_{pqrs} V_{pqrs} G_{ps} G_{qr} \\
+            & = \sum_{pqrs,\gamma} L_{\gamma, pr} G_{ps}  L_{\gamma, qs} G_{qr} \\
+            & = \sum_{pqrs,\gamma} L_{\gamma, pr} T_{pi} \Theta_{si} L_{\gamma, qs} T_{qj} \Theta_{rj} \\
+            & = \sum_{ijrs,\gamma} \tilde{L}_{\gamma, ri} \Theta_{si} \tilde{L}_{\gamma, sj} \Theta_{rj} \\
+            & = \sum_{ij,\gamma} f^\gamma_{ij} f^\gamma_{ij}
+
+    where :math:`f^\gamma_{ij} = \tilde{L}_{\gamma, ri}\Theta_{rj}`.
+
 
     Parameters
     ----------
@@ -314,11 +380,6 @@ def exx_rltensor_Ghalf(rltensor, Ghalf):
     Ghalf : :class:`numpy.ndarray`
         Walker's half-rotated Green's function
         Shape is (nwalkers, nao, nsigma).
-
-    .. math::
-
-        E_k = & L_{n, pr} * G_{ps} * [L_{n, qs} * G_{qr}] \\
-            = & [LG]_{n,rs} * [LG]_{n, rs}
 
     Returns
     -------
@@ -360,6 +421,43 @@ def exx_rltensor_Ghalf(rltensor, Ghalf):
                 # LG = rltensor[l].T @ Ghalf[i]
                 # exx[i] += np.sum(LG * LG.T)
         exx *= 0.5
+
+    return exx
+
+
+@deprecated
+def exx_rltensor_Ghalf_chunked(rltensor, Ghalf, comm, MPI, nwalkers, counts, displs):
+    r"""Distributed computation of exx energy
+
+    We assume:
+       - 1) Ghalf is scattered over all rank and each rank has it's local chunk
+       - 2) ltensor is shared across the nodes
+
+    """
+
+    rank = comm.Get_rank()
+    nlocal = counts[rank]
+    nchol = rltensor.shape[0]
+
+    # Local computation
+    # (we can recycle the "exx_rltensor_Ghalf" code for this local computation
+    # ------------------------------------------------------
+    local_exx = np.zeros(nlocal, dtype=np.complex128)
+
+    for i in range(nlocal):
+        for l in range(nchol):
+            LG = np.dot(rltensor[l].T, Ghalf[i])  # shape (n, m)
+            local_exx[i] += np.dot(LG.ravel(), LG.T.ravel())  # scalar
+    local_exx *= 0.5
+
+    # Gather exx from all processes
+    # ------------------------------------------------------
+    exx = None
+    if rank == 0:
+        exx = np.zeros(nwalkers, dtype=np.complex128)
+
+    # Note numpy\.complex128 <--> MPI.COMPLEX16
+    comm.Gatherv(local_exx, [exx, counts, displs, MPI.COMPLEX16], root=0)
 
     return exx
 

@@ -244,6 +244,11 @@ class QMCbase(object):
         # import openms
         # logger.info(self, openms.__logo__)
 
+        # setup MPI; may pass comm as variables into the class as well
+        mpi_comm = kwargs.get("mpi_comm", None)
+        if mpi_comm is None:
+            from openms.__mpi__ import MPI, CommType, MPIWrapper
+            self._mpi = MPIWrapper()
         if "pra2024" not in runtime_refs:
             runtime_refs.append("pra2024")
 
@@ -317,7 +322,6 @@ class QMCbase(object):
         self.__dict__.update(kwargs)
 
         self.taylor_order = taylor_order
-        # self.num_walkers = num_walkers
         self.random_seed = random_seed
         self.renorm_freq = renorm_freq
         self.stablize_freq = self.renorm_freq
@@ -453,7 +457,6 @@ class QMCbase(object):
         # 3) set up walkers
         t0 = time.time()
         logger.note(self, task_title("Set up walkers"))
-        # self.walkers = gwalker.Walkers_so(self.trial, nwalkers=self.num_walkers)
         self.walkers = gwalker.make_walkers(self.trial, self.walker_options)
 
         # calculate green's function
@@ -888,7 +891,13 @@ class QMCbase(object):
 
         # prepare propagation
         logger.info(self, f"\n Random seed is {self.random_seed}\n")
-        backend.random.seed(self.random_seed)
+        # Create a rank-specific seed using SeedSequence
+        if self._mpi.size > 1:
+            ss = backend.random.SeedSequence(self.random_seed)
+            child_seeds = ss.spawn(self._mpi.size)
+            backend.random.default_rng(child_seeds[self._mpi.rank])
+        else:
+            backend.random.seed(self.random_seed)
 
         # print("YZ: walkers WF      =", self.walkers.phiw)
         # print("YZ: walkers weights =", self.walkers.weights)
@@ -994,7 +1003,7 @@ class QMCbase(object):
                     f"Step {step:5d}  {energy:14.7e}  "
                     f"{energies[0]:14.7e}  "
                     f"{self.eshift.real:14.7e}  {energies[1]:8.4e}  "
-                    f"{backend.sum(walkers.weights_org):9.4e}  "
+                    f"{walkers.raw_norm:9.4e}  "
                     f"{energies[2]:14.7e}  {energies[3]:14.7e}  "
                 )
                 if len(energies) > 4:
@@ -1025,7 +1034,6 @@ class QMCbase(object):
         """Hook for dumping results and clearing up the object."""
 
         # TODO: print summary & post-processing data, etc.
-
 
         logger.note(self, task_title("Wall time analysis"))
         logger.note(self, f" Total             : {self.wt_tot: 9.3f}")

@@ -22,7 +22,7 @@ def boson_adag_plus_a(nmodes, boson_states, za):
         - If an integer, it is assumed each mode has that many states (0..boson_states-1).
         - If a list/array, must have length = nmodes.
     za : 1D array
-        Coefficients z_α for each mode.
+        Coefficients :math:`z_\alpha` for each mode.
 
     Returns
     -------

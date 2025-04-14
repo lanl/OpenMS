@@ -745,7 +745,7 @@ class RHF(hf.RHF):
         module. Initial density matrix guess moved here from
         kernel function, to allow for computing initial QED
         quantities that require electronic density matrix, such
-        as the :math:`\bm{z}_{\alpha}` values for calculations
+        as the :math:`\boldsymbol{z}_{\alpha}` values for calculations
         being performed with the photonic wavefunction in the
         coherent-state (CS) represenation.
 

@@ -34,12 +34,16 @@ bibtex_bibfiles = ['refs.bib']
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3', None),
     'scipy': ('https://docs.scipy.org/doc/scipy', None),
-    'matplotlib': ('https://matplotlib.org/stable', None),
-    'numpy': ('https://numpy.org/doc/stable', None),
-    'numpy-tutorials': ('https://numpy.org/numpy-tutorials', None),
-    'numpydoc': ('https://numpydoc.readthedocs.io/en/latest', None),
     'pyscf': ('https://pyscf.org', None),
 }
+#intersphinx_mapping = {
+#    'matplotlib': ('https://matplotlib.org/stable', None),
+#    'numpy': ('https://numpy.org/doc/stable', None),
+#    'numpy-tutorials': ('https://numpy.org/numpy-tutorials', None),
+#    'numpydoc': ('https://numpydoc.readthedocs.io/en/latest', None),
+#    'python': ('https://docs.python.org/3/', None),
+#    'sphinx': ('https://www.sphinx-doc.org/en/master/', None),
+#}
 intersphinx_disabled_reftypes = ['std']
 
 napoleon_preprocess_types = True
@@ -62,26 +66,6 @@ mathjax3_config = {
                                  'html',
                                  'mathtools',
                                  'mhchem']
-            },
-
-            'macros': {'cf': ["\\hat{a}^{\\dagger}_{{#1}}", 1],
-                       'af': ["\\hat{a}_{{#1}}", 1],
-                       'cb': ["\\hat{b}^{\\dagger}_{{#1}}", 1],
-                       'ab': ["\\hat{b}_{{#1}}", 1],
-                       'al': "{\\alpha}",
-                       'be': "{\\beta}",
-                       'om': "{\\omega}",
-                       'si': "{\\sigma}",
-                       'la': "{\\lambda}",
-                       'ra': "{\\rightarrow}",
-                        'h': ["{h}_{{#1}}^{{#2}}", 2],
-                        'f': ["{f}_{{#1}}^{{#2}}", 2],
-                        'g': ["{g}_{{#1}}^{{#2}}", 2],
-                        'v': ["{v}_{{#1}}^{{#2}}", 2],
-                        't': ["{t}_{{#1}}^{{#2}}", 2],
-                        'd': ["{\\delta}_{{#1}}^{{#2}}", 2],
-                       'bm': ["\\boldsymbol{{#1}}", 1],
-                       'tt': ["\\text{#1}", 1]
             },
 
             'mathtools': {'multlinegap': '1em',
@@ -120,8 +104,10 @@ templates_path = ['_templates']
 
 # Latex files
 latex_documents = [
-  ('index', 'OpenMS.tex', u'OpenMS Documentation', 'manual',
-   u'Yu Zhang \\textless{}zhy@lanl.gov\\textgreater{}'),
+  ('index', 'OpenMS.tex', u'OpenMS Documentation',
+   u'Yu Zhang \\textless{}zhy@lanl.gov\\textgreater{}', 'manual'),
+  # manual is the document class, must be at the end. otherwise it will cause problems
+  # when 'make latexpdf'
 ]
 
 latex_elements = {

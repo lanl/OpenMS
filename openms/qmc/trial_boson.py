@@ -92,7 +92,7 @@ import numpy as np
 
 
 def coherent_state_coeff(n, alpha):
-    """ Compute coefficient for Fock state |n> in a coherent state |α> """
+    r"""Compute coefficient for Fock state :math:`\ket{n}` from a coherent state :math:`\ket{\alpha}`"""
     from scipy.special import factorial
     return np.exp(-abs(alpha)**2 / 2) * (alpha**n) / np.sqrt(factorial(n))
 

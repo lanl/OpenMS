@@ -55,7 +55,7 @@ One-body GF is
 
 .. math::
     G^\sigma_{ij} = & \frac{\bra{\Psi_T}a^\dagger_i a_j \ket{\psi_w}}{\langle\Psi_T\ket{\psi_w}} \\
-                  = & \left[\psi^\sigma_w (\Psi^{\sigma\dagger}_T\psi^\sigma_w)^{-1} \Psi^{\sigma\dagger}_T \right]
+                  = & \left[\psi^\sigma_w (\Psi^{\sigma\dagger}_T\psi^\sigma_w)^{-1} \Psi^{\sigma\dagger}_T \right] \\
                   \equiv & \left[\Theta^\sigma_w \Psi^{\sigma\dagger}_T \right].
 
 Where :math:`\Theta^\sigma_w=\psi^\sigma_w (\Psi^{\sigma\dagger}_T\psi^\sigma_w)^{-1}`.

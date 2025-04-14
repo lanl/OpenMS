@@ -69,21 +69,21 @@ def load_library(libname):
 
 def unitary_transform(U, A):
     r"""
-    Unitary transform of :math:`\bm{A}` with :math:`\bm{U}`.
+    Unitary transform of :math:`\boldsymbol{A}` with :math:`\boldsymbol{U}`.
 
-    :math:`\bm{\tilde{A}} = \bm{U}^\dagger \bm{A} \bm{U}`
+    :math:`\boldsymbol{\tilde{A}} = \boldsymbol{U}^\dagger \boldsymbol{A} \boldsymbol{U}`
 
     Parameters
     ----------
     U : :class:`~numpy.ndarray`
-        Unitary transformation matrix, :math:`\bm{U}`.
+        Unitary transformation matrix, :math:`\boldsymbol{U}`.
     A : :class:`~numpy.ndarray`
-        Matrix to transform, :math:`\bm{A}`.
+        Matrix to transform, :math:`\boldsymbol{A}`.
 
     Returns
     -------
     :class:`~numpy.ndarray`
-        Transformed matrix, :math:`\bm{\tilde{A}}`.
+        Transformed matrix, :math:`\boldsymbol{\tilde{A}}`.
     """
 
     Atmp = lib.dot(A, U)

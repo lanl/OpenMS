@@ -40,12 +40,8 @@ class QuantumDriver(object):
         i.e., overlap between self and that (a quantum object of previous time step):
 
         .. math::
-           :nowrap:
-
-           \begin{align*}
-              NACT(t_i) =& \bra{\phi(t_i)}\partial_t\ket{\phi(t_i)}  & \\
-                        =&-\bra{\phi(t_i)}\phi(t_i-1)\rangle  &
-           \begin{align*}
+              NACT(t_i) =& \bra{\phi(t_i)}\partial_t\ket{\phi(t_i)}  \\
+                        =&-\bra{\phi(t_i)}\phi(t_i-1)\rangle
 
         This function is implemented in each drived classed.
         """

@@ -742,7 +742,9 @@ class GASCF(lib.StreamObject): # (hf.RHF):
     def get_veff(self, mol=None, dm=None, dm_last=0, vhf_last=0, hermi=1):
         r"""
         GA effective Hamiltonain
-        H_eff_ij = H_core_ij + g_i * Σ_kl (P_kl * g_k * (2*J_klij - K_klij)) * g_j
+
+        .. math::
+            \hat{H}^{\text{eff}}_{ij} = H^{\text{core}}_{ij} + g_i * \sum_{kl} [P_{kl} * g_k * (2*J_{klij} - K_{klij})] * g_j
         """
         # Be carefule with the effects of :attr:`SCF.direct_scf` on this function
         if mol is None:

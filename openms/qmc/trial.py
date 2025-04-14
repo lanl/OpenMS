@@ -1081,7 +1081,77 @@ class multiCI(TrialWFBase):
         logger.debug(self, f"Debug: occb0 in cas = {occb}")
         # occa/b are:
 
+        self.nalpha_cas = len(occa[0])
+        self.nbeta_cas= len(occb[0])
+        assert self.nalpha_cas <= self.nalpha
+        assert self.nbeta_cas <= self.nbeta
+        logger.info(self, f"Info: nalpha_cas in the multiCI trial: {self.nalpha_cas}")
+        logger.info(self, f"Info: nbeta_cas  in the multiCI trial: {self.nbeta_cas}")
 
+        self.frozen_a = self.nalpha - self.nalpha_cas
+        self.frozen_b = self.nbeta - self.nbeta_cas
+
+        #
+        # since occa/b only index in the active space, here
+        # we need to add the index of frozen cores
+        #
+        # TODO: use more advanced way of choosing active space that is not continuous in orbitals
+        # then we need to update the way of adding frozen orbitals (not continuous in orbtails as well) accordingly
+        if self.frozen_a > 0:
+            frozen_core = [i for i in range(self.frozen_a)]
+            occa = [backend.array(frozen_core + [o + self.frozen_a for o in oa]) for oa in occa]
+            occb = [backend.array(frozen_core + [o + self.frozen_b for o in ob]) for ob in occb]
+
+        # select the first _numdets determinents
+        occa = occa[:self._numdets]
+        occb = occb[:self._numdets]
+
+        dets = [list(a) + [i + self.nao for i in c] for (a, c) in zip(occa, occb)]
+        self.occ_so = [backend.sort(d) for d in dets] # occs in spin orbital (SO)
+
+        self.occa = backend.array(occa[:self._numdets], dtype=backend.int32)
+        self.occb = backend.array(occb[:self._numdets], dtype=backend.int32)
+        self.coeffs = backend.array(ci_coeffs[:self._numdets], dtype=backend.complex128)
+
+        # print("\n dets = \n", dets)
+        logger.debug(self, f"Debug: occa = {self.occa}")
+        logger.debug(self, f"Debug: occb = {self.occb}")
+        logger.debug(self, f"Debug: ci_coeffs = {self.coeffs}")
+        logger.info(self, f"Info: number of freezing electrons = {self.frozen_a} {self.frozen_b}")
+
+        if self.use_cas:
+            self.nao_cas = max_orbital
+            self.nelectrons_cas = self.nalpha_cas + self.nbeta_cas
+        else:
+            self.nao_cas = self.nao
+            self.nelectrons_cas = self.nalpha + self.nbeta
+
+        # frozen orbitals
+        self.nao_frozen = (self.nalpha + self.nbeta - self.nelectrons_cas) // 2
+
+    def dump_flags(self):
+        super().dump_flags()
+
+        logger.info(self, f" Number of cas electrons      : {self.nelectrons_cas:5d}")
+        logger.info(self, f" Number of cas alpha electrons: {self.nalpha_cas:5d}")
+        logger.info(self, f" Number of cas beta electrons : {self.nbeta_cas:5d}")
+        logger.info(self, f" Number of cas orbitals       : {self.nao_cas:5d}")
+        logger.info(self, f" Number of frozen orbitals    : {self.nao_frozen:5d}")
+
+
+    def build(self):
+        r"""build multiCI trial WF"""
+
+        logger.debug(self, task_title("building multiCI trial WF"))
+
+        Imat = backend.eye(self.nao)
+        self.psia = Imat[:, self.occa[0]]
+        self.psib = Imat[:, self.occb[0]]
+
+        self.psi = backend.hstack([self.psia, self.psib])
+
+        if isinstance(self.mol, Boson):
+            boson_size = sum(self.mol.nboson_states)
 
     def ovlp_with_walkers_gf(self, walkers):
         r"""compute trial_walker overlap and green's function

@@ -192,7 +192,6 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
     if dm0 is None:
         dm = mf.get_init_guess(mol, mf.init_guess)
 
-        #"""
         # get a initial dm without qed terms
         h1e = mf.get_bare_hcore(mol)
         vhf = mf.get_bare_veff(mol, dm)
@@ -206,19 +205,22 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
     else:
         dm = dm0
 
-    # Create initial photonic eigenvector guess(es)
-    if mf.qed.use_cs:
-        mf.qed.update_cs(dm)
-
+    # Initialize parameters or copy provided input
     mf.init_var_params(dm)
-
-    # update initial_params according to the input
     if init_params is not None:
         mf.set_var_params(init_params)
 
     # construct h1e, gmat in DO representation (used in SC/VT-QEDHF)
     mf.get_h1e_DO(mol, dm=dm)
 
+    # Coherent-state z_alpha values
+    if mf.qed.use_cs:
+        mf.qed.update_cs(dm)
+
+    # Create initial photonic eigenvector guess(es)
+    mf.qed.update_boson_coeff(dm=dm)
+
+    # Initial electronic energy
     h1e = mf.get_hcore(mol, dm, dress=True)
     vhf = mf.get_veff(mol, dm)
     e_tot = mf.energy_tot(dm, h1e, vhf)
@@ -227,7 +229,7 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
     scf_conv = False
     mo_energy = mo_coeff = mo_occ = None
 
-    s1e = mf.get_ovlp(mol)
+    s1e = mf.get_ovlp(mol) # TODO: Check, redundant?
     cond = lib.cond(s1e)
     logger.debug(mf, 'cond(S) = %s', cond)
     if numpy.max(cond)*1e-17 > conv_tol:
@@ -267,13 +269,14 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
 
     cput1 = logger.timer(mf, 'initialize scf', *cput0)
 
+    mf.cycles = 0
     for cycle in range(mf.max_cycle):
         time0 = time.time()
         dm_last = dm
         last_hf_e = e_tot
 
-        time1 = time.time()
         # update h1e in DO
+        time1 = time.time()
         mf.get_h1e_DO(mol, dm=dm)
         time_h1e_do = time.time() - time1
 
@@ -303,9 +306,9 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
         h1e = mf.get_hcore(mol, dm, dress=True)
         e_tot = mf.energy_tot(dm, h1e, vhf)
 
-        # Update photonic coefficients and compute photonic energy
-        mf.qed.update_cs(dm) # Update coherent state values
-        mf.qed.update_boson_coeff(e_tot, dm)
+        # Update photonic component
+        mf.qed.update_cs(dm)
+        mf.qed.update_boson_coeff(dm)
 
         # Here Fock matrix is h1e + vhf, without DIIS.  Calling get_fock
         # instead of the statement "fock = h1e + vhf" because Fock matrix may
@@ -342,6 +345,7 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
         if scf_conv:
             break
 
+    mf.cycles = cycle + 1
     if scf_conv and conv_check:
         # An extra diagonalization, to remove level shift
         #fock = mf.get_fock(h1e, s1e, vhf, dm)  # = h1e + vhf
@@ -350,9 +354,9 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
         dm, dm_last = mf.make_rdm1(mo_coeff, mo_occ), dm
         vhf = mf.get_veff(mol, dm, dm_last, vhf)
 
-        # Final update of photonic coefficients and energy
-        mf.qed.update_cs(dm) # Update coherent state values
-        mf.qed.update_boson_coeff(e_tot, dm)
+        # Final update of photonic component
+        mf.qed.update_cs(dm)
+        mf.qed.update_boson_coeff(dm)
 
         h1e = mf.get_hcore(mol, dm, dress=True)
         e_tot, last_hf_e = mf.energy_tot(dm, h1e, vhf), e_tot
@@ -398,45 +402,53 @@ class RHF(qedhf.RHF):
 
         self.precond = 0.1
 
-        # Parameters for dipole moment basis set degeneracy
+        # # Flag to construct eta-eta Hessian matrix
+        # self.second_order_eta_step = False
+
+        # Parameters for dipole moment basis set degeneracy # TODO: Check if being used?
         self.dipole_degen_thresh = 1.0e-8
         self.dipole_fock_shift = 1.0e-3
 
         self.qed.couplings_var = numpy.ones(self.qed.nmodes)
         self.qed.update_couplings()
-        if type(self) is scqedhf.RHF:
+        if type(self) is scqedhf.RHF: # Don't need this check, since this is SC __init__?
             self.qed.use_cs = False
 
+        # Cholesky
         self.P = self.L = None
 
-        # will replace it with our general DIIS
+        # TODO: replace it with our general DIIS
         self.diis_space = 20
         self.DIIS = diis.SCF_DIIS
-        # self.dump_flags()
+
+        return
 
 
     def initialize_bare_fock(self, dm=None):
         r"""Return non-QED Fock matrix from provided or initial guess ``dm``."""
-        mol = self.mol
         if dm is None:
-            # dm = hf.get_init_guess(mol, self.init_guess)
             dm = super(qedhf.RHF, self).get_init_guess(mol, self.init_guess)
 
-        h1e = self.get_bare_hcore(mol) # bare HF function
-        vhf = self.get_bare_veff(mol, dm)
+        h1e = self.get_bare_hcore(self.mol)
+        vhf = self.get_bare_veff(self.mol, dm)
 
         return h1e + vhf
 
-    # get bare MO coefficients
-    def get_bare_mo_coeff(self, dm):
 
-        s1e = self.get_ovlp(self.mol)
+    def get_bare_mo_coeff(self, dm):
+        r"""Obtain bare/non-QED MO coefficients.
+
+        self._eigh may be modified by self.get_cholesky method.
+        """
+
         fock = self.initialize_bare_fock(dm)
-        mo_energy, mo_coeff = self._eigh(fock, s1e)
-        return mo_energy, mo_coeff
+        s1e = self.get_ovlp(self.mol)
+
+        return self._eigh(fock, s1e)
+
 
     def get_cholesky(self):
-        #check conditions of overlap and bilinear coupling matrix
+        r"""Check condition number of overlap matrix and bilinear coupling matrix."""
         scipy_helper.remove_linear_dep(self, threshold=1.0e-7, lindep=1.0e-7,
                                          cholesky_threshold=CHOLESKY_THRESHOLD,
                                          force_pivoted_cholesky=FORCE_PIVOTED_CHOLESKY)
@@ -444,18 +456,20 @@ class RHF(qedhf.RHF):
         self.P, self.L = mathlib.full_cholesky_orth(s1e, threshold=1.e-7)
         self.n_oao = self.P.shape[1]
 
+        return self
+
+
     def init_guess_by_1e(self, mol=None):
         if mol is None: mol = self.mol
         logger.info(self, '\nInitial guess from hcore in scqedhf.')
+
         h1e = self.get_bare_hcore(mol)
-        s1e = self.get_ovlp(mol)
-        if self.P is None:
-            self.get_cholesky()
+        if self.P is None: self.get_cholesky()
 
         mo_energy, mo_coeff = cholesky_diag_fock_rao(self, h1e)
         mo_occ = self.get_occ(mo_energy, mo_coeff)
-        return self.make_rdm1(mo_coeff, mo_occ)
 
+        return self.make_rdm1(mo_coeff, mo_occ)
 
 
     def ao2mo(self, A):
@@ -470,6 +484,7 @@ class RHF(qedhf.RHF):
 
         Amo = numpy.einsum("uv, vq->uq", A, self.mo_coeff)
         Amo = numpy.einsum("up, uq->pq", self.mo_coeff, Amo)
+
         return Amo
 
 
@@ -533,15 +548,12 @@ class RHF(qedhf.RHF):
 
     def initialize_eta(self, dm):
         r"""Initialize the eta parameters and dipole basis sets."""
-
         self.eta = numpy.zeros((self.qed.nmodes, self.nao))
         self.eta_grad = numpy.zeros((self.qed.nmodes, self.nao))
 
+        # diagonalize the gmat in MO; then get ao2dipole basis transformation
         self.mo_coeff = self.get_bare_mo_coeff(dm)[1]
-
-        # diagonalize the gmat in MO; then get ao2dipole basis transformaiton
         gmo = numpy.zeros_like(self.qed.gmat)  # gmat*sqrt(w/2) in MO
-
         for a in range(self.qed.nmodes):
 
             gmo[a] = self.qed.gmat[a] * numpy.sqrt(self.qed.omega[a] / 2.0) \
@@ -574,17 +586,18 @@ class RHF(qedhf.RHF):
 
              \frac{E}{d\eta} = &  \\
                              = &
-
         """
-        nao = self.nao
+
+        # if self.second_order_eta_step == True:
+        #     self.eta_hessian = numpy.zeros((self.qed.nmodes, self.nao, self.nao))
 
         for imode in range(self.qed.nmodes):
-            onebody_deta = numpy.zeros(nao)
-            twobody_deta = numpy.zeros(nao)
+            onebody_deta = numpy.zeros(self.nao)
+            twobody_deta = numpy.zeros(self.nao)
 
-            tau = numpy.exp(self.qed.squeezed_var[imode])
-            # 1) diaognal part due to [(gtmp - eta)^2 \rho]
-            for p in range(nao):
+            tau = numpy.exp(self.qed.squeezed_var[imode]) # TODO: not used yet
+            # 1) diagonal part due to [(gtmp - eta)^2 \rho]
+            for p in range(self.nao):
                 onebody_deta[p] -= 2.0 * dm_do[imode, p,p] * g_DO[imode, p] / self.qed.omega[imode]
 
             fc_derivative = self.gaussian_derivative_vectorized(self.eta, imode)
@@ -604,35 +617,109 @@ class RHF(qedhf.RHF):
             del fc_derivative, tmp
 
             self.eta_grad[imode] = onebody_deta + twobody_deta
+
+            # ### TODO: temporary, may move to better spot?
+            # ### TODO: Check grad norm before computing Hessian?
+            # if self.second_order_eta_step:
+            #     self.eta_hessian[imode] = self.get_eta_hessian(dm_do, imode)
+
         return self
+
+
+    # def get_eta_hessian(self, dm_do, imode):
+    #     r"""Construct eta-eta Hessian matrix for 2nd order eta gradient step."""
+
+    #     # One-body indices
+    #     p, q = numpy.ogrid[:self.nao, :self.nao]
+
+    #     # Gaussian factor
+    #     fc_factor = self.FC_factor(self.eta, imode)  # (nao, nao)
+
+    #     # Construct Hessian matrix
+    #     hessian = numpy.zeros((self.nao, self.nao))
+
+    #     # Diagonal terms of Hessian
+    #     hessian += numpy.diag(2.0 * dm_do[imode].diagonal() / self.qed.omega[imode])
+
+    #     # One-body terms
+    #     eta_diff = (((self.eta[imode, p] - self.eta[imode, q]) / self.qed.omega[imode])**2 - 1.0)
+    #     one_body = (2.0 / self.qed.omega[imode]**2) * self.h1e_DO * dm_do[imode] * fc_factor * eta_diff
+
+    #     # Add to Hessian
+    #     hessian += numpy.diag(numpy.sum(one_body, axis=1))
+    #     hessian -= one_body
+
+    #     # Delete first set of one-body terms
+    #     del fc_factor, eta_diff, one_body, p, q
+
+    #     # Another one-body term
+    #     dm_do_diag = numpy.outer(dm_do[imode].diagonal(), dm_do[imode].diagonal())
+
+    #     # Add to Hessian
+    #     hessian += 2.0 * (dm_do_diag - 0.5 * dm_do[imode] * dm_do[imode].T) / self.qed.omega[imode]
+
+    #     # Delete other one-body term
+    #     del dm_do_diag
+
+    #     ###
+
+    #     # Two-body indices
+    #     p, r, q, s = numpy.ogrid[:self.nao, :self.nao, :self.nao, :self.nao]
+
+    #     # Gaussian factor
+    #     fc_factor = self.FC_factor(self.eta, imode, onebody=False)  # (nao, nao, nao, nao)
+
+    #     # Two-body terms
+    #     density_mat = (dm_do[imode][:, :, None, None] * dm_do[imode][None, None, :, :]
+    #         - 0.5 * dm_do[imode][:, None, None, :] * dm_do[imode][None, :, :, None])
+
+    #     eta_diff = (((self.eta[imode, p] - self.eta[imode, r] \
+    #                   + self.eta[imode, q] - self.eta[imode, s]) / self.qed.omega[imode])**2 - 1.0)
+    #     two_body = (2.0 / self.qed.omega[imode]**2) * self.eri_DO * fc_factor * eta_diff * density_mat
+
+    #     # Add to Hessian
+    #     hessian += numpy.diag(two_body.sum(axis=(1, 2, 3)))
+    #     hessian += two_body.sum(axis=(1, 3))
+    #     hessian -= two_body.sum(axis=(2, 3))
+    #     hessian -= two_body.sum(axis=(1, 2))
+
+    #     # Invert and return the Hessian
+    #     del fc_factor, density_mat, eta_diff, two_body
+    #     return numpy.linalg.inv(hessian)
+
 
     # variable gradients, here we only have eta
     grad_var_params = get_eta_gradient
 
 
     def construct_eri_DO(self, U):
-        r"""Repulsion integral modifier according to dipole self-energy terms
-
-        """
-
-        # eri_ao = self.mol.intor("int2e", aosym="s1")
-        # eri = lib.einsum("pu, qv, rw, st, pqrs->uvwt", U, U, U, U, eri_ao)
+        r"""Repulsion integral modifier according to dipole self-energy terms"""
         if self._eri is None:
             self._eri = self.mol.intor("int2e", aosym="s1")
-            logger.debug(self,
-                f" build two-body integral for the first time! eri.shape= {self._eri.shape}")
+            logger.debug(self, f"First build of two-body integral! eri.shape= {self._eri.shape}")
 
-        nao = self.mol.nao_nr()
         from pyscf.ao2mo.addons import restore
-        self._eri = restore(1, self._eri, nao)
+        self._eri = restore(1, self._eri, self.nao)
 
         eri = self._eri.copy()
-        if eri.size == nao**4:
-            eri = eri.reshape((nao,)*4)
+        if eri.size == self.nao**4:
+            eri = eri.reshape((self.nao,)*4)
 
         eri = numpy.einsum("pu, qv, rw, st, pqrs->uvwt", U, U, U, U, eri, optimize=True)
 
         return eri
+
+
+    def photon_exp_val(self, imode):
+
+        mdim = self.qed.nboson_states[imode]
+        idx = sum(self.qed.nboson_states[:imode])
+
+        ci = self.qed.boson_coeff[idx : idx + mdim, idx]
+        pdm = numpy.outer(numpy.conj(ci), ci)
+
+        ph_exp_val = 2.0 * numpy.arange(mdim)
+        return numpy.sum(ph_exp_val * pdm)
 
 
     def FC_factor(self, eta, imode, onebody=True):
@@ -646,49 +733,72 @@ class RHF(qedhf.RHF):
         Here :math:`\tau= exp(F_\alpha)` and :math:`F_\alpha` are the VSQ prameters.
         """
 
-        nao = self.qed.gmat[imode].shape[0]
+        # Number of boson states
+        mdim = self.qed.nboson_states[imode]
+
         if onebody:
-            p, q = numpy.ogrid[:nao, :nao]
+            p, q = numpy.ogrid[:self.nao, :self.nao]
             diff_eta = eta[imode, p] - eta[imode, q]
         else:
-            p, q, r, s = numpy.ogrid[:nao, :nao, :nao, :nao]
+            p, q, r, s = numpy.ogrid[:self.nao, :self.nao, :self.nao, :self.nao]
             diff_eta = eta[imode, p] - eta[imode, q] +  eta[imode, r] - eta[imode, s]
 
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
 
-        ph_exp_val = 0.0 # self.qed.get_bdag_plus_b_sq_expval(imode) # to be checked
+        # Displacement operator
+        # Note: for squeezing case, this will be more complicated,
+        #       this part does not work for squeezing case at this stage
+        # use the get_boson_dm function
+        if mdim > 1:
+            idx = sum(self.qed.nboson_states[:imode])
+            ci = self.qed.boson_coeff[idx : idx + mdim, idx]
+            pdm = numpy.outer(numpy.conj(ci), ci)
 
-        factor = numpy.exp((-0.5 * (tmp * diff_eta) ** 2) * (ph_exp_val + 1))
+            factor = self.qed.displacement_exp_val(imode, tmp * diff_eta, pdm)
+
+        # Vacuum Gaussian factor
+        else:
+            factor = numpy.exp((-0.5 * (tmp * diff_eta) ** 2))
 
         if onebody:
-            return factor.reshape(nao, nao)
+            return factor.reshape(self.nao, self.nao)
         else:
-            return factor.reshape(nao, nao, nao, nao)
+            return factor.reshape(self.nao, self.nao, self.nao, self.nao)
 
 
     def gaussian_derivative_vectorized(self, eta, imode, onebody=True):
 
-        nao = eta.shape[1]
+        # Number of boson states
+        mdim = self.qed.nboson_states[imode]
+
         if onebody:
-            p, q = numpy.ogrid[:nao, :nao]
-            diff_eta = eta[imode, q] - eta[imode, p]
+            p, q = numpy.ogrid[:self.nao, :self.nao]
+            diff_eta = eta[imode, p] - eta[imode, q]
         else:
-            p, q, r, s = numpy.ogrid[:nao, :nao, :nao, :nao]
-            diff_eta = eta[imode, q] - eta[imode, p] +  eta[imode, s] - eta[imode, r]
+            p, q, r, s = numpy.ogrid[:self.nao, :self.nao, :self.nao, :self.nao]
+            diff_eta = eta[imode, p] - eta[imode, q] + eta[imode, r] - eta[imode, s]
 
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
-        ph_exp_val = 0.0 # self.qed.get_bdag_plus_b_sq_expval(imode)
 
-        # Apply the derivative formula
-        derivative = numpy.exp((-0.5 * (tmp * diff_eta) ** 2) * (ph_exp_val + 1)) \
-                     * (tmp ** 2) * diff_eta
+        # Displacement operator derivative
+        if mdim > 1:
+            idx = sum(self.qed.nboson_states[:imode])
+            ci = self.qed.boson_coeff[idx : idx + mdim, idx]
+            pdm = numpy.outer(numpy.conj(ci), ci)
+
+            derivative = self.qed.displacement_deriv(imode, tmp * diff_eta, pdm)
+
+        # Apply vacuum derivative formula
+        else:
+            derivative = -numpy.exp((-0.5 * (tmp * diff_eta) ** 2)) \
+                         * ((tmp ** 2) * diff_eta)
 
         if onebody:
-            return derivative.reshape(nao, nao)
+            return derivative.reshape(self.nao, self.nao)
         else:
-            return derivative.reshape(nao, nao, nao, nao)
+            return derivative.reshape(self.nao, self.nao, self.nao, self.nao)
 
 
     def get_h1e_DO(self, mol=None, dm=None):
@@ -716,9 +826,8 @@ class RHF(qedhf.RHF):
         if self.bare_h1e is None:
             self.bare_h1e = self.get_bare_hcore(mol)
 
-        nmode, nao, nao = self.qed.gmat.shape
         if self.g_dipole is None:
-            self.g_dipole = numpy.zeros((nmode,nao))
+            self.g_dipole = numpy.zeros((self.qed.nmodes, self.nao))
 
         for a in range(self.qed.nmodes):
 
@@ -729,9 +838,9 @@ class RHF(qedhf.RHF):
             # h1e in dipole basis
             self.h1e_DO = unitary_transform(self.ao2dipole[a], self.bare_h1e)
 
-            tau = numpy.exp(self.qed.squeezed_var[a])
+            tau = numpy.exp(self.qed.squeezed_var[a]) # TODO: not used yet
             # one-body operator h1e_pq = h1e_pq + g_pq(p, l) * g_pq(l, p)
-            for p in range(nao):
+            for p in range(self.nao):
                 # For the diagonal part, the FC factor is 1.0, i.e., independent  of tau and f
                 self.g_dipole[a, p] = gtmp[p, p] - self.eta[a, p]
                 self.h1e_DO[p, p] += self.g_dipole[a, p] ** 2 / self.qed.omega[a]
@@ -770,8 +879,7 @@ class RHF(qedhf.RHF):
         else:
             # only works for one mode at this moment
             h1e_DO = self.h1e_DO.copy()
-            nmodes, nao, nao = self.qed.gmat.shape
-            for imode in range(nmodes):
+            for imode in range(self.qed.nmodes):
                 # update the renormalization/FC factors
                 # and dress h1e : h_pq  * G_{pq}
                 factor = self.FC_factor(self.eta, imode)
@@ -787,6 +895,7 @@ class RHF(qedhf.RHF):
 
         return h1e
 
+
     def get_veff(self, mol=None, dm=None, dm_last=0, vhf_last=0, hermi=1):
         r"""QED Hartree-Fock potential matrix for the given density matrix
 
@@ -799,25 +908,21 @@ class RHF(qedhf.RHF):
                                          mean_value
          -D_{qp}\tidle{g}_{pq} * \tilde{g}_{qq} (diagonal element is then g_pq(p)**2)
         """
-        # we also need to update hcore as it's dressed by photon displacement
 
         if mol is None: mol = self.mol
         if dm is None: dm = self.make_rdm1()
-
-        nao = self.mol.nao_nr()
 
         # work for single mode only at this moment
         imode = 0
         U = self.ao2dipole[imode]
         dm_do = self.get_dm_do(dm, U)
 
+        ## vectorized code
         # Tr[g_pq * D] in DO
         g_dot_D = numpy.diagonal(dm_do) @ self.g_dipole[imode, :]
 
-        vhf_do = numpy.zeros((nao,nao))
-
-        # vectorized code
-        p_indices = numpy.arange(nao)
+        p_indices = numpy.arange(self.nao)
+        vhf_do = numpy.zeros((self.nao, self.nao))
         vhf_do[p_indices, p_indices] += (2.0 * self.g_dipole[imode, p_indices] * g_dot_D -
                                          numpy.square(self.g_dipole[imode, p_indices]) \
                                          * dm_do[p_indices, p_indices]) / self.qed.omega[0]
@@ -825,7 +930,7 @@ class RHF(qedhf.RHF):
         vhf_do_offdiag = numpy.zeros_like(vhf_do)
 
         # Calculate off-diagonal elements
-        p, q = numpy.triu_indices(nao, k=1)
+        p, q = numpy.triu_indices(self.nao, k=1)
         vhf_do_offdiag[p, q] -= self.g_dipole[imode, p] * self.g_dipole[imode, q] * dm_do[q, p] / self.qed.omega[0]
         vhf_do_offdiag[q, p] = vhf_do_offdiag[p, q]  # Exploit symmetry
         vhf_do += vhf_do_offdiag
@@ -845,50 +950,47 @@ class RHF(qedhf.RHF):
 
 
     def norm_var_params(self):
-        var_norm = linalg.norm(self.eta_grad) / numpy.sqrt(self.eta.size)
-        return var_norm
+        return linalg.norm(self.eta_grad) / numpy.sqrt(self.eta.size)
 
 
     def init_var_params(self, dm=None):
-        r"""Initialize additional variational parameters"""
+        r"""Initialize eta variational parameters."""
         if self.eta is None:
             self.initialize_eta(dm)
+        return self
 
 
     def update_var_params(self):
         self.eta -= self.precond * self.eta_grad
+        return self
 
 
     def pre_update_var_params(self):
-        variables = self.eta
-        gradients = self.eta_grad
-
-        return variables, gradients
+        return self.eta, self.eta_grad
 
 
     def set_var_params(self, params):
-        r"""set the additional variaitonal params"""
-
+        r"""Set the additional variational params."""
         params = numpy.hstack(params)
-
-        etasize = self.eta.size
         if params.size > 0:
+            etasize = self.eta.size
             self.eta = params[:etasize].reshape(self.eta_grad.shape)
+        return self
+
 
     def set_params(self, params, fock_shape=None):
-
         fsize = 0
         if fock_shape is not None:
             fsize = numpy.prod(fock_shape)
             f = params[:fsize].reshape(fock_shape)
 
-        etasize = self.eta.size
-
         if params.size > fsize:
+            etasize = self.eta.size
             self.eta = params[fsize:fsize+etasize].reshape(self.eta_grad.shape)
 
         if fock_shape is not None:
             return f
+
 
     def make_rdm1_org(self, mo_coeff, mo_occ, nfock=2, **kwargs):
         r"""One-particle density matrix in original AO-Fock representation
@@ -902,10 +1004,10 @@ class RHF(qedhf.RHF):
                  = & \sum_\mu c_\mu U^\dagger\exp[-\tilde{g}(b-b^\dagger)]U \ket{\mu}\otimes\ket{0}
 
         where :math:`\tilde{g}` is the diagonal matrix.
-        It is obvious that the VT-QEDHF WF is no longer the single produc state
-
+        It is obvious that the VT-QEDHF WF is no longer the single product state.
         """
-        import math
+
+        from math import factorial
 
         mocc = mo_coeff[:,mo_occ>0]
         rho = (mocc*mo_occ[mo_occ>0]).dot(mocc.conj().T)
@@ -913,9 +1015,9 @@ class RHF(qedhf.RHF):
         nao = rho.shape[0]
         imode = 0
 
+        # transform rho into dipole basis
         U = self.ao2dipole[imode]
         Uinv = linalg.inv(U)
-        # transform into Dipole
         rho_DO = unitary_transform(U, rho)
 
         rho_tot = numpy.zeros((nfock, nao, nfock, nao))
@@ -926,11 +1028,11 @@ class RHF(qedhf.RHF):
                 zalpha /= self.qed.omega[imode]
 
                 z0 = numpy.exp(-0.5 * zalpha ** 2)
-                zm = z0 * zalpha ** m * numpy.sqrt(math.factorial(m))
-                zn = z0 * (-zalpha) ** n * numpy.sqrt(math.factorial(n))
+                zm = z0 * zalpha ** m * numpy.sqrt(factorial(m))
+                zn = z0 * (-zalpha) ** n * numpy.sqrt(factorial(n))
 
-                rho_tmp = rho_DO * numpy.outer(zm, zn)
                 # back to AO
+                rho_tmp = rho_DO * numpy.outer(zm, zn)
                 rho_tmp = unitary_transform(Uinv, rho_tmp)
                 rho_tot[m, :, n, :] = rho_tmp
 

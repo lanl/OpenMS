@@ -13,8 +13,8 @@ def qedhf_compute(nboson=None, freq=None, cplng=None, init_guess=None, cs=None, 
             """
 
     mol = gto.M(atom = atom,
-                #basis = "sto-3g",
-                basis = "cc-pvdz",
+                basis = "sto-3g",
+                #basis = "cc-pvdz",
                 unit = "Angstrom",
                 verbose = 4)
 
@@ -22,9 +22,9 @@ def qedhf_compute(nboson=None, freq=None, cplng=None, init_guess=None, cs=None, 
     cavity_freq = numpy.zeros(nmode)
     cavity_freq[0] = freq
     cavity_mode = numpy.zeros((nmode, 3))
-    cavity_mode[0, :] = cplng * numpy.asarray([0, 0, 1])
+    cavity_mode[0, :] = cplng * numpy.asarray([0, 1, 0])
 
-    qedmf = qedhf.RHF(mol, omega=cavity_freq, vec=cavity_mode, nboson=nboson, use_cs=cs, complete_basis=basis)
+    qedmf = qedhf.RHF(mol, cavity_freq=cavity_freq, cavity_mode=cavity_mode, nboson=nboson, use_cs=cs, complete_basis=basis)
     if init_guess is not None:
         qedmf.init_guess = init_guess
     #qedmf.conv_tol = 1e-10
@@ -37,9 +37,9 @@ cs_energies = []
 boson_range = range(0,8,1)
 
 for n in boson_range:
-    fock_energies.append(qedhf_compute(nboson=n, freq=0.5, cplng=0.05, init_guess="atom", cs=False, basis = False))
+    fock_energies.append(qedhf_compute(nboson=n, freq=0.5, cplng=0.20, init_guess="atom", cs=False, basis = False))
     #fock_energies.append(qedhf_compute(nboson=n, freq=0.5, cplng=0.05, init_guess="atom", cs=False, basis = True))
-    cs_energies.append(qedhf_compute(nboson=n, freq=0.5, cplng=0.05, init_guess="atom", cs=True, basis = False))
+    cs_energies.append(qedhf_compute(nboson=n, freq=0.5, cplng=0.20, init_guess="atom", cs=True, basis = False))
     #cs_energies.append(qedhf_compute(nboson=n, freq=0.5, cplng=0.05, init_guess="atom", cs=True, basis = True))
 
 print ("\n\nFOCK STATE\n----------")

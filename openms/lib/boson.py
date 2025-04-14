@@ -27,7 +27,7 @@ from openms.lib.ov_blocks import one_e_blocks, block_diag
 from openms.lib.ov_blocks import two_e_blocks, two_e_blocks_full
 
 
-def get_bosonic_Ham(nmodes, nboson_states, omega, za, Fa):
+def get_bosonic_Ham(nmodes, nboson_states, omega, za, Fa, sc=None):
     r"""Construct Bosonic Hamiltonian in different representation
     after integrating out the electronic DOF.
 
@@ -72,22 +72,29 @@ def get_bosonic_Ham(nmodes, nboson_states, omega, za, Fa):
 
     boson_size = sum(nboson_states)
     Hb = numpy.zeros((boson_size, boson_size))
+
     idx = 0
     for imode in range(nmodes):
-        jmode = imode
+
+        mdim = nboson_states[imode]
         cosh2r = numpy.cosh(2.0 * Fa[imode])
         sinhr = numpy.sinh(Fa[imode])
-        mdim = nboson_states[imode]
-        # diaognal term, didn't include ZPE
+
+        # diagonal term, doesn't include ZPE
         H0 = numpy.diag(numpy.arange(mdim) * cosh2r + sinhr * sinhr) * omega[imode]
 
-        # off-diaognal term
+        # off-diagonal term
         h_od = numpy.diag(numpy.sqrt(numpy.arange(1, mdim)), k = 1) \
             + numpy.diag(numpy.sqrt(numpy.arange(1, mdim)), k = -1)
         H0 += h_od * za[imode]
 
+        # SC-QEDHF off-diagonal term (nboson > 1)
+        if sc is not None:
+            H0 += h_od * sc[imode]
+
         Hb[idx:idx+mdim, idx:idx+mdim] = H0
         idx += mdim
+
     return Hb
 
 
@@ -422,6 +429,7 @@ class Boson(object):
             self.verbose = mol.verbose
             self.stdout = mol.stdout
             self.nelectron = mol.nelectron
+            self.nao = mol.nao_nr()
 
         # Default: Include nuclear component in dipole/quadrupole
         self.add_nuc_dipole = add_nuc_dipole
@@ -537,15 +545,15 @@ class Boson(object):
         # Photon occupation specified by integer or list of integers
         if isinstance(nboson_states, int): # same occupation for all modes
             nboson_states = numpy.repeat(nboson_states, self.nmodes)
-        elif isinstance(nboson, list): # each mode has own occupation
+        elif isinstance(nboson_states, list): # each mode has own occupation
             nboson_states = numpy.asarray(nboson_states, dtype=int)
 
         if (isinstance(nboson_states, numpy.ndarray)
             and (nboson_states.size == self.nmodes)):
 
-            if not all(i >= 0 for i in nboson_states):
+            if not all(i > 0 for i in nboson_states):
                 err_msg = f"Elements of 'nboson_states' are " + \
-                          f"not all integers >= 0."
+                          f"not all integers > 0."
                 logger.error(self, err_msg)
                 raise ValueError(err_msg)
 
@@ -567,7 +575,7 @@ class Boson(object):
         if "z_alpha" in kwargs and kwargs["z_alpha"] is not None:
 
             z_a = kwargs["z_alpha"].copy()
-            if isinstance(z_a, list):
+            if isinstance(z_a, list): # List to NumPy array
                 z_a = numpy.asarray(z_a, dtype=float)
 
             if (not isinstance(z_a, numpy.ndarray) or z_a.size != self.nmodes):
@@ -598,8 +606,8 @@ class Boson(object):
         self.optimize_vsq = kwargs.get("optimize_vsq", False)
         self.squeezed_var = numpy.zeros(self.nmodes)
         if "squeezed_var" in kwargs:
-            self.optimize_vsq = False
             self.squeezed_var = kwargs["squeezed_var"]
+            self.optimize_vsq = False
 
         # self.polarizations = numpy.zeros((3, self.nmodes), dtype=float) #replaced by vec
 
@@ -623,21 +631,23 @@ class Boson(object):
         # Boson info
         self.boson_type = self.__class__.__name__
         self.cavity_type = None
+        self.e_boson = 0.0
+
         boson_size = sum(self.nboson_states)
         self.boson_coeff = numpy.zeros((boson_size, boson_size))
-        self.boson_coeff[:, 0] = 1.0/numpy.sqrt(boson_size)
-        self.e_boson = 0.0
+        for imode in range(self.nmodes):
+            mdim = self.nboson_states[imode]
+            idx = sum(self.nboson_states[:imode])
+            self.boson_coeff[idx : idx + mdim, idx : idx + mdim] = numpy.eye(mdim)
 
         # Mean-field info
         self._mf = mf
-        self.nao = self._mol.nao_nr()
         self.dipole_ao = None
         self.quadrupole_ao = None
 
         # Values used by 'post-hf integrals' methods
         # whether to shfit the h1 in post-hf integral with DSE_oei
         self.shift = kwargs.get("shift", False)
-        # self.shift = shift
 
         # ------------------------------------
         # TODO: reorganize the following
@@ -665,6 +675,155 @@ class Boson(object):
     # ---------------------
     # General boson methods
     # ---------------------
+
+    def displacement_exp_val(self, mode, factor, pdm, scale_by_exp=True):
+        r"""
+        \sum_{mn} <m|D(z)|n> * rho_{mn}, where z=diff_eta
+        currently, the exp(-A^2/2) part is counted in the dis_exp_val!
+        factor = numpy.exp(-0.5 * (tmp * diff_eta) ** 2) * dis_exp_val
+        """
+        from scipy.special import genlaguerre, factorial
+
+        # Number of boson states
+        mdim = self.nboson_states[mode]
+
+        # Initialize matrix
+        disp_mat = numpy.zeros((mdim, mdim, *factor.shape))
+
+        # First compute lower triangle
+        ind_m, ind_n = numpy.tril_indices(mdim, k=-1)
+        for i_m, i_n in zip(ind_m, ind_n):
+
+            # Factorial ratio
+            ratio = factorial(i_n, exact=True) / factorial(i_m, exact=True)
+
+            # Matrix elements
+            disp_mat[i_m, i_n] = numpy.sqrt(ratio) * factor**(i_m - i_n) \
+                                 * genlaguerre(n=i_n, alpha=(i_m - i_n))(factor**2)
+            disp_mat[i_n, i_m] = disp_mat[i_m, i_n] * (-1.0)**(i_n - i_m) # upper triangle
+
+        # Compute diagonal elements
+        for ind_m in range(mdim):
+            disp_mat[ind_m, ind_m] = genlaguerre(n=ind_m, alpha=0)(factor**2)
+
+        # Compute exponential term, scale displacement matrix
+        if scale_by_exp:
+            gfact = numpy.exp(-0.5 * (factor)**2)
+            disp_mat[:, :] *= gfact
+
+        # Contract with photon density matrix
+        exp_val = numpy.einsum("nm, mn...-> ...", pdm, disp_mat, optimize=True)
+
+        return exp_val
+
+
+    def displacement_deriv(self, mode, factor, pdm):
+
+        from scipy.special import genlaguerre, factorial
+
+        # Variables
+        mdim = self.nboson_states[mode]
+        omega = self.omega[mode]
+
+        # Initialize matrix
+        delta_disp_mat = numpy.zeros((mdim, mdim, *factor.shape))
+
+        # First compute lower triangle
+        ind_m, ind_n = numpy.tril_indices(mdim, k=-1)
+        for i_m, i_n in zip(ind_m, ind_n):
+
+            # Term 1: Gaussian factor derivative
+            tmp1 = genlaguerre(n=i_n, alpha=(i_m - i_n))(factor**2) \
+                   * factor**(i_m - i_n) * -2.0 * (factor / omega)
+
+            # Term 2: A^(m-n) derivative
+            tmp2 = genlaguerre(n=i_n, alpha=(i_m - i_n))(factor**2)
+            if i_m - i_n > 1:
+                tmp2 *= ((i_m - i_n) / omega * (factor)**(i_m - i_n - 1))
+            else:
+                tmp2 *= (1.0 / omega)
+
+            # Term 3: Laguerre polynomial derivative
+            if i_n > 0:
+                tmp2 -= (factor)**(i_m - i_n) * (2.0 * factor / omega) \
+                        * genlaguerre(n=(i_n - 1), alpha=(i_m - i_n + 1))(factor**2)
+
+            # Scale terms by factorial and add together
+            ratio = factorial(i_n, exact=True) / factorial(i_m, exact=True)
+            delta_disp_mat[i_m, i_n] = numpy.sqrt(ratio) * (tmp1 + tmp2)
+            delta_disp_mat[i_n, i_m] = (-1.0)**(i_n - i_m) * delta_disp_mat[i_m, i_n] # upper triangle
+
+        # Compute diagonal elements
+        for ind_m in range(mdim):
+            delta_disp_mat[ind_m, ind_m] = genlaguerre(n=ind_m, alpha=0)(factor**2) \
+                                           * -2.0 * (factor / omega)
+            if ind_m > 0:
+                delta_disp_mat[ind_m, ind_m] -= (2.0 * factor / omega) \
+                                                * genlaguerre(n=(ind_m - 1), alpha=1)(factor**2)
+
+        # Scale by Gaussian factor
+        gfact = numpy.exp(-0.5 * (factor)**2)
+        delta_disp_mat[:, :] *= gfact
+
+        # Contract with photon density matrix
+        exp_val = numpy.einsum("nm, mn...-> ...", pdm, delta_disp_mat, optimize=True)
+
+        return exp_val
+
+
+    def displacement_deriv_vt(self, mode, factor, pdm):
+
+        from scipy.special import genlaguerre, factorial
+
+        # Variables
+        mdim = self.nboson_states[mode]
+        couplings_var = self.couplings_var[mode]
+
+        # Initialize matrix
+        delta_disp_mat = numpy.zeros((mdim, mdim, *factor.shape))
+
+        # First compute lower triangle
+        ind_m, ind_n = numpy.tril_indices(mdim, k=-1)
+        for i_m, i_n in zip(ind_m, ind_n):
+
+            # Term 1: Gaussian factor derivative
+            tmp1 = genlaguerre(n=i_n, alpha=(i_m - i_n))(factor**2) \
+                   * factor**(i_m - i_n) * (factor ** 2) * (-1.0 / couplings_var)
+
+            # Term 2: A^(m-n) derivative
+            tmp2 = genlaguerre(n=i_n, alpha=(i_m - i_n))(factor**2)
+            if i_m - i_n > 1:
+                tmp2 *= ((i_m - i_n / couplings_var) * (factor)**(i_m - i_n - 1))
+            else:
+                tmp2 *= (factor / couplings_var)
+
+            # Term 3: Laguerre polynomial derivative
+            if i_n > 0:
+                tmp2 -= (factor)**(i_m - i_n) * (factor ** 2) * (1.0 / couplings_var) \
+                        * genlaguerre(n=(i_n - 1), alpha=(i_m - i_n + 1))(factor**2)
+
+            # Scale terms by factorial and add together
+            ratio = factorial(i_n, exact=True) / factorial(i_m, exact=True)
+            delta_disp_mat[i_m, i_n] = numpy.sqrt(ratio) * (tmp1 + tmp2)
+            delta_disp_mat[i_n, i_m] = (-1.0)**(i_n - i_m) * delta_disp_mat[i_m, i_n] # upper triangle
+
+        # Compute diagonal elements
+        for ind_m in range(mdim):
+            delta_disp_mat[ind_m, ind_m] = genlaguerre(n=ind_m, alpha=0)(factor**2) \
+                                           * (factor ** 2) * (-1.0 / couplings_var)
+            if ind_m > 0:
+                delta_disp_mat[ind_m, ind_m] -= (factor ** 2) * (1.0 / couplings_var) \
+                                                * genlaguerre(n=(ind_m - 1), alpha=1)(factor**2)
+
+        # Scale by Gaussian factor
+        gfact = numpy.exp(-0.5 * (factor)**2)
+        delta_disp_mat[:, :] *= gfact
+
+        # Contract with photon density matrix
+        exp_val = numpy.einsum("nm, mn...-> ...", pdm, delta_disp_mat, optimize=True)
+
+        return exp_val
+
 
     def get_boson_occ(self):
         r"""Return photon ``mode`` density matrix.
@@ -696,6 +855,7 @@ class Boson(object):
 
 
     def get_boson_dm(self, mode=None):
+        # TODO: Remove eventually?
         r"""Return photon ``mode`` density matrix.
 
         Parameters
@@ -722,7 +882,7 @@ class Boson(object):
         return numpy.outer(numpy.conj(bc), bc)
 
 
-    def update_boson_coeff(self, eref, dm):
+    def update_boson_coeff(self, dm):
         r"""Update eigenvectors for all modes in :class:`Boson`.
 
         Construct and diagonalize photonic component of the
@@ -773,8 +933,6 @@ class Boson(object):
 
         Parameters
         ----------
-        eref : float
-            Reference electronic energy.
         dm : :class:`~numpy.ndarray`
             Density matrix.
 
@@ -784,50 +942,25 @@ class Boson(object):
             Eigenvalues and eigenvectors of the photonic Hamiltonian.
         """
 
-        # use the new get_bosonic_Ham to get the matrix
-
-        # # Total photon energy
-        # ph_e_tot = 0.0
-
-        # for a in range(self.nmodes):
-        #     mdim = self.nboson_states[a]
-
-        #     # Diagonal terms
-        #     hmat = numpy.diag(self.omega[a] * numpy.arange(mdim))
-
-        #     # Off diagonal terms, scaled by bilinear-coupling term and residual
-        #     # coupling values, if the cavity mode has non-zero photon occupation
-        #     # Also, photonic Hamiltonian is diagonal in CS representation
-        #     if mdim > 1 and self.use_cs == False:
-
-        #         h_od = numpy.diag(numpy.sqrt(numpy.arange(1, mdim)), k = 1) \
-        #                 + numpy.diag(numpy.sqrt(numpy.arange(1, mdim)), k = -1)
-
-        #         za = lib.einsum("pq, qp-> ", self.get_geb_ao(a), dm)
-        #         za *= self.couplings_res[a]
-
-        #         hmat -= (h_od * za)
-
-        #     # Photon cavity mode eigenvectors
-        #     self.boson_coeff[a] = h_evec = self._mf.eig(hmat, numpy.eye(mdim))[1]
-
-        #     # Photon mode energy
-        #     mode_e_tot = 0.0
-        #     for n in range(mdim):
-        #         coeff_term = numpy.conj(h_evec[n, 0]) * h_evec[n, 0]
-        #         mode_e_tot += self.omega[a] * n * coeff_term
-        #     ph_e_tot += mode_e_tot # add to total photon energy
-        # self.e_boson = ph_e_tot
-
         # we assume noninteracting bosons at this moment
         za = lib.einsum("pq, Xpq ->X", dm, self.gmat) - self.z_alpha
         za *= self.couplings_res * numpy.sqrt(self.omega/2.0) # only consider the residual part
 
+        # Bilinear SC-/VT-QED terms (nphoton > 1)
+        bilinear = numpy.zeros(self.nmodes)
+        if hasattr(self._mf, "eta"):
+            bilinear = numpy.einsum("ap, app-> a", self._mf.eta, self._mf.dm_do)
+            bilinear *= (self.couplings * self.couplings_var)
+        else:
+            bilinear = None
+
+        # Squeezing parameter values
         Fa = self.squeezed_var
-        hmat = get_bosonic_Ham(self.nmodes, self.nboson_states, self.omega, za, Fa)
+
+        # Bosonic Hamiltonian matrix
+        hmat = get_bosonic_Ham(self.nmodes, self.nboson_states, self.omega, za, Fa, sc=bilinear)
 
         # Photon cavity mode eigenvectors
-        # h_evec = self._mf.eig(hmat, numpy.eye(sum(nboson_states)))[1]
         e, c = scipy.linalg.eigh(hmat)
         idx = numpy.argmax(abs(c.real), axis=0)
         e = e[idx]
@@ -835,7 +968,7 @@ class Boson(object):
 
         # Photon ground state energy
         Etot = 0.0
-        # we did't include ZPE here
+        # we did't include ZPE here # TODO: Double-check
         idx = 0
         for imode in range(self.nmodes):
             mdim = self.nboson_states[imode]
@@ -854,130 +987,130 @@ class Boson(object):
         return self
 
 
-    def update_mean_field(self, mf, **kwargs):
-        r"""
-        Update with attributes from mean-field object, parameter ``mf``.
+    # def update_mean_field(self, mf, **kwargs):
+    #     r"""
+    #     Update with attributes from mean-field object, parameter ``mf``.
 
-        Called by OpenMS mean-field constructors, save in :attr:`._mf`.
-        Overwrite :attr:`verbose` and :attr:`stdout` values. For each ``mode``,
-        call :func:`init_boson_coeff_guess` to save initial boson coefficient
-        guess in :attr:`boson_coeff`.
+    #     Called by OpenMS mean-field constructors, save in :attr:`._mf`.
+    #     Overwrite :attr:`verbose` and :attr:`stdout` values. For each ``mode``,
+    #     call :func:`init_boson_coeff_guess` to save initial boson coefficient
+    #     guess in :attr:`boson_coeff`.
 
-        If ``couplings_var`` keyword argument is provided to function:
-            1. store in :attr:`couplings_var`,
-            2. update :attr:`optimize_varf` flag to ``True``,
-            3. call :func:`update_couplings` to update
-               :attr:`couplings_res`.
+    #     If ``couplings_var`` keyword argument is provided to function:
+    #         1. store in :attr:`couplings_var`,
+    #         2. update :attr:`optimize_varf` flag to ``True``,
+    #         3. call :func:`update_couplings` to update
+    #            :attr:`couplings_res`.
 
-        :attr:`optimize_varf` flag update **(in step 2, above)** can
-        be overwritten/undone if additional ``optimize_varf=False``
-        keyword argument is provided.
+    #     :attr:`optimize_varf` flag update **(in step 2, above)** can
+    #     be overwritten/undone if additional ``optimize_varf=False``
+    #     keyword argument is provided.
 
-        Parameters
-        ----------
-        mf : :class:`RHF <mqed.qedhf.RHF>`
-            Instance of OpenMS mean-field class.
+    #     Parameters
+    #     ----------
+    #     mf : :class:`RHF <mqed.qedhf.RHF>`
+    #         Instance of OpenMS mean-field class.
 
-        Keyword Arguments
-        -----------------
-        couplings_var : float, :class:`list[floats] <list>`, :class:`~numpy.ndarray`
-            Variational parameter values, :math:`f_\alpha`.
-            **Optional**
-        optimize_varf : bool
-            Whether to optimize variational parameters.
-            **Optional,** ``default = False``
+    #     Keyword Arguments
+    #     -----------------
+    #     couplings_var : float, :class:`list[floats] <list>`, :class:`~numpy.ndarray`
+    #         Variational parameter values, :math:`f_\alpha`.
+    #         **Optional**
+    #     optimize_varf : bool
+    #         Whether to optimize variational parameters.
+    #         **Optional,** ``default = False``
 
-        Raises
-        ------
-        ValueError
-            Whenever provided parameter is not expected type or shape.
-        """
+    #     Raises
+    #     ------
+    #     ValueError
+    #         Whenever provided parameter is not expected type or shape.
+    #     """
 
-        self._mf = mf
-        self.verbose = mf.verbose
-        self.stdout = mf.stdout
-        self.nao = mf.nao
+    #     self._mf = mf
+    #     self.verbose = mf.verbose
+    #     self.stdout = mf.stdout
+    #     self.nao = mf.nao
 
-        # Variational parameters and optimization flag (if provided)
-        if "couplings_var" in kwargs and kwargs["couplings_var"] is not None:
+    #     # Variational parameters and optimization flag (if provided)
+    #     if "couplings_var" in kwargs and kwargs["couplings_var"] is not None:
 
-            # QED-HF
-            if type(self._mf) == qedhf.RHF:
-                warn_msg = f"QED-HF does not require variational parameters."
-                logger.warn(self, warn_msg)
+    #         # QED-HF
+    #         if type(self._mf) == qedhf.RHF:
+    #             warn_msg = f"QED-HF does not require variational parameters."
+    #             logger.warn(self, warn_msg)
 
-            # SC/VT-QED-HF
-            elif type(self._mf) in (scqedhf.RHF, vtqedhf.RHF):
+    #         # SC/VT-QED-HF
+    #         elif type(self._mf) in (scqedhf.RHF, vtqedhf.RHF):
 
-                if isinstance(kwargs["couplings_var"], list):
-                    kwargs["couplings_var"] = numpy.asarray(kwargs["couplings_var"],
-                                                            dtype=float)
+    #             if isinstance(kwargs["couplings_var"], list):
+    #                 kwargs["couplings_var"] = numpy.asarray(kwargs["couplings_var"],
+    #                                                         dtype=float)
 
-                if (not isinstance(kwargs["couplings_var"], numpy.ndarray) or
-                    kwargs["couplings_var"].size != self.nmodes):
-                    err_msg = f"Parameter 'couplings_var' does " + \
-                              f"not have dimension: len(omega)."
-                    logger.error(self, err_msg)
-                    raise ValueError(err_msg)
+    #             if (not isinstance(kwargs["couplings_var"], numpy.ndarray) or
+    #                 kwargs["couplings_var"].size != self.nmodes):
+    #                 err_msg = f"Parameter 'couplings_var' does " + \
+    #                           f"not have dimension: len(omega)."
+    #                 logger.error(self, err_msg)
+    #                 raise ValueError(err_msg)
 
-                # SC-QED-HF
-                if type(self._mf) == scqedhf.RHF:
+    #             # SC-QED-HF
+    #             if type(self._mf) == scqedhf.RHF:
 
-                    if not all(i == 1.0 for i in kwargs["couplings_var"]):
-                        err_msg = f"Value of 'f' parameter must be 1.0 for " + \
-                                  f"each mode when mean-field is SC-QED-HF."
-                        logger.error(self, err_msg)
-                        raise ValueError(err_msg)
+    #                 if not all(i == 1.0 for i in kwargs["couplings_var"]):
+    #                     err_msg = f"Value of 'f' parameter must be 1.0 for " + \
+    #                               f"each mode when mean-field is SC-QED-HF."
+    #                     logger.error(self, err_msg)
+    #                     raise ValueError(err_msg)
 
-                    if ("optimize_varf" in kwargs and kwargs["optimize_varf"] == True):
-                        warn_msg = f"Cannot optimize 'f' in SC-QED-HF. " + \
-                                   f"Valus fixed to 1.0 for each mode."
-                        logger.warn(self, warn_msg)
+    #                 if ("optimize_varf" in kwargs and kwargs["optimize_varf"] == True):
+    #                     warn_msg = f"Cannot optimize 'f' in SC-QED-HF. " + \
+    #                                f"Valus fixed to 1.0 for each mode."
+    #                     logger.warn(self, warn_msg)
 
-                    self.couplings_var = kwargs["couplings_var"].copy()
-                    self.update_couplings()
-                    self.optimize_varf = False
+    #                 self.couplings_var = kwargs["couplings_var"].copy()
+    #                 self.update_couplings()
+    #                 self.optimize_varf = False
 
-                # VT-QEDHF
-                if type(self._mf) == vtqedhf.RHF:
+    #             # VT-QEDHF
+    #             if type(self._mf) == vtqedhf.RHF:
 
-                    self.couplings_var = kwargs["couplings_var"].copy()
-                    self.update_couplings()
-                    self.optimize_varf = True
+    #                 self.couplings_var = kwargs["couplings_var"].copy()
+    #                 self.update_couplings()
+    #                 self.optimize_varf = True
 
-                    if ("optimize_varf" in kwargs and kwargs["optimize_varf"] == False):
-                        self.optimize_varf = False
+    #                 if ("optimize_varf" in kwargs and kwargs["optimize_varf"] == False):
+    #                     self.optimize_varf = False
 
-            else:
-                err_msg = f"Mean-field object must be " + \
-                          f"instance of OpenMS QED object."
-                logger.error(self, err_msg)
-                raise ValueError(err_msg)
+    #         else:
+    #             err_msg = f"Mean-field object must be " + \
+    #                       f"instance of OpenMS QED object."
+    #             logger.error(self, err_msg)
+    #             raise ValueError(err_msg)
 
-        # Ensure SC/VT-QEDHF coupling is correct
-        else:
-            if type(self._mf) == scqedhf.RHF:
-                self.couplings_var = numpy.ones(self.nmodes,
-                                                dtype=float)
-                self.update_couplings()
-                self.optimize_varf = False
+    #     # Ensure SC/VT-QEDHF coupling is correct
+    #     else:
+    #         if type(self._mf) == scqedhf.RHF:
+    #             self.couplings_var = numpy.ones(self.nmodes,
+    #                                             dtype=float)
+    #             self.update_couplings()
+    #             self.optimize_varf = False
 
-            elif type(self._mf) == vtqedhf.RHF:
-                self.couplings_var = 0.5 * numpy.ones(self.nmodes,
-                                                      dtype=float)
-                self.update_couplings()
-                self.optimize_varf = True
+    #         elif type(self._mf) == vtqedhf.RHF:
+    #             self.couplings_var = 0.5 * numpy.ones(self.nmodes,
+    #                                                   dtype=float)
+    #             self.update_couplings()
+    #             self.optimize_varf = True
 
-        # Modified dipole moment matrix
-        self.dipole_ao = self.get_dipole_ao()
-        self.gmat = self.get_gmat_ao()
+    #     # Modified dipole moment matrix
+    #     self.dipole_ao = self.get_dipole_ao()
+    #     self.gmat = self.get_gmat_ao()
 
-        # Modified quadrupole moment matrix, only for "complete_basis"
-        if self.complete_basis:
-            self.quadrupole_ao = self.get_quadrupole_ao()
-            self.q_lambda_ao = self.get_q_lambda_ao()
+    #     # Modified quadrupole moment matrix, only for "complete_basis"
+    #     if self.complete_basis:
+    #         self.quadrupole_ao = self.get_quadrupole_ao()
+    #         self.q_lambda_ao = self.get_q_lambda_ao()
 
-        return self
+    #     return self
 
 
     def print_summary(self):
@@ -1003,9 +1136,9 @@ class Boson(object):
 
 
     def update_couplings(self):
-        """Update :attr:`couplings_res` by ``1.0 - couplings_var``."""
+        r"""Update :attr:`couplings_res` by ``1.0 - couplings_var``."""
         self.couplings_res = numpy.ones(self.nmodes) - self.couplings_var
-
+        return self
 
     def dump_flags(self):
         if self.verbose < logger.INFO:
@@ -1024,7 +1157,7 @@ class Boson(object):
         for a in range(self.nmodes):
             logger.info(self, '------ cavity mode #%s ------', (a + 1))
             logger.info(self, 'nboson_states[%s] = %d', *(a, self.nboson_states[a]))
-            logger.info(self, 'omega[%s] = %.1f', *(a, self.omega[a]))
+            logger.info(self, 'omega[%s] = %.2f', *(a, self.omega[a]))
             logger.info(self, 'vec[%s] = %.3f   %.3f   %.3f', *(a, *self.vec[a]))
             if self.use_cs:
                 logger.info(self, 'coherent_state[%s] = %.10f', *(a, self.z_alpha[a]))
@@ -1035,6 +1168,7 @@ class Boson(object):
             logger.info(self, '== %s ==', ("SC/VT-QED-HF"))
             logger.info(self, 'couplings_var[%s] = %.10f', *(a, self.couplings_var[a]))
             logger.info(self, 'couplings_res[%s] = %.10f', *(a, self.couplings_res[a]))
+
         return self
 
     # ----------------------
@@ -1085,10 +1219,8 @@ class Boson(object):
         raise NotImplementedError
 
     def construct_g_dse_JK(self):
-        r"""
-        DSE-mediated JK matrix
-        """
-        raise NotImplementedError
+        r"""DSE-mediated JK matrix"""
+        raise NotImplementedError("Subclasses must implement this method.")
 
 
 class Photon(Boson):
@@ -1105,6 +1237,8 @@ class Photon(Boson):
         self.ca = self.cb = None
         self.na = self.nb = None
         self.const = None
+
+        return
 
     # --------------
     # QED-HF methods
@@ -1139,6 +1273,7 @@ class Photon(Boson):
 
         if self.use_cs:
             self.z_alpha = lib.einsum("pq, Xpq ->X", dm, self.gmat)
+        return self
 
 
     def add_oei_ao(self, dm, s1e=None, residue=False, compute_grad=False):
@@ -1180,8 +1315,9 @@ class Photon(Boson):
             \boldsymbol{h}_{\text{CS}} &= \boldsymbol{h}_{\text{DSE}} - \boldsymbol{\tilde{d}}^\alpha
                                 \sum_\alpha \sum_{\mu\nu} \rho_{\mu\nu}
                                 \cdot \bra{\mu}{\hat{D}}\ket{\nu} \\
-            \boldsymbol{\tilde{d}}^\alpha_{\mu\nu} &= \lambda_\alpha
-                                           \cdot \boldsymbol{D}^\alpha_{\mu\nu}
+            \boldsymbol{\tilde{d}}^\alpha_{\mu\nu}
+                                     &= \lambda_\alpha
+                                        \cdot \boldsymbol{D}^\alpha_{\mu\nu}
 
         where :math:`\boldsymbol{D}^\alpha` is the polarized dipole moment matrix in
         the AO basis.
@@ -1237,14 +1373,12 @@ class Photon(Boson):
         ------
         dse_oei : :class:`~numpy.ndarray`
             DSE-mediated OEI for all photon modes.
-
         """
+
+        if s1e is None: s1e = self._mf.get_ovlp(self._mol)
 
         self.get_q_dot_lambda()
         self.get_gmatao()
-        if s1e is None:
-            s1e = self._mf.get_ovlp(self._mol)
-
         if self.use_cs:
             self.update_cs(dm)
 
@@ -1313,148 +1447,151 @@ class Photon(Boson):
         return oei
 
 
-    def get_dse_hcore(self, dm=None, s1e=None, residue=False):
-        r"""Compute QED-RHF boson-mediated 1e- integrals.
+    # def get_dse_hcore(self, dm=None, s1e=None, residue=False):
+    #     r"""Compute QED-RHF boson-mediated 1e- integrals.
 
-        Deprecation warning:
-        this function will be deprecated as it same as add_oei_ao and
-        this term include bilinear as well. the function name is misleading
+    #     Deprecation warning:
+    #     this function will be deprecated as it same as add_oei_ao and
+    #     this term include bilinear as well. the function name is misleading
 
-        Regardless of Fock basis or coherent-state (CS) representation,
-        return quadrupole-modified OEI contribution, which arises
-        from the DSE term of the PF Hamiltonian:
+    #     Regardless of Fock basis or coherent-state (CS) representation,
+    #     return quadrupole-modified OEI contribution, which arises
+    #     from the DSE term of the PF Hamiltonian:
 
-        .. math::
-            \boldsymbol{h}_{\text{DSE}} &= \boldsymbol{h}_{\text{bare}} - \frac{1}{2}
-                                 \sum_\alpha \sum_{\mu\nu} \rho_{\mu\nu}
-                                 \cdot \boldsymbol{\tilde{q}}^\alpha_{\mu\nu} \\
-            \boldsymbol{\tilde{q}}^\alpha_{\mu\nu} &= \lambda_{\alpha}^2
-                                           \cdot \boldsymbol{Q}^\alpha_{\mu\nu}
+    #    .. math::
+    #        \boldsymbol{h}_{\text{DSE}} &= \boldsymbol{h}_{\text{bare}} - \frac{1}{2}
+    #                             \sum_\alpha \sum_{\mu\nu} \rho_{\mu\nu}
+    #                             \cdot \boldsymbol{\tilde{q}}^\alpha_{\mu\nu} \\
+    #        \boldsymbol{\tilde{q}}^\alpha_{\mu\nu} &= \lambda_{\alpha}^2
+    #                                       \cdot \boldsymbol{Q}^\alpha_{\mu\nu}
+    #
+    #    where :math:`\boldsymbol{Q}^\alpha` is the polarized quadrupole moment matrix
+    #    in the AO basis.
 
-        where :math:`\boldsymbol{Q}^\alpha` is the polarized quadrupole moment matrix
-        in the AO basis.
+    #     In CS representation, when :attr:`use_cs` ``= True``, additional
+    #     DSE-mediated contribution to the OEI is included:
 
-        In CS representation, when :attr:`use_cs` ``= True``, additional
-        DSE-mediated contribution to the OEI is included:
+    #    .. math::
+    #        \boldsymbol{h}_{\text{CS}} &= \boldsymbol{h}_{\text{DSE}}
+    #                                    - \boldsymbol{\tilde{d}}^\alpha
+    #                            \sum_\alpha \sum_{\mu\nu} \rho_{\mu\nu}
+    #                            \cdot \bra{\mu}{\hat{D}}\ket{\nu} \\
+    #        \boldsymbol{\tilde{d}}^\alpha_{\mu\nu} &= \lambda_\alpha
+    #                                       \cdot \boldsymbol{D}^\alpha_{\mu\nu}
 
-        .. math::
-            \boldsymbol{h}_{\text{CS}} &= \boldsymbol{h}_{\text{DSE}} - \boldsymbol{\tilde{d}}^\alpha
-                                \sum_\alpha \sum_{\mu\nu} \rho_{\mu\nu}
-                                \cdot \bra{\mu}{\hat{D}}\ket{\nu} \\
-            \boldsymbol{\tilde{d}}^\alpha_{\mu\nu} &= \lambda_\alpha
-                                           \cdot \boldsymbol{D}^\alpha_{\mu\nu}
+    #    where :math:`\boldsymbol{D}^\alpha` is the polarized dipole moment matrix in
+    #    the AO basis.
 
-        where :math:`\boldsymbol{D}^\alpha` is the polarized dipole moment matrix in
-        the AO basis.
+    #     Also in CS representation, :math:`E_{\text{QED-HF}}` includes DSE
+    #     term:
 
-        Also in CS representation, :math:`E_{\text{QED-HF}}` includes DSE
-        term:
+    #    Also in CS representation, :math:`E_{\text{QED-HF}}` includes DSE
+    #    term:
 
-        .. math::
-            E_{\text{QED-HF}} = E_{\text{HF}}
-                            + \frac{1}{2} \sum_\alpha
-                              \langle
-                              [ \lambda_\alpha \cdot
-                                (\hat{D} - \langle{\hat{D}}\rangle_{\mu\nu})
-                              ]^2
-                              \rangle
+    #    .. math::
+    #        E_{\text{QED-HF}} = E_{\text{HF}}
+    #                        + \frac{1}{2} \sum_\alpha
+    #                          \langle
+    #                          [ \lambda_\alpha \cdot
+    #                            (\hat{D} - \langle{\hat{D}}\rangle_{\mu\nu})
+    #                          ]^2
+    #                          \rangle
 
-        that can also be included via the OEI, since:
+    #    that can also be included via the OEI, since:
 
-        .. math::
-            \langle
-            [ \lambda_\alpha
-            \cdot (\hat{D} - \langle{\hat{D}}\rangle_{\mu\nu})]^2
-            \rangle
-            &= \langle [ \lambda_\alpha
-               \cdot (\hat{D} - \langle{\hat{D}}\rangle_{\mu\nu})]^2
-               \rangle
-               \cdot \frac{\text{Tr}[\boldsymbol{S} \cdot \boldsymbol{\rho}]}
-               {N_{\text{elec}}} \\
-            &= \text{Tr}
-               \left[
-               \frac{[ \lambda_\alpha \cdot
-               (\hat{D} - \langle{\hat{D}}\rangle_{\mu\nu})]^2}
-               {N_{\text{elec}}} \boldsymbol{S} \cdot \boldsymbol{\rho}
-               \right]
+    #    .. math::
+    #        \langle
+    #        [ \lambda_\alpha
+    #        \cdot (\hat{D} - \langle{\hat{D}}\rangle_{\mu\nu})]^2
+    #        \rangle
+    #        &= \langle [ \lambda_\alpha
+    #           \cdot (\hat{D} - \langle{\hat{D}}\rangle_{\mu\nu})]^2
+    #           \rangle
+    #           \cdot \frac{\text{Tr}[\boldsymbol{S} \cdot \boldsymbol{\rho}]}
+    #           {N_{\text{elec}}} \\
+    #        &= \text{Tr}
+    #           \left[
+    #           \frac{[ \lambda_\alpha \cdot
+    #           (\hat{D} - \langle{\hat{D}}\rangle_{\mu\nu})]^2}
+    #           {N_{\text{elec}}} \boldsymbol{S} \cdot \boldsymbol{\rho}
+    #           \right]
 
-        where :math:`\boldsymbol{\rho}` is the provided electronic density matrix,
-        ``dm``.
+    #    where :math:`\boldsymbol{\rho}` is the provided electronic density matrix,
+    #    ``dm``.
 
-        Parameters
-        ----------
-        dm : :class:`~numpy.ndarray`
-            Density matrix.
-        s1e : :class:`~numpy.ndarray`
-            Overlap matrix, **optional**
-            (computed if not provided).
-        residue : bool
-            Multiply by pre-factor if ``True``.
+    #     Parameters
+    #     ----------
+    #     dm : :class:`~numpy.ndarray`
+    #         Density matrix.
+    #     s1e : :class:`~numpy.ndarray`
+    #         Overlap matrix, **optional**
+    #         (computed if not provided).
+    #     residue : bool
+    #         Multiply by pre-factor if ``True``.
 
-              - used by VT-QED-HF solver
-              - **optional,** ``default = False``
+    #           - used by VT-QED-HF solver
+    #           - **optional,** ``default = False``
 
-        Return
-        ------
-        dse_oei : :class:`~numpy.ndarray`
-            DSE-mediated OEI for all photon modes.
-        """
+    #     Return
+    #     ------
+    #     dse_oei : :class:`~numpy.ndarray`
+    #         DSE-mediated OEI for all photon modes.
+    #     """
 
-        warnings.warn(
-            "The 'get_dse_hcore' function is deprecated, please use add_oei_ao" +
-            "instead because since boson-mediated oei part includes both DSE and bilinear term",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+    #     warnings.warn(
+    #         "The 'get_dse_hcore' function is deprecated, please use add_oei_ao" +
+    #         "instead because since boson-mediated oei part includes both DSE and bilinear term",
+    #         DeprecationWarning,
+    #         stacklevel=2,
+    #     )
 
-        if s1e is None:
-            s1e = self._mf.get_ovlp(self._mol)
+    #     if s1e is None:
+    #         s1e = self._mf.get_ovlp(self._mol)
 
-        # Always shift OEI with photon ground state energy
-        dse_oei = self.e_boson * s1e / self.nelectron
+    #     # Always shift OEI with photon ground state energy
+    #     dse_oei = self.e_boson * s1e / self.nelectron
 
-        # DSE contribution
-        g_dse = numpy.ones(self.nmodes) if not residue else \
-                (self.couplings_res ** 2)
+    #     # DSE contribution
+    #     g_dse = numpy.ones(self.nmodes) if not residue else \
+    #             (self.couplings_res ** 2)
 
-        if self.complete_basis:
-            dse_oei -= 0.5 * lib.einsum("X, Xpq-> pq", g_dse, self.q_lambda_ao)
-        else:
-            s_eval, s_evec = scipy.linalg.eigh(s1e)
-            idx = s_eval > 1e-15
-            s_inv = numpy.dot(s_evec[:, idx] / s_eval[idx], s_evec[:, idx].conj().T)
+    #     if self.complete_basis:
+    #         dse_oei -= 0.5 * lib.einsum("X, Xpq-> pq", g_dse, self.q_lambda_ao)
+    #     else:
+    #         s_eval, s_evec = scipy.linalg.eigh(s1e)
+    #         idx = s_eval > 1e-15
+    #         s_inv = numpy.dot(s_evec[:, idx] / s_eval[idx], s_evec[:, idx].conj().T)
 
-            tmp_term = lib.einsum("Xpr, rs, Xsq-> Xpq", self.gmat, s_inv, self.gmat)
-            dse_oei += 0.5 * lib.einsum("X, Xpq-> pq", g_dse, tmp_term)
-            del (tmp_term)
+    #         tmp_term = lib.einsum("Xpr, rs, Xsq-> Xpq", self.gmat, s_inv, self.gmat)
+    #         dse_oei += 0.5 * lib.einsum("X, Xpq-> pq", g_dse, tmp_term)
+    #         del (tmp_term)
 
-        # DSE contributions to OEI and total energy from coherent-state representation
-        if self.use_cs == True:
-            dse_oei += 0.5 * numpy.sum(self.z_alpha**2 * g_dse) * s1e / self.nelectron
-            dse_oei -= lib.einsum("X, Xpq-> pq", g_dse * self.z_alpha, self.gmat)
+    #     # DSE contributions to OEI and total energy from coherent-state representation
+    #     if self.use_cs == True:
+    #         dse_oei += 0.5 * numpy.sum(self.z_alpha**2 * g_dse) * s1e / self.nelectron
+    #         dse_oei -= lib.einsum("X, Xpq-> pq", g_dse * self.z_alpha, self.gmat)
 
-        # E-P bilinear coupling contribution
-        g_ep = numpy.ones(self.nmodes) if not residue else \
-               self.couplings_res
+    #     # E-P bilinear coupling contribution
+    #     g_ep = numpy.ones(self.nmodes) if not residue else \
+    #            self.couplings_res
 
-        ep_term = numpy.zeros((self.nao, self.nao))
-        for a in range(self.nmodes):
+    #     ep_term = numpy.zeros((self.nao, self.nao))
+    #     for a in range(self.nmodes):
 
-            shift = s1e * self.z_alpha[a]
-            gtmp = (self.gmat[a] - shift) * numpy.sqrt(0.5 * self.omega[a])
-            gtmp *= g_ep[a]
+    #         shift = s1e * self.z_alpha[a]
+    #         gtmp = (self.gmat[a] - shift) * numpy.sqrt(0.5 * self.omega[a])
+    #         gtmp *= g_ep[a]
 
-            ph_exp_val = self.get_bdag_minus_b_expval(a)
-            ep_term += (gtmp * ph_exp_val)
+    #         ph_exp_val = self.get_bdag_minus_b_expval(a)
+    #         ep_term += (gtmp * ph_exp_val)
 
-        dse_oei -= ep_term
-        del (g_ep, shift, gtmp, ph_exp_val, ep_term)
+    #     dse_oei -= ep_term
+    #     del (g_ep, shift, gtmp, ph_exp_val, ep_term)
 
-        return dse_oei
+    #     return dse_oei
 
 
-    def get_dse_jk(
-        self, dm, residue=False):
+    def get_dse_jk(self, dm, residue=False): # TODO: Check if this is also depreciated?
         r"""
         Return DSE-mediated :math:`J` and :math:`K` matrices.
 
@@ -1589,20 +1726,22 @@ class Photon(Boson):
 
         return lib.einsum("X, Xuv-> Xuv", (self.couplings ** 2), q_lambda_ao)
 
+
     def get_q_dot_lambda(self):
         r"""same as get_q_lambda_ao, one of them will be deprecated!!!"""
         # Tensor:  <u|r_i * r_y> * v_x * v_y
         if self.q_lambda_ao is None:
-            nao = self._mol.nao_nr()
-            self.q_lambda_ao = numpy.empty((self.nmodes, nao, nao))
+            self.q_lambda_ao = numpy.empty((self.nmodes, self.nao, self.nao))
+
             if self.quadrupole_ao is None:
                 self.quadrupole_ao = self.get_quadrupole_ao()
+
             for mode in range(self.nmodes):
                 x_out_y = numpy.outer(self.vec[mode], self.vec[mode]).reshape(-1)
                 x_out_y *= self.couplings[mode] ** 2
                 self.q_lambda_ao[mode] = numpy.einsum("J,Juv->uv", x_out_y, self.quadrupole_ao)
-
         logger.debug(self, f" Norm of Q_ao {numpy.linalg.norm(self.q_lambda_ao)}")
+        return self
 
 
     def get_dipole_ao(self):
@@ -1620,8 +1759,8 @@ class Photon(Boson):
 
         if self.dipole_ao is None:
             self.dipole_ao = self.get_dipole_ao()
-        x_dot_mu_ao = numpy.einsum("x,xuv->uv", self.vec[mode], self.dipole_ao)
-        return x_dot_mu_ao
+
+        return numpy.einsum("x,xuv->uv", self.vec[mode], self.dipole_ao)
 
 
     def get_gmat_ao(self):
@@ -1649,6 +1788,7 @@ class Photon(Boson):
 
         return lib.einsum("X, Xuv-> Xuv", self.couplings, gmat)
 
+
     def get_gmatao(self):
         r"""Compute interaction matrix for all modes in AO basis.
 
@@ -1670,14 +1810,17 @@ class Photon(Boson):
         """
 
         if self.gmat is None:
-            nao = self._mol.nao_nr()
-            gmat = numpy.empty((self.nmodes, nao, nao))
+            gmat = numpy.empty((self.nmodes, self.nao, self.nao))
+
             for mode in range(self.nmodes):
                 gmat[mode] = self.get_polarized_dipole_ao(mode) #* self.couplings[mode]
                 logger.debug(self, f" Norm of gao without w {numpy.linalg.norm(gmat[mode])}")
+
                 gmat[mode] *= self.couplings[mode]
                 #gmat = numpy.einsum("Jx,J,xuv->Juv", self.vec, self.gfac, self.dipole_ao)
             self.gmat = gmat
+
+        return self
 
 
     def get_geb_ao(self, mode):
@@ -1710,16 +1853,7 @@ class Photon(Boson):
 
         return g_eb
 
-    def get_bdag_plus_b_sq_expval(self, mode):
-
-        mdim = self.nboson_states[mode]
-
-        h_diag = numpy.diag(2 * numpy.arange(mdim))
-        pdm = self.get_boson_dm(mode)
-        return numpy.sum(h_diag * pdm)
-
-
-    def get_bdag_minus_b_expval(self, mode):
+    def get_bdag_minus_b_expval(self, mode): # TODO: Probably remove this eventually
 
         mdim = self.nboson_states[mode]
 
@@ -1816,7 +1950,6 @@ class Photon(Boson):
         if self.ca is None: self.get_mos()
 
         na, nb = self.na, self.nb
-        va, vb = self.nmo // 2 - na, self.nmo // 2 - nb
         Co = block_diag(self.ca[:, :na], self.cb[:, :nb])
         Cv = block_diag(self.ca[:, na:], self.cb[:, nb:])
 
@@ -1849,12 +1982,11 @@ class Photon(Boson):
         from pyscf import ao2mo
         if self.ca is None: self.get_mos()
 
-        na, nb = self.na, self.nb
-        va, vb = self.nmo // 2 - na, self.nmo // 2 - nb
         nao = self.nmo // 2
+        na, nb = self.na, self.nb
         C = numpy.hstack((self.ca, self.cb))
 
-        if False:
+        if False: # TODO: potential error? if full==False?
             # don't add DSE-mediated eri
             eri = ao2mo.general(self._mol, [C,]*4, compact=False).reshape([self.nmo,]*4)
         else:
@@ -1868,7 +2000,9 @@ class Photon(Boson):
 
         Ua_mo = eri.transpose(0, 2, 1, 3) - eri.transpose(0, 2, 3, 1)
         logger.debug(self, f" -YZ: Norm of I with DSE eri {numpy.linalg.norm(Ua_mo)}")
-        if full: return Ua_mo
+
+        if full:
+            return Ua_mo
 
         temp = [i for i in range(self.nmo)]
         oidx = temp[:na] + temp[self.nmo // 2 : self.nmo // 2 + nb]
@@ -1898,18 +2032,17 @@ class Photon(Boson):
                vvoo=vvoo, oovv=oovv,
                vovo=vovo, vooo=vooo,
                ooov=ooov, oooo=oooo)
-
-
     g_aint = get_I
 
 
     def mfG(self):
         if self.pa is None: self.get_mos()
+
         ptot = block_diag(self.pa, self.pb)
-        g = self.gmatso
         if self.shift:
             mfG = numpy.zeros(self.nmodes)
         else:
+            g = self.gmatso
             mfG = numpy.einsum("Ipq,qp->I", g, ptot)
 
         return (mfG, mfG)
@@ -1917,12 +2050,13 @@ class Photon(Boson):
 
     def gint(self):
         if self.ca is None: self.get_mos()
-        g = self.gmatso.copy()
+
         na = self.na
         nb = self.nb
         Co = block_diag(self.ca[:, :na], self.cb[:, :nb])
         Cv = block_diag(self.ca[:, na:], self.cb[:, nb:])
 
+        g = self.gmatso.copy()
         oo = numpy.einsum("Ipq,pi,qj->Iij", g, Co, Co)
         ov = numpy.einsum("Ipq,pi,qa->Iia", g, Co, Cv)
         vo = numpy.einsum("Ipq,pa,qi->Iai", g, Cv, Co)
@@ -1933,18 +2067,13 @@ class Photon(Boson):
 
 
     def get_gmat_so(self):
-        r"""
-        e-photon coupling matrix
-        """
-
-        if self.dipole_ao is None:
-            self.get_dipole_ao()
-        if self.quadrupole_ao is None:
-            self.get_quadrupole_ao()
+        r"""e-photon coupling matrix in SO basis."""
+        if self.dipole_ao is None: self.get_dipole_ao()
+        if self.quadrupole_ao is None: self.get_quadrupole_ao()
         if self.pa is None: self.get_mos()
 
-        self.get_gmat_ao()
 
+        self.get_gmat_ao()
         # gmatso
         #gmatso = [
         #    block_diag(self.gmat[i], self.gmat[i]) for i in range(len(self.gmat))
@@ -1965,7 +2094,7 @@ class Photon(Boson):
             self.const = -numpy.einsum("I,I->", self.omega, self.xi**2)
             #print("Test: DSE enrgy is", self.const)
 
-
+        return self
     kernel = get_gmat_so
 
 
@@ -1973,7 +2102,6 @@ class Photon(Boson):
 class Phonon(Boson):
     r"""Phonon subclass."""
     def __init__(self, *args, **kwargs):
-
         super().__init__(*args, **kwargs)
 
         self.vmat = None  #
@@ -1981,10 +2109,10 @@ class Phonon(Boson):
     def relax(self):
         raise NotImplementedError("Method not implemented!")
 
+
 if __name__ == "__main__":
     import numpy
     from pyscf import gto
-    from openms.mqed import boson
     from openms.mqed import qedhf
 
     mol = gto.M()
@@ -1995,12 +2123,17 @@ if __name__ == "__main__":
     mol.build()
 
     nmodes = 1
+
     omega = numpy.zeros(nmodes)
     omega[0] = 0.5
+
+    gfac = numpy.zeros(nmodes)
+    gfac[0] = 0.05
+
     vec = numpy.zeros((nmodes, 3))
     vec[0, :] = 0.05 * numpy.asarray([0.0, 0.0, 1.0])
 
-    qed = boson.Photon(mol, omega=omega, vec=vec)
+    qed = Photon(mol, omega=omega, vec=vec)
     hf = qedhf.RHF(mol, qed)
     hf.max_cycle = 200
     hf.conv_tol = 1.0e-8

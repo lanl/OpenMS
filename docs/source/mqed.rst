@@ -22,28 +22,30 @@ The light-matter Hamiltonian of molecular quantum electrodynamics (mQED)
 is the Pauli-Fierz (PF) Hamiltonian:
 
 .. math::
-   \hat{H}_{\tt{PF}} &= \hat{H}_{\tt{e}} + \hat{H}_{\tt{p}}
-                      + \hat{H}_{\tt{ep}} + \hat{H}_{\tt{DSE}} \\
-                     &= \hat{H}_{\tt{e}} + \sum_\al \left[
-                        \hat{H}_{\tt{p}}^{\al}
-                        + \hat{H}_{\tt{ep}}^{\al}
-                        + \hat{H}_{\tt{DSE}}^{\al} \right]
+   \hat{H}_{\textt{PF}} &= \hat{H}_{\text{e}} + \hat{H}_{\text{p}}
+                         + \hat{H}_{\text{ep}} + \hat{H}_{\text{DSE}} \\
+                        &= \hat{H}_{\text{e}} + \sum_{\alpha}
+                           \left[ \hat{H}_{\text{p}}^{\alpha}
+                                  + \hat{H}_{\text{ep}}^{\alpha}
+                                  + \hat{H}_{\text{DSE}}^{\alpha}
+                           \right]
 where:
 
-- :math:`\hat{H}_{\tt{p}}` is the photonic Hamiltonian,
-- :math:`\hat{H}_{\tt{ep}}` is the bilinear electron-photon Hamiltonian,
-- :math:`\hat{H}_{\tt{DSE}}` is the dipole self-energy (DSE) Hamiltonian
+- :math:`\hat{H}_{\text{p}}` is the photonic Hamiltonian,
+- :math:`\hat{H}_{\text{ep}}` is the bilinear electron-photon Hamiltonian,
+- :math:`\hat{H}_{\text{DSE}}` is the dipole self-energy (DSE) Hamiltonian
 
-which are dependent on the modes of the photon, :math:`\al`. The matter
-(electronic) Hamiltonian, :math:`\hat{H}_{\tt{e}}`, is:
+which are dependent on the modes of the photon, :math:`\alpha`. The matter
+(electronic) Hamiltonian, :math:`\hat{H}_{\text{e}}`, is:
 
 .. math::
-   \hat{H}_{\tt{e}} = \sum_{pq} \h{p}{q} \cf{p} \af{q}
-                      + \frac{1}{2} \sum_{pqrs}
-                        \v{pq}{rs} \cf{p} \cf{q} \af{s} \af{r}
+   \hat{H}_{\text{e}} = \sum_{pq} h_{p}^{q} \hat{a}^{\dagger}_{p} \hat{a}_{q}
+                        + \frac{1}{2} \sum_{pqrs} v_{pq}^{rs}
+                          \hat{a}^{\dagger}_{p} \hat{a}^{\dagger}_{q}
+                          \hat{a}_{s} \hat{a}_{r}
 where:
 
-- :math:`\cf{}` and :math:`\af{}` are fermionic single-particle
+- :math:`\hat{a}^{\dagger}` and :math:`\hat{a}` are fermionic single-particle
   creation and annihilation operators, and
 - :math:`\{pqrs\}` are general electron orbital indices.
 
@@ -52,29 +54,33 @@ where:
 Expanded, the terms of the PF Hamiltonian are:
 
 .. math::
-   \hat{H}_{\tt{PF}} &= \hat{H}_e + \sum_\al
-                        \left[
-                        \om_\al \cb{\al} \ab{\al}
-                        + \sqrt{\frac{\om_\al}{2}}\bm{\la}_\al
-                          \cdot \hat{D} (\cb{\al} + \ab{\al})
-                        + \frac{1}{2} (\bm{\la}_\al \cdot \hat{D})^2
-                        \right] \\
-                     &= \hat{H}_e + \sum_\al
-                        \left[
-                        \om_\al \cb{\al} \ab{\al}
-                        + \sqrt{\frac{\om_\al}{2}} \bm{e}_{\al}
-                          \cdot \la_\al \cdot \hat{D} (\cb{\al} + \ab{\al})
-                        + \frac{1}{2} (\bm{e}_{\al} \cdot \la_\al
-                          \cdot \hat{D})^2
-                        \right]
+   \hat{H}_{\text{PF}} &= \hat{H}_{e} + \sum_{\alpha}
+                          \left[ \omega_{\alpha}
+                                 \hat{b}^{\dagger}_{\alpha}
+                                 \hat{b}_{\alpha}
+                                 + \sqrt{ \frac{\omega_{\alpha}}{2} }
+                                   \boldsymbol{\lambda}_{\alpha} \cdot \hat{D}
+                                   ( \hat{b}^{\dagger}_{\alpha} + \hat{b}_{\alpha} )
+                                 + \frac{1}{2} ( \boldsymbol{\lambda}_{\alpha} \cdot \hat{D} )^2
+                          \right] \\
+                       &= \hat{H}_{e} + \sum_{\alpha}
+                          \left[ \omega_{\alpha}
+                                 \hat{b}^{\dagger}_{\alpha}
+                                 \hat{b}_{\alpha}
+                                 + \sqrt{ \frac{\omega_{\alpha}}{2} }
+                                   \boldsymbol{e}_{\alpha} \cdot {\lambda}_{\alpha} \cdot \hat{D}
+                                   ( \hat{b}^{\dagger}_{\alpha} + \hat{b}_{\alpha} )
+                                 + \frac{1}{2} ( \boldsymbol{e}_{\alpha} \cdot {\lambda}_{\alpha}
+                                                 \cdot \hat{D} )^2
+                          \right] \\
 where:
 
-- :math:`\cb{\al}` and :math:`\ab{\al}` are bosonic
-  creation and annihilation operators of photon mode :math:`\al`,
-- :math:`\om_\al` is the frequency of the photon mode,
-- :math:`\la_\al = \sqrt{\frac{1}{\epsilon V_\al}}` is the
+- :math:`\hat{b}^{\dagger}_{\alpha}` and :math:`\hat{b}_{\alpha}` are bosonic
+  creation and annihilation operators of photon mode :math:`\alpha`,
+- :math:`\omega_{\alpha}` is the frequency of the photon mode,
+- :math:`\lambda_{\alpha} = \sqrt{ \frac{1}{\epsilon V_{\alpha}} }` is the
   amplitude/coupling strength of the photon mode,
-- :math:`\bm{e}_\al` is the unit vector of the photon mode,
+- :math:`\boldsymbol{e}_{\alpha}` is the unit vector of the photon mode,
 - :math:`V` is the cavity volume, and
 - :math:`\hat{D}` is the molecular dipole operator
   (electronic DOFs, can also include nuclear DOFs).
@@ -86,18 +92,21 @@ The QED-HF reference wavefunction ansatz is:
 
 .. math::
 
-   \ket{\Psi_{\tt{QED-HF}}} = \ket{\Psi_{\tt{HF}}}
-                              \otimes \ket{0_{\tt{p}}}
-where :math:`\ket{\Psi_{\tt{HF}}}` is the non-QED/HF wavefunction and
-:math:`\ket{0_{\tt{p}}}` are zero photon states:
+   \ket{\Psi_{\text{QED-HF}}} = \ket{\Psi_{\text{HF}}}
+                                \otimes \ket{0_{\text{p}}}
+where :math:`\ket{\Psi_{\text{HF}}}` is the non-QED/HF wavefunction and
+:math:`\ket{0_{\text{p}}}` are zero photon states:
 
 .. math::
-   \ket{0_{\tt{p}}} &= \prod_\al \left[
-                       \sum_{n} \ket{n} \right] \\
-                    &= \prod_\al \left[
-                       \bm{C}^n_{\al} \sum_{n}
-                       (\cb{\al})^n \ket{0} \right]
-in which each photon mode :math:`\al` is expressed in terms of
+   \ket{0_{\text{p}}} &= \prod_{\alpha}
+                         \left[ \sum_{n} \ket{n}
+                         \right] \\
+                      &= \prod_{\alpha}
+                         \left[ \boldsymbol{C}^{n}_{\alpha}
+                                \sum_{n} ( \hat{b}^{\dagger}_{\alpha} )^{n}
+                                \ket{0}
+                         \right]
+in which each photon mode :math:`\alpha` is expressed in terms of
 :math:`n`-normalized photon number states, :math:`\ket{n}`, each of
 which are defined in terms of the photon vacuum state, :math:`\ket{0}`.
 
@@ -114,44 +123,53 @@ The coherent-state (CS) representation is achieved by transforming the
 PF Hamiltonian above:
 
 .. math::
-   \ket{\Psi_{\tt{CS-QED-HF}}} &= \prod_\al
-                                  e^{z_\al (\ab{\al} - \cb{\al})}
-                                  \ket{\Psi_{\tt{QED-HF}}} \\
-                               &= \prod_\al
-                                  e^{z_\al \ab{\al} - {z^{*}_{\al}} \cb{\al}}
-                                  \ket{\Psi_{\tt{QED-HF}}} \\
-                               &= \bm{U_z} \ket{\Psi_{\tt{QED-HF}}}
-where :math:`z_\al` denotes the displacement due to the coupling of
-mode :math:`\al` with the electrons of the molecular system:
+   \ket{\Psi_{\text{CS-QED-HF}}} &= \prod_{\alpha}
+                                    e^{z_{\alpha}
+                                       ( \hat{b}_{\alpha}
+                                         - \hat{b}^{\dagger}_{\alpha} )
+                                      } \ket{\Psi_{\text{QED-HF}}} \\
+                                 &= \prod_{\alpha}
+                                    e^{z_{\alpha} \hat{b}_{\alpha}
+                                       - {z^{*}_{\alpha}} \hat{b}^{\dagger}_{\alpha}
+                                      } \ket{\Psi_{\text{QED-HF}}} \\
+                                 &= \boldsymbol{U_{z}} \ket{\Psi_{\text{QED-HF}}}
+where :math:`z_{\alpha}` denotes the displacement due to the coupling of
+mode :math:`\alpha` with the electrons of the molecular system:
 
 .. math::
-   z_{\al} = \sum_\al \frac{\la_\al \cdot \mel*{\mu}{\hat{D}}{\nu}}
-                           {\sqrt{2 \om_\al}}
+   z_{\alpha} = \sum_{\alpha} \frac{\lambda_{\alpha} \cdot \mel*{\mu}{\hat{D}}{\nu}}
+                                   {\sqrt{ 2 \omega_{\alpha} }}
 
-Consequently, :math:`\bm{U_z}` also transforms the original PF Hamiltonian,
-:math:`\bm{U}_{\bm{z}} \hat{H}_{\tt{PF}} \bm{U}^\dagger_{\bm{z}}`, to form
-CS Hamiltonian, :math:`\hat{H}_{CS}`:
+Consequently, :math:`\boldsymbol{U_z}` also transforms the original PF Hamiltonian,
+:math:`\boldsymbol{U}_{\boldsymbol{z}} \hat{H}_{\text{PF}}`
+:math:`\boldsymbol{U}^{\dagger}_{\boldsymbol{z}}`, to form CS Hamiltonian,
+:math:`\hat{H}_{CS}`:
 
 .. math::
-   \hat{H}_{CS} = \hat{H}_{\tt{e}}
-                &+ \sum_\al \om_\al \cb{\al} \ab{\al} \\
-                &- \sum_\al \sqrt{\frac{\om_\al}{2}}
-                            \mel*{\mu}{\bm{\la}_\al
-                            \cdot (\hat{D} - \ev*{\hat{D}}_{\mu\nu})}{\nu}
-                            (\cb{\al} + \ab{\al}) \\
-                &+ \sum_\al \frac{1}{2}
-                   \mel*{\mu}{[\bm{\la}_\al
-                            \cdot (\hat{D} - \ev*{\hat{D}}_{\mu\nu})]^2}{\nu}
+   \hat{H}_{CS} = \hat{H}_{\text{e}}
+                  &+ \sum_{\alpha} \omega_{\alpha}
+                     \hat{b}^{\dagger}_{\alpha} \hat{b}_{\alpha} \\
+                  &- \sum_{\alpha} \sqrt{ \frac{\omega_{\alpha}}{2} }
+                     \mel*{\mu}{\boldsymbol{\lambda}_{\alpha}
+                                \cdot ( \hat{D}
+                                        - \ev*{\hat{D}}_{\mu\nu} )}{\nu}
+                     ( \hat{b}^{\dagger}_{\alpha} + \hat{b}_{\alpha} ) \\
+                  &+ \sum_{\alpha} \frac{1}{2}
+                     \mel*{\mu}{[ \boldsymbol{\lambda}_{\alpha}
+                                  \cdot ( \hat{D}
+                                          - \ev*{\hat{D}}_{\mu\nu} ) ]^2}{\nu}
 
 In the CS representation, the QED-HF energy is subject to an DSE-dependent
 energy difference:
 
 .. math::
-   E_{\tt{QEDHF}} = E_{HF}
-                  + \frac{1}{2} \sum_\al
-                    \mel*{\mu}
-                         {[ \bm{\la}_\al \cdot (\hat{D} - \ev*{\hat{D}}_{\mu\nu})]^2}
-                         {\nu}
+   E_{\text{QEDHF}} = E_{HF}
+                      + \frac{1}{2} \sum_{\alpha}
+                        \mel*{\mu}
+                             {[ \boldsymbol{\lambda}_{\alpha}
+                                \cdot ( \hat{D}
+                                        - \ev*{\hat{D}}_{\mu\nu}) ]^2}{\nu}
+
 which is can also be added by modifiying the one-electron integrals. This is
 explained in more detail here: :meth:`~lib.boson.Photon.get_dse_hcore`.
 

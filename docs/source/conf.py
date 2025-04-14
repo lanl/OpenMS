@@ -68,6 +68,26 @@ mathjax3_config = {
                                  'mhchem']
             },
 
+            # 'macros': {'cf': ["\\hat{a}^{\\dagger}_{{#1}}", 1],
+            #            'af': ["\\hat{a}_{{#1}}", 1],
+            #            'cb': ["\\hat{b}^{\\dagger}_{{#1}}", 1],
+            #            'ab': ["\\hat{b}_{{#1}}", 1],
+            #            'al': "{\\alpha}",
+            #            'be': "{\\beta}",
+            #            'om': "{\\omega}",
+            #            'si': "{\\sigma}",
+            #            'la': "{\\lambda}",
+            #            'ra': "{\\rightarrow}",
+            #             'h': ["{h}_{{#1}}^{{#2}}", 2],
+            #             'f': ["{f}_{{#1}}^{{#2}}", 2],
+            #             'g': ["{g}_{{#1}}^{{#2}}", 2],
+            #             'v': ["{v}_{{#1}}^{{#2}}", 2],
+            #             't': ["{t}_{{#1}}^{{#2}}", 2],
+            #             'd': ["{\\delta}_{{#1}}^{{#2}}", 2],
+            #            'bm': ["\\boldsymbol{{#1}}", 1],
+            #            'tt': ["\\text{#1}", 1]
+            # },
+
             'mathtools': {'multlinegap': '1em',
                           'multlined-pos': 'c',
                           'firstline-afterskip': '',

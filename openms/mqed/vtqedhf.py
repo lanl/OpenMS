@@ -81,11 +81,11 @@ def newton_update(var, gradient, precond0):
 
 
 def entropy(rho):
-    r"""Compute lentropy for given density matrix
+    r"""Compute entropy for given density matrix
 
     .. math::
 
-        S = - K_B Tr[\rho\ln(\rho)]
+        S = - K_B Tr[\rho \text{ln}(\rho)]
     """
     e, _ = linalg.eigh(rho)
     e = e[e > 0]
@@ -161,7 +161,7 @@ class RHF(scqedhf.RHF):
 
     def gaussian_derivative_sq_vector(self, eta, imode, onebody=True):
         r"""
-        Compute derivative of FC factor with respect to f
+        Compute derivative of FC factor with respect to F (squeezing)
 
         .. math::
 
@@ -177,7 +177,9 @@ class RHF(scqedhf.RHF):
 
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
-        derivative = -numpy.exp(-0.5 * (tmp * diff_eta) ** 2) * (tmp * diff_eta) ** 2
+
+        derivative = -numpy.exp((-0.5 * (tmp * diff_eta) ** 2)) \
+                     * ((tmp * diff_eta) ** 2)
 
         if onebody:
             return derivative.reshape(nao, nao)
@@ -194,19 +196,35 @@ class RHF(scqedhf.RHF):
             \frac{d G}{\partial f_\alpha} =
         """
 
-        nao = self.qed.gmat[imode].shape[0]
+        # Number of boson states
+        mdim = self.qed.nboson_states[imode]
+
         if onebody:
-            p, q = numpy.ogrid[:nao, :nao]
-            diff_eta = eta[imode, q] - eta[imode, p]
+            p, q = numpy.ogrid[:self.nao, :self.nao]
+            diff_eta = eta[imode, p] - eta[imode, q]
         else:
-            p, q, r, s = numpy.ogrid[:nao, :nao, :nao, :nao]
-            diff_eta = eta[imode, q] - eta[imode, p] + eta[imode, s] - eta[imode, r]
+            p, q, r, s = numpy.ogrid[:self.nao, :self.nao, :self.nao, :self.nao]
+            diff_eta = eta[imode, p] - eta[imode, q] + eta[imode, r] - eta[imode, s]
 
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
-        ph_exp_val = 0.0 # self.qed.get_bdag_plus_b_sq_expval(imode)
-        derivative = -numpy.exp(-0.5 * (tmp * diff_eta) ** 2) * (tmp * diff_eta) ** 2
-        # derivative = - numpy.exp(-0.5*(tmp * diff_eta) ** 2) * (ph_exp_val + 1)  * (tmp * diff_eta) ** 2
+
+        # # Displacement operator derivative
+        # if mdim > 1:
+        #     idx = sum(self.qed.nboson_states[:imode])
+        #     ci = self.qed.boson_coeff[idx : idx + mdim, idx]
+        #     pdm = numpy.outer(numpy.conj(ci), ci)
+
+        #     derivative = self.qed.displacement_deriv_vt(imode, tmp * diff_eta, pdm)
+
+        # # Apply vacuum derivative formula
+        # else:
+        #     derivative = -numpy.exp((-0.5 * (tmp * diff_eta) ** 2)) \
+        #                   * ((tmp * diff_eta) ** 2)
+
+        # TEMP WHILE DEBUGGING ABOVE
+        derivative = -numpy.exp((-0.5 * (tmp * diff_eta) ** 2)) \
+                      * ((tmp * diff_eta) ** 2)
 
         # in principle, the couplings_var should be > 0.0
         if self.qed.couplings_var[imode] < -0.05 or self.qed.couplings_var[imode] > 1.05:
@@ -215,9 +233,10 @@ class RHF(scqedhf.RHF):
         derivative /= self.qed.couplings_var[imode]
 
         if onebody:
-            return derivative.reshape(nao, nao)
+            return derivative.reshape(self.nao, self.nao)
         else:
-            return derivative.reshape(nao, nao, nao, nao)
+            return derivative.reshape(self.nao, self.nao, self.nao, self.nao)
+
 
     def get_vsq_gradient(self, dm_do, g_DO, dm=None):
         r"""
@@ -377,6 +396,7 @@ class RHF(scqedhf.RHF):
 
         return variables, gradients
 
+
     def set_var_params(self, params):
         r"""set the additional variaitonal params"""
 
@@ -400,6 +420,7 @@ class RHF(scqedhf.RHF):
             self.qed.squeezed_var = params[fsize :].reshape(
                 self.vsq_grad.shape
             )
+
 
     def set_params(self, params, fock_shape=None):
         r""" get size of the variational parameters
@@ -493,11 +514,11 @@ if __name__ == "__main__":
     from pyscf import gto
 
     atom = """
-           H          0.86681        0.60144       0.00000
-           F         -0.86681        0.60144       0.00000
-           O          0.00000       -0.07579       0.00000
-           He         0.00000        0.00000       2.50000
-           """
+        H          0.86681        0.60144       0.00000
+        F         -0.86681        0.60144       0.00000
+        O          0.00000       -0.07579       0.00000
+        He         0.00000        0.00000       2.50000
+        """
 
     mol = gto.M(atom = atom,
                 basis = "sto-3g",

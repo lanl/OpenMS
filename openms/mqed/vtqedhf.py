@@ -209,22 +209,18 @@ class RHF(scqedhf.RHF):
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
 
-        # # Displacement operator derivative
-        # if mdim > 1:
-        #     idx = sum(self.qed.nboson_states[:imode])
-        #     ci = self.qed.boson_coeff[idx : idx + mdim, idx]
-        #     pdm = numpy.outer(numpy.conj(ci), ci)
+        # Displacement operator derivative
+        if mdim > 1:
+            idx = sum(self.qed.nboson_states[:imode])
+            ci = self.qed.boson_coeff[idx : idx + mdim, idx]
+            pdm = numpy.outer(numpy.conj(ci), ci)
 
-        #     derivative = self.qed.displacement_deriv_vt(imode, tmp * diff_eta, pdm)
+            derivative = self.qed.displacement_deriv_vt(imode, tmp * diff_eta, pdm)
 
-        # # Apply vacuum derivative formula
-        # else:
-        #     derivative = -numpy.exp((-0.5 * (tmp * diff_eta) ** 2)) \
-        #                   * ((tmp * diff_eta) ** 2)
-
-        # TEMP WHILE DEBUGGING ABOVE
-        derivative = -numpy.exp((-0.5 * (tmp * diff_eta) ** 2)) \
-                      * ((tmp * diff_eta) ** 2)
+        # Apply vacuum derivative formula
+        else:
+            derivative = -numpy.exp((-0.5 * (tmp * diff_eta) ** 2)) \
+                          * ((tmp * diff_eta) ** 2)
 
         # in principle, the couplings_var should be > 0.0
         if self.qed.couplings_var[imode] < -0.05 or self.qed.couplings_var[imode] > 1.05:

@@ -777,7 +777,6 @@ class Boson(object):
 
         # Variables
         mdim = self.nboson_states[mode]
-        couplings_var = self.couplings_var[mode]
 
         # Initialize matrix
         delta_disp_mat = numpy.zeros((mdim, mdim, *factor.shape))
@@ -788,18 +787,16 @@ class Boson(object):
 
             # Term 1: Gaussian factor derivative
             tmp1 = genlaguerre(n=i_n, alpha=(i_m - i_n))(factor**2) \
-                   * factor**(i_m - i_n) * (factor ** 2) * (-1.0 / couplings_var)
+                   * factor**(i_m - i_n) * -(factor ** 2)
 
             # Term 2: A^(m-n) derivative
             tmp2 = genlaguerre(n=i_n, alpha=(i_m - i_n))(factor**2)
             if i_m - i_n > 1:
-                tmp2 *= ((i_m - i_n / couplings_var) * (factor)**(i_m - i_n - 1))
-            else:
-                tmp2 *= (factor / couplings_var)
+                tmp2 *= (i_m - i_n) * (factor)**(i_m - i_n - 1)
 
             # Term 3: Laguerre polynomial derivative
             if i_n > 0:
-                tmp2 -= (factor)**(i_m - i_n) * (factor ** 2) * (1.0 / couplings_var) \
+                tmp2 -= (factor)**(i_m - i_n) * (factor ** 2) \
                         * genlaguerre(n=(i_n - 1), alpha=(i_m - i_n + 1))(factor**2)
 
             # Scale terms by factorial and add together
@@ -810,9 +807,9 @@ class Boson(object):
         # Compute diagonal elements
         for ind_m in range(mdim):
             delta_disp_mat[ind_m, ind_m] = genlaguerre(n=ind_m, alpha=0)(factor**2) \
-                                           * (factor ** 2) * (-1.0 / couplings_var)
+                                           * -(factor ** 2)
             if ind_m > 0:
-                delta_disp_mat[ind_m, ind_m] -= (factor ** 2) * (1.0 / couplings_var) \
+                delta_disp_mat[ind_m, ind_m] -= (factor ** 2) \
                                                 * genlaguerre(n=(ind_m - 1), alpha=1)(factor**2)
 
         # Scale by Gaussian factor

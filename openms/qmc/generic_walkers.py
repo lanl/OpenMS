@@ -31,7 +31,7 @@ pop control. Etc.
 import sys, time
 from abc import abstractmethod
 import numpy as backend
-from pyscf.lib import logger
+from openms.lib import logger
 from openms.lib.logger import task_title
 from openms.__mpi__ import MPI, original_print
 

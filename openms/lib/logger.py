@@ -32,8 +32,79 @@ else:
     process_clock = time.process_time
     perf_counter = time.perf_counter
 
-
 import openms.__config__
+
+
+VERBOSE_DEBUG  = 5
+VERBOSE_INFO   = 4
+VERBOSE_NOTICE = 3
+VERBOSE_WARN   = 2
+VERBOSE_ERR    = 1
+VERBOSE_QUIET  = 0
+
+DEBUG4 = VERBOSE_DEBUG + 4
+DEBUG3 = VERBOSE_DEBUG + 3
+DEBUG2 = VERBOSE_DEBUG + 2
+DEBUG1 = VERBOSE_DEBUG + 1
+
+from openms.__mpi__ import MPI
+rank = MPI.COMM_WORLD.Get_rank()
+
+def flush(rec, msg, *args):
+    if rank == 0:
+        rec.stdout.write(msg%args)
+        rec.stdout.write('\n')
+        rec.stdout.flush()
+
+def log(rec, msg, *args):
+    if rec.verbose > VERBOSE_QUIET:
+        flush(rec, msg, *args)
+
+def error(rec, msg, *args):
+    if rec.verbose >= VERBOSE_ERROR:
+        flush(rec, '\nERROR: '+msg+'\n', *args)
+    sys.stderr.write('ERROR: ' + (msg%args) + '\n')
+
+def warn(rec, msg, *args):
+    if rec.verbose >= VERBOSE_WARN:
+        flush(rec, '\nWARN: '+msg+'\n', *args)
+        if rec.stdout is not sys.stdout:
+            sys.stderr.write('WARN: ' + (msg%args) + '\n')
+
+def info(rec, msg, *args):
+    if rec.verbose >= VERBOSE_INFO:
+        flush(rec, msg, *args)
+
+def note(rec, msg, *args):
+    if rec.verbose >= VERBOSE_NOTICE:
+        flush(rec, msg, *args)
+
+def debug(rec, msg, *args):
+    if rec.verbose >= VERBOSE_DEBUG:
+        flush(rec, msg, *args)
+
+def debug1(rec, msg, *args):
+    if rec.verbose >= VERBOSE_DEBUG1:
+        flush(rec, msg, *args)
+
+def debug2(rec, msg, *args):
+    if rec.verbose >= VERBOSE_DEBUG2:
+        flush(rec, msg, *args)
+
+def debug3(rec, msg, *args):
+    if rec.verbose >= VERBOSE_DEBUG3:
+        flush(rec, msg, *args)
+
+def debug4(rec, msg, *args):
+    if rec.verbose >= VERBOSE_DEBUG4:
+        flush(rec, msg, *args)
+
+def stdout(rec, msg, *args):
+    if rec.verbose >= VERBOSE_DEBUG:
+        flush(rec, msg, *args)
+    if rank == 0:
+        sys.stdout.write('>>> %s\n' % msg)
+
 
 
 def task_title(msg, level=1):
@@ -42,13 +113,19 @@ def task_title(msg, level=1):
         len1 = (length - len(msg) ) // 2
         len2 = length - len(msg) - len1
         info = f"\n{'=' * length}"
-        info += f"\n{' ' * len1} {msg}\n{'=' * length} "
+        info += f"\n{' ' * len1} {msg}\n{'=' * length}"
+    elif level == 2:
+        length = 60
+        len1 = (length - len(msg) ) // 2
+        len2 = length - len(msg) - len1
+        info = f"\n{'*' * len1} {msg} {'*' * len2}"
     else:
         length = 80
         len1 = (length - len(msg) ) // 2
         len2 = length - len(msg) - len1
         info = f"\n{'-' * len1} {msg} {'-' * len2}"
     return info
+
 
 class Logger(object):
 

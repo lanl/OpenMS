@@ -5,9 +5,27 @@ import numpy as backend
 import scipy
 import time
 
-def stochastic_thc(L, n_stoch, method="gaussian", seed=None, n_svd_keep=0):
+def cholesky2thc(ltensor, rank, thresh=1.e-6):
+    r"""Using the nested SVD to factorize CD
+
+    .. math::
+        L^\gamma_{pq} = \sum_{\mu} X^{\gamma,*}_{p\mu}U_{q\alpha}
+
     """
+    u, s, v = numpy.linalg.svd(ltensor, full_matrices=False)
+    pass
+
+
+def stochastic_thc(L, n_stoch, method="rademacher", seed=None, n_svd_keep=0):
+    r"""
     Enhanced stochastic THC decomposition with multiple variance reduction methods.
+
+    Energy expression with CD :math:`(pq|rs) = \sum_\gamma L^\gamma_{pq} L^{\gamma,*}_{sr}`:
+
+    .. math::
+       E = \sum_{pqrs, \gamma} L^\gamma_{pq} L^{\gamma,*}_{sr} \left[G_{pq}G_{rs} - G_{ps} G_{rq} \right]
+
+    **1) stochastic RI**:
 
     Parameters:
         L           : numpy.ndarray, shape (n_chol, n_orb, n_orb)

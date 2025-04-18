@@ -14,6 +14,7 @@
 # limitations under the License.
 #
 # Author: Yu Zhang <zhy@lanl.gov>
+#         Zhi-Hao Cui <zhcui0408@gmail.com>
 #         Qiming Sun <osirpt.sun@gmail.com>
 #
 
@@ -29,13 +30,14 @@ This file is modified from pyscf fci/direct_ep: the major changes are:
 """
 
 
+import time
 import numpy
 from pyscf import lib
 from pyscf import ao2mo
 from pyscf.fci import cistring
 from pyscf.fci import rdm
 from pyscf.fci.direct_spin1 import _unpack_nelec
-import time
+
 #                                mode-1,      ...,   mode-n
 #                                v                    v
 # ep_wfn, shape = (nstra,nstrb,boson_states[0],...,boson_states[n-1])
@@ -48,7 +50,8 @@ import time
 
 
 def fboson_ci_shape(norb, nelec, nmode=0, boson_states=None):
-    r"""Get the CI shape for Fermion-Boson mixture.
+    r"""
+    Get the CI shape for Fermion-Boson mixture.
 
     Parameters:
         norb (int): Number of orbitals.
@@ -81,60 +84,41 @@ def fboson_ci_shape(norb, nelec, nmode=0, boson_states=None):
         cishape = (na, nb) + tuple(boson_states + 1)
     return cishape
 
-
 def contract_1e(h1e, fcivec, norb, nelec, nmode=0, boson_states=None):
     """
-    Contract the 1e integral: E_{pq} |CI>
-    """
+    Contract the one-electron Hamiltonian with the CI vector: H1e |CI>
 
+    Args:
+        h1e (ndarray): One-electron integrals (norb x norb)
+        fcivec (ndarray): CI vector
+        norb (int): Number of orbitals
+        nelec (tuple): (neleca, nelecb)
+        nmode (int): Number of bosonic modes
+        boson_states (list): Boson state dimensions
+
+    Returns:
+        ndarray: Result of H1e |CI>
+    """
     neleca, nelecb = _unpack_nelec(nelec)
     link_indexa = cistring.gen_linkstr_index(range(norb), neleca)
     link_indexb = cistring.gen_linkstr_index(range(norb), nelecb)
     cishape = fboson_ci_shape(norb, nelec, nmode, boson_states)
 
     ci0 = fcivec.reshape(cishape)
-    fcinew = numpy.zeros(cishape)
+    fcinew = np.zeros_like(ci0)
+
+    # Alpha spin contraction
     for str0, tab in enumerate(link_indexa):
+        row = ci0[str0]
         for a, i, str1, sign in tab:
-            fcinew[str1] += sign * ci0[str0] * h1e[a, i]
+            fcinew[str1] += sign * row * h1e[a, i]
+
+    # Beta spin contraction
     for str0, tab in enumerate(link_indexb):
+        row = ci0[:, str0]
         for a, i, str1, sign in tab:
-            fcinew[:, str1] += sign * ci0[:, str0] * h1e[a, i]
-    return fcinew.reshape(fcivec.shape)
+            fcinew[:, str1] += sign * row * h1e[a, i]
 
-
-def contract_2e_spin0(eri, fcivec, norb, nelec, nmode, boson_states, out=None):
-    """
-    Compute E_{pq}E_{rs}|CI>
-    """
-    neleca, nelecb = _unpack_nelec(nelec)
-    link_indexa = cistring.gen_linkstr_index(range(norb), neleca)
-    link_indexb = cistring.gen_linkstr_index(range(norb), nelecb)
-
-    cishape = fboson_ci_shape(norb, nelec, nmode, boson_states)
-    ci0 = fcivec.reshape(cishape)
-    eri = eri.reshape(norb, norb, norb, norb)
-
-    t1 = numpy.zeros((norb, norb,) + cishape)
-    for str0, tab in enumerate(link_indexa):
-        for a, i, str1, sign in tab:
-            t1[a, i, str1] += sign * ci0[str0]
-    for str0, tab in enumerate(link_indexb):
-        for a, i, str1, sign in tab:
-            t1[a, i, :, str1] += sign * ci0[:, str0]
-
-    t1 = numpy.tensordot(eri, t1, axes=((2, 3), (0, 1)))
-
-    if out is None:
-        fcinew = numpy.zeros(cishape)
-    else:
-        fcinew = out.reshape(cishape)
-    for str0, tab in enumerate(link_indexa):
-        for a, i, str1, sign in tab:
-            fcinew[str1] += sign * t1[a, i, str0]
-    for str0, tab in enumerate(link_indexb):
-        for a, i, str1, sign in tab:
-            fcinew[:, str1] += sign * t1[a, i, :, str0]
     return fcinew.reshape(fcivec.shape)
 
 
@@ -185,6 +169,40 @@ def contract_2e(eri, fcivec, norb, nelec, nmode, boson_states):
             fcinew[:, str1] += sign * t2b[a, i, :, str0]
     return fcinew.reshape(fcivec.shape)
 
+def contract_2e_spin0(eri, fcivec, norb, nelec, nmode, boson_states, out=None):
+    """
+    Compute E_{pq}E_{rs}|CI>
+    """
+    neleca, nelecb = _unpack_nelec(nelec)
+    link_indexa = cistring.gen_linkstr_index(range(norb), neleca)
+    link_indexb = cistring.gen_linkstr_index(range(norb), nelecb)
+
+    cishape = fboson_ci_shape(norb, nelec, nmode, boson_states)
+    ci0 = fcivec.reshape(cishape)
+    eri = eri.reshape(norb, norb, norb, norb)
+
+    #
+    t1 = numpy.zeros((norb, norb,) + cishape)
+    for str0, tab in enumerate(link_indexa):
+        for a, i, str1, sign in tab:
+            t1[a, i, str1] += sign * ci0[str0]
+    for str0, tab in enumerate(link_indexb):
+        for a, i, str1, sign in tab:
+            t1[a, i, :, str1] += sign * ci0[:, str0]
+
+    t1 = numpy.tensordot(eri, t1, axes=((2, 3), (0, 1)))
+
+    if out is None:
+        fcinew = numpy.zeros(cishape)
+    else:
+        fcinew = out.reshape(cishape)
+    for str0, tab in enumerate(link_indexa):
+        for a, i, str1, sign in tab:
+            fcinew[str1] += sign * t1[a, i, str0]
+    for str0, tab in enumerate(link_indexb):
+        for a, i, str1, sign in tab:
+            fcinew[:, str1] += sign * t1[a, i, :, str0]
+    return fcinew.reshape(fcivec.shape)
 
 def _unpack_u(u):
     if numpy.ndim(u) == 0:
@@ -193,17 +211,17 @@ def _unpack_u(u):
         u_aa, u_ab, u_bb = u
     return u_aa, u_ab, u_bb
 
-
 def contract_2e_hubbard(u, fcivec, norb, nelec, nmode, boson_states):
     r"""
     Contract two-body term within the hubbard-U model
     """
     neleca, nelecb = _unpack_nelec(nelec)
-    # u_aa, u_ab, u_bb = _unpack_u(u)
+    u_aa, u_ab, u_bb = _unpack_u(u)
 
     strsa = numpy.asarray(cistring.gen_strings4orblist(range(norb), neleca))
     strsb = numpy.asarray(cistring.gen_strings4orblist(range(norb), nelecb))
     cishape = fboson_ci_shape(norb, nelec, nmode, boson_states)
+
     ci0 = fcivec.reshape(cishape)
     fcinew = numpy.zeros(cishape)
 
@@ -215,7 +233,9 @@ def contract_2e_hubbard(u, fcivec, norb, nelec, nmode, boson_states):
 
 
 def absorb_h1e(h1e, eri, norb, nelec, fac=1):
-    """Modify 2e Hamiltonian to include 1e Hamiltonian contribution."""
+    r"""
+    Modify 2e Hamiltonian to include 1e Hamiltonian contribution.
+    """
     if not isinstance(nelec, (int, numpy.integer)):
         nelec = sum(nelec)
     # h2e = ao2mo.restore(1, eri.copy(), norb).astype(h1e.dtype, copy=False)
@@ -225,12 +245,11 @@ def absorb_h1e(h1e, eri, norb, nelec, fac=1):
         h2e = ao2mo.restore(1, eri, norb)
 
     f1e = h1e - numpy.einsum("jiik->jk", h2e) * 0.5
-    f1e = f1e * (1.0 / (nelec + 1e-100))
+    f1e *= (1.0 / (nelec + 1e-100))
     for k in range(norb):
         h2e[k, k, :, :] += f1e
         h2e[:, :, k, k] += f1e
     return h2e * fac
-
 
 def contract_all(H1, H2, Heb, Hbb, cin, norb, nelec, nmode, boson_states):
     r""" """
@@ -245,6 +264,7 @@ def contract_all(H1, H2, Heb, Hbb, cin, norb, nelec, nmode, boson_states):
 
     # print("Debug-yz: contracting 2e part")
     if H2.ndim > 1:
+        #cout += contract_2e_spin0(H2, cin, norb, nelec, nmode, boson_states)
         cout += contract_2e(H2, cin, norb, nelec, nmode, boson_states)
     else:
         cout += contract_2e_hubbard(H2, cin, norb, nelec, nmode, boson_states)
@@ -253,6 +273,7 @@ def contract_all(H1, H2, Heb, Hbb, cin, norb, nelec, nmode, boson_states):
 
     # e-b coupling term
     # print("Debug-yz: contracting e-b coupling part")
+    #cout += contract_eb_new(Heb, cin, norb, nelec, nmode, boson_states)
     cout += contract_eb(Heb, cin, norb, nelec, nmode, boson_states)
     t3 = time.time()
 
@@ -283,17 +304,14 @@ def slices_for(imode, nmode, fock_id, idxab=None):
             slices[1] = ib
     return tuple(slices)
 
-
 def slices_for_cre(imode, nmode, fock_id, idxab=None):
     return slices_for(imode, nmode, fock_id + 1, idxab)
-
 
 def slices_for_des(imode, nmode, fock_id, idxab=None):
     return slices_for(imode, nmode, fock_id - 1, idxab)
 
-
 # Contract to one phonon creation operator
-def cre_phonon(fcivec, norb, nelec, nmode, boson_states, imode):
+def cre_boson(fcivec, norb, nelec, nmode, boson_states, imode):
     cishape = fboson_ci_shape(norb, nelec, nmode, boson_states)
     ci0 = fcivec.reshape(cishape)
     fcinew = numpy.zeros(cishape)
@@ -301,32 +319,55 @@ def cre_phonon(fcivec, norb, nelec, nmode, boson_states, imode):
     nboson = boson_states[imode]
     boson_cre = numpy.sqrt(numpy.arange(1, nboson + 1))
     for ip in range(nboson):
-        slices1 = slices_for_cre(site_id, nmode, ip)
-        slices0 = slices_for(site_id, nmode, ip)
+        slices1 = slices_for_cre(imode, nmode, ip)
+        slices0 = slices_for(imode, nmode, ip)
         fcinew[slices1] += boson_cre[ip] * ci0[slices0]
     return fcinew.reshape(fcivec.shape)
 
-
 # Contract to one phonon annihilation operator
-def des_phonon(fcivec, nsite, nelec, nphonon, site_id):
+def des_boson(fcivec, norb, nelec, nmode, boson_states, imode):
     cishape = fboson_ci_shape(norb, nelec, nmode, boson_states)
     ci0 = fcivec.reshape(cishape)
     fcinew = numpy.zeros(cishape)
 
-    boson_cre = numpy.sqrt(numpy.arange(1, nphonon + 1))
-    for ip in range(nphonon):
-        slices1 = slices_for_cre(site_id, nmode, ip)
-        slices0 = slices_for(site_id, nmode, ip)
+    nboson = boson_states[imode]
+    boson_cre = numpy.sqrt(numpy.arange(1, nboson + 1))
+    for ip in range(nboson):
+        slices1 = slices_for_cre(imode, nmode, ip)
+        slices0 = slices_for(imode, nmode, ip)
         fcinew[slices0] += boson_cre[ip] * ci0[slices1]
     return fcinew.reshape(fcivec.shape)
 
-
 # boson_boson coupling
-def contract_bb(Hbb, fcivec, norb, nelec, nmode, boson_states):
+def contract_bb(Hbb, fcivec, norb, nelec, nmode, boson_states, zalpha=None):
+    r"""
+    Contract the boson parts
+    """
     cishape = fboson_ci_shape(norb, nelec, nmode, boson_states)
     ci0 = fcivec.reshape(cishape)
     fcinew = numpy.zeros(cishape)
 
+    #
+    # w_x b^+_x b_x
+    for imode in range(nmode):
+        nboson = boson_states[imode]
+        boson_cre = numpy.sqrt(numpy.arange(1, nboson + 1))
+        for i in range(1, nboson+1):
+            slices0 = slices_for(imode, nmode, i)
+            fcinew[slices0] += ci0[slices0] * (Hbb[imode] * i)
+
+    # coherent state
+    if zalpha is not None:
+        for imode in range(nmode):
+            nboson = boson_states[imode]
+            boson_cre = numpy.sqrt(numpy.arange(1, nboson + 1))
+            for i in range(nboson):
+                slices1 = slices_for_cre(imode, nmode, i)
+                slices0 = slices_for(imode, nmode, i)
+                tmp = zalpha[imode] * (boson_cre[i] * Hbb[imode])
+                fcinew[slices1] += tmp * ci0[slices0]
+                fcinew[slices0] += tmp * ci0[slices1]
+    """
     t1 = numpy.zeros((norb,) + cishape)
     for imode in range(nmode):
         nboson = boson_states[imode]
@@ -345,12 +386,13 @@ def contract_bb(Hbb, fcivec, norb, nelec, nmode, boson_states):
             slices1 = slices_for_cre(imode, nmode, i)
             slices0 = slices_for(imode, nmode, i)
             fcinew[slices1] += t1[(imode,) + slices0] * boson_cre[i]  # creation
+    """
     return fcinew.reshape(fcivec.shape)
 
 
 # N_alpha N_beta * \sum_{p} (p^+ + p)
 # N_alpha, N_beta are particle number operator, p^+ and p are phonon creation annihilation operator
-def contract_eb_new(g, fcivec, norb, nelec, nmode, boson_states):
+def contract_eb_new(Heb, fcivec, norb, nelec, nmode, boson_states):
     r"""
     Contract the electron-boson coupling part:
 
@@ -368,8 +410,8 @@ def contract_eb_new(g, fcivec, norb, nelec, nmode, boson_states):
     ci0 = fcivec.reshape(cishape)
     fcinew = numpy.zeros(cishape)
 
-    print("Debug: na/nb   = ", na, nb)
-    print("Debug: cishape = ", cishape)
+    # print("Debug: na/nb   = ", na, nb)
+    # print("Debug: cishape = ", cishape)
 
     for i in range(nmode):
         nboson = boson_states[i]
@@ -381,23 +423,59 @@ def contract_eb_new(g, fcivec, norb, nelec, nmode, boson_states):
         e_part[:, maskb] += 1
         e_part[:] -= float(neleca + nelecb) / nmode
 
-        print("Debug: e_part.shape = ", e_part.shape)
-        print("Debug: g[i].shape = ", g[i].shape)
-        # FXIME: map g[i] into CI shape, then multiply it to boson_cre and e_part
+        # print("Debug: e_part.shape = ", e_part.shape)
+        # print("Debug: Heb[i].shape = ", Heb[i].shape)
+        # FXIME: map Heb[i] into CI shape, then multiply it to boson_cre and e_part
 
         for ip in range(nboson):
             slices1 = slices_for_cre(i, nmode, ip)
             slices0 = slices_for(i, nmode, ip)
             fcinew[slices1] += numpy.einsum(
-                "ij...,ij...->ij...", g[i] * boson_cre[ip] * e_part, ci0[slices0]
+                "ij...,ij...->ij...", Heb[i] * boson_cre[ip] * e_part, ci0[slices0]
             )
             fcinew[slices0] += numpy.einsum(
-                "ij...,ij...->ij...", g[i] * boson_cre[ip] * e_part, ci0[slices1]
+                "ij...,ij...->ij...", Heb[i] * boson_cre[ip] * e_part, ci0[slices1]
             )
     return fcinew.reshape(fcivec.shape)
 
+def contract_bb_full(Hbb, fcivec, norb, nelec, nmode, nph, zs=None, out=None):
+    ci_shape = get_ci_shape(norb, nelec, nmode, nph)
+    ci0 = fcivec.reshape(ci_shape)
+    if out is None:
+        fcinew = np.zeros(ci_shape, dtype=ci0.dtype)
+    else:
+        fcinew = out.reshape(ci_shape)
 
-def contract_eb(g, fcivec, norb, nelec, nmode, boson_states, out=None):
+    t1 = np.zeros((nmode,) + ci_shape)
+    for imode in range(nmode):
+        nboson = boson_states[imode]
+        boson_cre = numpy.sqrt(numpy.arange(1, nboson + 1))
+        for i in range(nboson):
+            slices1 = slices_for_cre(imode, nmode, i)
+            slices0 = slices_for(imode, nmode, i)
+            t1[(imode,) + slices0] += ci0[slices1] * boson_cre[i] # annihilation
+
+    t1 = lib.dot(Hbb, t1.reshape(nmode, -1)).reshape(t1.shape)
+
+    if zs is not None:
+        wz = np.dot(Hbb, zs)
+
+    for imode in range(nmode):
+        nboson = boson_states[imode]
+        boson_cre = numpy.sqrt(numpy.arange(1, nboson + 1))
+        for i in range(nph):
+            slices1 = slices_for_cre(imode, nmode, i)
+            slices0 = slices_for(imode, nmode, i)
+            fcinew[slices1] += t1[(mode_id,) + slices0] * boson_cre[i] # creation
+            if zs is not None:
+                tmp = wz[mode_id] * boson_cre[i]
+                fcinew[slices1] += tmp * ci0[slices0]
+                fcinew[slices0] += tmp * ci0[slices1]
+
+    return fcinew.reshape(fcivec.shape)
+
+
+def contract_eb(Heb, fcivec, norb, nelec, nmode, boson_states):
     """
     Contract the electron-boson coupling part.
     """
@@ -407,10 +485,7 @@ def contract_eb(g, fcivec, norb, nelec, nmode, boson_states, out=None):
     cishape = fboson_ci_shape(norb, nelec, nmode, boson_states)
 
     ci0 = fcivec.reshape(cishape)
-    if out is None:
-        fcinew = numpy.zeros(cishape, dtype=ci0.dtype)
-    else:
-        fcinew = out.reshape(cishape)
+    fcinew = numpy.zeros(cishape, dtype=ci0.dtype)
 
     for imode in range(nmode):
         nboson = boson_states[imode]
@@ -421,34 +496,25 @@ def contract_eb(g, fcivec, norb, nelec, nmode, boson_states, out=None):
                     # b^+
                     slices1 = slices_for_cre(imode, nmode, ip, idxab=(str1, None))
                     slices0 = slices_for(imode, nmode, ip, idxab=(str0, None))
-                    fcinew[slices1] += (g[imode, a, i] * boson_cre[ip] * sign) * ci0[
-                        slices0
-                    ]
+                    fcinew[slices1] += (Heb[imode, a, i] * boson_cre[ip] * sign) * ci0[slices0]
                     # b
                     slices0 = slices_for(imode, nmode, ip, idxab=(str1, None))
                     slices1 = slices_for_cre(imode, nmode, ip, idxab=(str0, None))
-                    fcinew[slices0] += (g[imode, a, i] * boson_cre[ip] * sign) * ci0[
-                        slices1
-                    ]
+                    fcinew[slices0] += (Heb[imode, a, i] * boson_cre[ip] * sign) * ci0[slices1]
             for str0, tab in enumerate(link_indexb):
                 for a, i, str1, sign in tab:
                     # b^+
                     slices1 = slices_for_cre(imode, nmode, ip, idxab=(None, str1))
                     slices0 = slices_for(imode, nmode, ip, idxab=(None, str0))
-                    fcinew[slices1] += (g[imode, a, i] * boson_cre[ip] * sign) * ci0[
-                        slices0
-                    ]
+                    fcinew[slices1] += (Heb[imode, a, i] * boson_cre[ip] * sign) * ci0[slices0]
                     # b
                     slices0 = slices_for(imode, nmode, ip, idxab=(None, str1))
                     slices1 = slices_for_cre(imode, nmode, ip, idxab=(None, str0))
-                    fcinew[slices0] += (g[imode, a, i] * boson_cre[ip] * sign) * ci0[
-                        slices1
-                    ]
+                    fcinew[slices0] += (Heb[imode, a, i] * boson_cre[ip] * sign) * ci0[slices1]
 
     return fcinew.reshape(fcivec.shape)
 
-
-def make_hdiag(h1e, eri, g, Hbb, norb, nelec, nmode, boson_states):
+def make_hdiag(h1e, eri, Hbb, norb, nelec, nmode, boson_states):
     neleca, nelecb = _unpack_nelec(nelec)
 
     ci_shape = fboson_ci_shape(norb, nelec, nmode, boson_states)
@@ -482,7 +548,6 @@ def make_hdiag(h1e, eri, g, Hbb, norb, nelec, nmode, boson_states):
                 hdiag[slices0] += max(i * Hbb[imode, imode], 0.5)
 
     return hdiag.ravel()
-
 
 def make_hdiag_hubbard(h1e, eri, Hbb, norb, nelec, nmode, nph, opt=None):
     neleca, nelecb = _unpack_nelec(nelec)
@@ -528,7 +593,6 @@ def kernel(
     boson_states,
     Heb,
     Hbb,
-    shift_vac=True,
     system="model",
     verbose=5,
     ecore=0,
@@ -592,7 +656,6 @@ def kernel(
     coherent_state = kwargs.get("coherent_state", False)
     max_space = kwargs.get("max_space", 16)
 
-    #
     # coherence state:
     # TODO: we may move the following out of the fci kernel as we can have different
     # pre-processing of the Hamiltonains like coherent state, VLF ansatz, and squeezed states
@@ -611,11 +674,18 @@ def kernel(
         else:
             dm0 = direct_spin1.make_rdm1(c, norb, nelec)
         # TODO: modify the H1, H2, Heb, Hbb with coherent state representation
+        if Hbb.ndim == 1:
+            zalpha = - numpy.einsum('xpq, qp -> x', Heb, dm0, optimize=True) / Hpp
+            ecore = ecore + np.einsum("x, x ->", Hpp, zalpha**2)
+        else:
+            tmp = -numpy.einsum('xpq, qp -> x', Heb, dm0)
+            zalpha = la.solve(Hbb, tmp)
+            ecore = ecore + np.einsum("xy, x, y ->", Hbb, zalpha, zalpha, optimize=True)
+        H1 = H1 + numpy.einsum('xpq, x -> pq', Heb, zalpha * 2, optimize=True)
 
 
     # QED-FCI calculations
     cishape = fboson_ci_shape(norb, nelec, nmode, boson_states)
-
 
     # get/set initial guess
     ci0 = kwargs.get("init_ci", None)
@@ -625,7 +695,7 @@ def kernel(
         ci0.__setitem__((0, 0) + (0,) * nmode, 1)
 
         # Add noise for initial guess, remove it if problematic
-        ci0 += (numpy.random.random(cishape) - 0.5) * 1e-5
+        ci0 += (numpy.random.random(cishape) - 0.5) * 1e-4
 
         # ci0[0, :] += numpy.random.random(ci0[0, :].shape) * 1e-6
         # ci0[:, 0] += numpy.random.random(ci0[:, 0].shape) * 1e-6
@@ -643,7 +713,7 @@ def kernel(
         # hc = contract_all(H1, H2, Heb, Hbb, c, norb, nelec, nmode, boson_states)
         return hc.reshape(-1)
 
-    hdiag = make_hdiag(H1, H2, Heb, Hbb, norb, nelec, nmode, boson_states)
+    hdiag = make_hdiag(H1, H2, Hbb, norb, nelec, nmode, boson_states)
     # precond = lambda x, e, *args: x/(hdiag-e+1e-4) # same as the lib
     precond = lib.make_diag_precond(hdiag, level_shift=1e-3)
 
@@ -653,6 +723,7 @@ def kernel(
         precond,
         tol=tol,
         max_cycle=max_cycle,
+        max_space=max_space,
         verbose=verbose,
         nroots=nroots,
         lindep=lindep
@@ -680,7 +751,6 @@ def make_rdm1e(fcivec, nsite, nelec):
         for a, i, str1, sign in tab:
             rdm1[a, i] += sign * numpy.einsum("ax,ax->", ci0[:, str1], ci0[:, str0])
     return rdm1
-
 
 def make_rdm12e(fcivec, norb, nelec):
     """1-electron and 2-electron density matrices
@@ -845,8 +915,8 @@ if __name__ == "__main__":
     dm1a = numpy.empty_like(dm1)
     for i in range(nsite):
         for j in range(nsite):
-            c1 = des_phonon(c, nsite, nelec, nphonon, j)
-            c1 = cre_phonon(c1, nsite, nelec, nphonon, i)
+            c1 = des_boson(c, nsite, nelec, nphonon, j)
+            c1 = cre_boson(c1, nsite, nelec, nphonon, i)
             dm1a[i, j] = numpy.dot(c.ravel(), c1.ravel())
     print("check phonon DM", numpy.allclose(dm1, dm1a))
 

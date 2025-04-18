@@ -135,8 +135,8 @@ import sys
 import time
 from abc import abstractmethod
 from pyscf import tools, lo, scf, fci
-from pyscf.lib import logger
 from openms.lib.boson import Boson
+from openms.lib import logger
 from openms.lib.logger import task_title
 from openms.lib.misc import deprecated
 from openms.mqed.qedhf import RHF as QEDRHF

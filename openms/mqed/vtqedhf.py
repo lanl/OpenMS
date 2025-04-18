@@ -15,8 +15,10 @@
 #
 
 r"""
-Theoretical background of VT-QEDHF methods
+Theoretical background of VT-QEDHF methods :cite:`Li:2023qedhf`
 
+VT-QEDHF method
+^^^^^^^^^^^^^^^
 
 Transformation is:
 
@@ -52,6 +54,12 @@ And
     X_{\mu\nu} = \exp\left[-\sum_{\alpha}\frac{f_\alpha}{\sqrt{2\omega_\alpha}} \boldsymbol{\lambda}_\alpha\cdot\boldsymbol{D} (\hat{a}^\dagger_\alpha - \hat{a}_\alpha) \right]|_{\mu\nu}.
 
 Then we derive the QEDHF functional and Fock matrix accordingly based on the HF ansatz.
+
+
+VSQ-QEDHF method
+^^^^^^^^^^^^^^^^
+
+Details TBA.
 
 
 """

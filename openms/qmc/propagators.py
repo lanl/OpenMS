@@ -1,6 +1,6 @@
 import itertools
 import time
-from pyscf.lib import logger
+from openms.lib import logger
 import numpy as backend
 import scipy
 
@@ -349,6 +349,8 @@ class Phaseless(PropagatorBase):
         # logger.debug(self, f"Debug: time of computing energy is {time.time() - t0}")
 
         if walkers._mpi.size > 1:
+            # If MPI, gather energy here
+            # gather weights, energies aross the nodes
             norm = walkers._mpi.comm.allreduce(norm, op=MPI.SUM)
             e1 = walkers._mpi.comm.allreduce(e1, op=MPI.SUM)
             e2 = walkers._mpi.comm.allreduce(e2, op=MPI.SUM)

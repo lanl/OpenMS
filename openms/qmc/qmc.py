@@ -55,7 +55,7 @@ from openms import runtime_refs, _citations
 from . import generic_walkers as gwalker
 from . import tools
 
-from pyscf.lib import logger
+from openms.lib import logger
 from openms.lib.logger import task_title
 from openms.lib.boson import Boson
 from openms.qmc.trial import make_trial, multiCI

@@ -154,7 +154,7 @@ Program overview
 
 import sys, os
 from pyscf import tools, lo, scf, fci, ao2mo
-from pyscf.lib import logger
+from openms.lib import logger
 import numpy as backend
 import scipy
 import itertools

@@ -63,7 +63,7 @@ def test_chols_oao():
     from pyscf import lo
     from pyscf import ao2mo
 
-    threshold = 1.e-7
+    threshold = 1.e-8
     mol = get_mol(basis="sto3g", verbose=1)
 
     overlap = mol.intor("int1e_ovlp")

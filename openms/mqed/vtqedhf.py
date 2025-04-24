@@ -204,6 +204,7 @@ class RHF(scqedhf.RHF):
             \frac{d G}{\partial f_\alpha} =
         """
 
+        nao = self.qed.gmat[imode].shape[0]
         # Number of boson states
         mdim = self.qed.nboson_states[imode]
 
@@ -245,6 +246,8 @@ class RHF(scqedhf.RHF):
     def get_vsq_gradient(self, dm_do, g_DO, dm=None):
         r"""
         Compute dE/dF where F is the variational squeezed parameters
+        See equations in Ref. :cite:`Mazin:2024lm`.
+
         """
 
         # gradient w.r.t f_\alpha

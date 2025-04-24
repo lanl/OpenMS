@@ -668,7 +668,7 @@ class Boson(object):
         self.energy_nuc = mol.energy_nuc
         self.nelec = mol.nelec
         # ------------------------------------
-        if self.verbose > 3:
+        if self.verbose > 2:
             #self.print_summary()
             self.dump_flags()
 

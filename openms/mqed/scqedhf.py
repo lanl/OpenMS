@@ -55,6 +55,7 @@ from openms.mqed import diis
 from openms.mqed import qedhf
 from openms.mqed import scqedhf
 from openms import __config__
+from functools import reduce
 
 TIGHT_GRAD_CONV_TOL = getattr(__config__, "TIGHT_GRAD_CONV_TOL", True)
 LINEAR_DEP_THRESHOLD = getattr(__config__, "LINEAR_DEP_THRESHOLD", 1e-8)
@@ -390,6 +391,10 @@ class RHF(qedhf.RHF):
 
         super().__init__(mol, **kwargs)
 
+        self.ltensor = None
+        self.CD_anyway = kwargs.get("CD_anyway", False)
+        self.CD_thresh = kwargs.get("CD_thresh", 1.e-8)
+
         if "vtqedhf" not in openms.runtime_refs:
             openms.runtime_refs.append("vtqedhf")
 
@@ -573,7 +578,11 @@ class RHF(qedhf.RHF):
         # get eri in Dipole basis
         for imode in range(self.qed.nmodes):
             U = self.ao2dipole[imode]
-            self.eri_DO = self.construct_eri_DO(U)
+            if not self._is_mem_enough() or self.CD_anyway:
+                logger.info(self, "CD is used!")
+                self.cholesky_DO(U)
+            else:
+                self.eri_DO = self.construct_eri_DO(U)
 
         return self
 
@@ -691,9 +700,33 @@ class RHF(qedhf.RHF):
     # variable gradients, here we only have eta
     grad_var_params = get_eta_gradient
 
+    def cholesky_DO(self, U):
+        r"""
+        generate L tensor (Cholesky decomposition of the repulsion integral matrix) in OAO/DO basis
+
+        .. math::
+
+             I_{uvwt} = L{\gamma, uv} L_{\gamma, wt}
+
+        Hence,
+
+        .. math::
+            I_{pqrs} = & U_{pu} U_{qv} L_{\gamma, uv} L_{\gamma, wt} U_{rw} U_{st}
+                     = & (U_{pu} L_{\gamma, uv} U_{qv}) U_{rw} L_{\gamma, wt} U_{st} \\
+                     = & L^D_{\gamma, pq} L^D_{\gamma, wt}
+        """
+        from openms.qmc import tools
+        if self.ltensor is None:
+            self.ltensor = tools.chols_blocked(self.mol, thresh=self.CD_thresh, max_chol_fac=15)
+            logger.debug(self,
+                f"DEBUG: build CD for the first time! ltensor.shape= {self.ltensor.shape}")
+        # transfer ltensor into OAO
+        for i, chol in enumerate(self.ltensor):
+            self.ltensor[i] = reduce(numpy.dot, (U.conj().T, chol, U))
 
     def construct_eri_DO(self, U):
         r"""Repulsion integral modifier according to dipole self-energy terms"""
+        # TODO: updaete it to make it compatiable with other symmetries (s4 and s8)
         if self._eri is None:
             self._eri = self.mol.intor("int2e", aosym="s1")
             logger.debug(self, f"First build of two-body integral! eri.shape= {self._eri.shape}")
@@ -1031,8 +1064,8 @@ class RHF(qedhf.RHF):
                 zm = z0 * zalpha ** m * numpy.sqrt(factorial(m))
                 zn = z0 * (-zalpha) ** n * numpy.sqrt(factorial(n))
 
-                # back to AO
                 rho_tmp = rho_DO * numpy.outer(zm, zn)
+                # back to AO
                 rho_tmp = unitary_transform(Uinv, rho_tmp)
                 rho_tot[m, :, n, :] = rho_tmp
 

@@ -558,10 +558,10 @@ class RHF(hf.RHF):
             # DSE-mediated K
             # vk_dse[i] += lib.einsum("Xpr, Xqs, rs -> pq", gtmp, gtmp, dm[i])
             gdm = lib.einsum("Xqs, rs -> Xqr", gtmp, dm[i])
-            vk_dse += lib.einsum("Xpr, Xqr, X-> pq", gtmp, gdm, gvar2)
+            vk_dse[i] += lib.einsum("Xpr, Xqr, X-> pq", gtmp, gdm, gvar2)
             if compute_grad:
                 # FIXME: this gradient should be mode specific
-                grad_vjk -= 0.5 * lib.einsum("Xpr, Xqr, X-> pq", gtmp, gdm, dg)
+                grad_vjk[i] -= 0.5 * lib.einsum("Xpr, Xqr, X-> pq", gtmp, gdm, dg)
 
         vj = vj_dse.reshape(dm_shape)
         vk = vk_dse.reshape(dm_shape)

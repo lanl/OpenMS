@@ -167,7 +167,7 @@ class RHF(scqedhf.RHF):
 
         return vhf
 
-    def gaussian_derivative_sq_vector(self, eta, imode, onebody=True):
+    def gaussian_derivative_sq_vector(self, eta, imode, onebody=True, shift=0.0):
         r"""
         Compute derivative of FC factor with respect to F (squeezing)
 
@@ -182,6 +182,7 @@ class RHF(scqedhf.RHF):
         else:
             p, q, r, s = numpy.ogrid[:nao, :nao, :nao, :nao]
             diff_eta = eta[imode, q] - eta[imode, p] + eta[imode, s] - eta[imode, r]
+        diff_eta += shift
 
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
@@ -195,7 +196,7 @@ class RHF(scqedhf.RHF):
             return derivative.reshape(nao, nao, nao, nao)
 
 
-    def gaussian_derivative_f_vector(self, eta, imode, onebody=True):
+    def gaussian_derivative_f_vector(self, eta, imode, onebody=True, shift=0.0):
         r"""
         Compute derivative of FC factor with respect to f
 
@@ -214,6 +215,7 @@ class RHF(scqedhf.RHF):
         else:
             p, q, r, s = numpy.ogrid[:self.nao, :self.nao, :self.nao, :self.nao]
             diff_eta = eta[imode, p] - eta[imode, q] + eta[imode, r] - eta[imode, s]
+        diff_eta += shift
 
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
@@ -279,11 +281,21 @@ class RHF(scqedhf.RHF):
             onebody_dvsq[imode] += oei_derivative
 
             # two-electron part
-            derivative = self.gaussian_derivative_sq_vector(self.eta, imode, onebody=False)
-            derivative *= (2.0 * self.eri_DO - self.eri_DO.transpose(0, 3, 2, 1))
-            tmp = lib.einsum('pqrs, rs-> pq', derivative, dm_do[imode], optimize=True)
-            tmp = lib.einsum('pq, pq->', tmp, dm_do[imode], optimize=True)
-            twobody_dvsq[imode] = tmp / 4.0
+            if self.ltensor is not None:
+                for p in range(self.nao):
+                    for q in range(self.nao):
+                        shift = self.eta[imode, q] - self.eta[imode, p]
+                        derivative = self.gaussian_derivative_sq_vector(self.eta, imode, shift=shift)
+                        Ieff = 2.0 * numpy.einsum('X, Xrs->rs', self.ltensor[:, p, q], self.ltensor) - \
+                               numpy.einsum('Xs, Xr->rs', self.ltensor[:, p, :], self.ltensor[:, :,q])
+                        tmp = numpy.sum(Ieff * derivative * dm_do[imode])
+                        twobody_dvsq[imode] += tmp * dm_do[imode, p, q]/ 4.0
+            else:
+                derivative = self.gaussian_derivative_sq_vector(self.eta, imode, onebody=False)
+                derivative *= (2.0 * self.eri_DO - self.eri_DO.transpose(0, 3, 2, 1))
+                tmp = lib.einsum('pqrs, rs-> pq', derivative, dm_do[imode], optimize=True)
+                tmp = lib.einsum('pq, pq->', tmp, dm_do[imode], optimize=True)
+                twobody_dvsq[imode] = tmp / 4.0
 
         self.vsq_grad = onebody_dvsq + twobody_dvsq
 
@@ -350,12 +362,22 @@ class RHF(scqedhf.RHF):
             onebody_dvlf[a] += oei_derivative
 
             # two-electron part
-            derivative = self.gaussian_derivative_f_vector(self.eta, a, onebody=False)
-            derivative *= (2.0 * self.eri_DO - self.eri_DO.transpose(0, 3, 2, 1))
-
-            tmp = lib.einsum("pqrs, rs-> pq", derivative, dm_do[a], optimize=True)
-            tmp = lib.einsum("pq, pq->", tmp, dm_do[a], optimize=True)
-            twobody_dvlf[a] = tmp / 4.0
+            if self.ltensor is not None:
+                for p in range(self.nao):
+                    for q in range(self.nao):
+                        shift = self.eta[a, p] - self.eta[a, q]
+                        derivative = self.gaussian_derivative_f_vector(self.eta, a, shift=shift)
+                        Ieff = 2.0 * numpy.einsum('X, Xrs->rs', self.ltensor[:, p, q], self.ltensor) - \
+                               numpy.einsum('Xs, Xr->rs', self.ltensor[:, p, :], self.ltensor[:, :,q])
+                        tmp = numpy.sum(Ieff * derivative * dm_do[a])
+                        twobody_dvlf[a] += tmp * dm_do[a, p, q]/ 4.0
+                #raise NotImplementedError("CD for VT-QEDHF is not implemented yet!")
+            else:
+                derivative = self.gaussian_derivative_f_vector(self.eta, a, onebody=False)
+                derivative *= (2.0 * self.eri_DO - self.eri_DO.transpose(0, 3, 2, 1))
+                tmp = lib.einsum("pqrs, rs-> pq", derivative, dm_do[a], optimize=True)
+                tmp = lib.einsum("pq, pq->", tmp, dm_do[a], optimize=True)
+                twobody_dvlf[a] = tmp / 4.0
 
             self.vlf_grad[a] = onebody_dvlf[a] + twobody_dvlf[a]
 

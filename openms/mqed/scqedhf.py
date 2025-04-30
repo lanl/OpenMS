@@ -604,7 +604,7 @@ class RHF(qedhf.RHF):
             onebody_deta = numpy.zeros(self.nao)
             twobody_deta = numpy.zeros(self.nao)
 
-            tau = numpy.exp(self.qed.squeezed_var[imode]) # TODO: not used yet
+            tau = numpy.exp(self.qed.squeezed_var[imode])
             # 1) diagonal part due to [(gtmp - eta)^2 \rho]
             for p in range(self.nao):
                 onebody_deta[p] -= 2.0 * dm_do[imode, p,p] * g_DO[imode, p] / self.qed.omega[imode]
@@ -618,11 +618,24 @@ class RHF(qedhf.RHF):
             onebody_deta += numpy.sum(tmp1 - tmp2, axis=1)
             del fc_derivative, tmp1, tmp2
 
-            fc_derivative = self.gaussian_derivative_vectorized(self.eta, imode, onebody=False)
-            fc_derivative *= (2.0 * self.eri_DO - self.eri_DO.transpose(0, 3, 2, 1))
+            if self.ltensor is not None:
+                # tmp_derivative = self.gaussian_derivative_vectorized(self.eta, imode, onebody=False)
+                for p in range(self.nao):
+                    for q in range(self.nao):
+                        shift = self.eta[imode, p] - self.eta[imode, q]
+                        fc_derivative = self.gaussian_derivative_vectorized(self.eta, imode, onebody=True, shift=shift)
 
-            tmp = lib.einsum('pqrs, rs-> pq', fc_derivative, dm_do[imode], optimize=True)
-            twobody_deta = lib.einsum('pq, pq-> p', tmp, dm_do[imode], optimize=True)
+                        Ieff = 2.0 * numpy.einsum('X, Xrs->rs', self.ltensor[:, p, q], self.ltensor) - \
+                               numpy.einsum('Xs, Xr->rs', self.ltensor[:, p, :], self.ltensor[:, :,q])
+                        tmp = numpy.sum(Ieff * fc_derivative * dm_do[imode])
+                        twobody_deta[p] += tmp * dm_do[imode, p, q]
+
+            else:
+                fc_derivative = self.gaussian_derivative_vectorized(self.eta, imode, onebody=False)
+                fc_derivative *= (2.0 * self.eri_DO - self.eri_DO.transpose(0, 3, 2, 1))
+
+                tmp = lib.einsum('pqrs, rs-> pq', fc_derivative, dm_do[imode], optimize=True)
+                twobody_deta = lib.einsum('pq, pq-> p', tmp, dm_do[imode], optimize=True)
             del fc_derivative, tmp
 
             self.eta_grad[imode] = onebody_deta + twobody_deta
@@ -720,9 +733,10 @@ class RHF(qedhf.RHF):
             self.ltensor = tools.chols_blocked(self.mol, thresh=self.CD_thresh, max_chol_fac=15)
             logger.debug(self,
                 f"DEBUG: build CD for the first time! ltensor.shape= {self.ltensor.shape}")
-        # transfer ltensor into OAO
-        for i, chol in enumerate(self.ltensor):
-            self.ltensor[i] = reduce(numpy.dot, (U.conj().T, chol, U))
+            # transform ltensor into OAO
+            for i, chol in enumerate(self.ltensor):
+                self.ltensor[i] = reduce(numpy.dot, (U.conj().T, chol, U))
+
 
     def construct_eri_DO(self, U):
         r"""Repulsion integral modifier according to dipole self-energy terms"""
@@ -755,7 +769,7 @@ class RHF(qedhf.RHF):
         return numpy.sum(ph_exp_val * pdm)
 
 
-    def FC_factor(self, eta, imode, onebody=True):
+    def FC_factor(self, eta, imode, onebody=True, shift=0.0):
         r"""Compute Franck-Condon (or renormalization) factor
 
         .. math::
@@ -775,6 +789,7 @@ class RHF(qedhf.RHF):
         else:
             p, q, r, s = numpy.ogrid[:self.nao, :self.nao, :self.nao, :self.nao]
             diff_eta = eta[imode, p] - eta[imode, q] +  eta[imode, r] - eta[imode, s]
+        diff_eta += shift
 
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
@@ -800,7 +815,7 @@ class RHF(qedhf.RHF):
             return factor.reshape(self.nao, self.nao, self.nao, self.nao)
 
 
-    def gaussian_derivative_vectorized(self, eta, imode, onebody=True):
+    def gaussian_derivative_vectorized(self, eta, imode, onebody=True, shift=0.0):
 
         # Number of boson states
         mdim = self.qed.nboson_states[imode]
@@ -811,6 +826,7 @@ class RHF(qedhf.RHF):
         else:
             p, q, r, s = numpy.ogrid[:self.nao, :self.nao, :self.nao, :self.nao]
             diff_eta = eta[imode, p] - eta[imode, q] + eta[imode, r] - eta[imode, s]
+        diff_eta += shift
 
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
@@ -968,11 +984,28 @@ class RHF(qedhf.RHF):
         vhf_do_offdiag[q, p] = vhf_do_offdiag[p, q]  # Exploit symmetry
         vhf_do += vhf_do_offdiag
 
-        # vectorized code
-        fc_factor = self.FC_factor(self.eta, imode, onebody=False)
-        fc_factor *= (1.0 * self.eri_DO - 0.5 * self.eri_DO.transpose(0, 3, 2, 1))
-        vhf = 0.5 * lib.einsum('pqrs, rs->pq', fc_factor, dm_do, optimize=True)
-        vhf += 0.5 * lib.einsum('qprs, rs->pq', fc_factor, dm_do, optimize=True)
+        if self.ltensor is not None:
+            vhf = numpy.zeros((self.nao, self.nao))
+            t0 = time.time()
+            for p in range(self.nao):
+                for q in range(p, self.nao):
+                    # do a one-body FC factor with shift
+                    shift = self.eta[imode, p] - self.eta[imode, q]
+                    fc_factor = self.FC_factor(self.eta, imode, onebody=True, shift=shift)
+
+                    Ieff = numpy.einsum('X, Xrs->rs', self.ltensor[:, p, q], self.ltensor) - \
+                           0.5 * numpy.einsum('Xs, Xr->rs', self.ltensor[:, p, :], self.ltensor[:, :,q])
+                    vhf[p, q] = term1 = numpy.sum(Ieff * dm_do * fc_factor)
+                    vhf[q, p] = vhf[p, q]
+
+            t1 = time.time()
+        else:
+            # vectorized code
+            fc_factor = self.FC_factor(self.eta, imode, onebody=False)
+            fc_factor *= (1.0 * self.eri_DO - 0.5 * self.eri_DO.transpose(0, 3, 2, 1))
+            vhf = 0.5 * lib.einsum('pqrs, rs->pq', fc_factor, dm_do, optimize=True)
+            # vhf += 0.5 * lib.einsum('qprs, rs->pq', fc_factor, dm_do, optimize=True)
+            vhf += vhf.T
         vhf_do += vhf
 
         # transform back to AO

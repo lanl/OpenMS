@@ -35,7 +35,7 @@ class Test(unittest.TestCase):
 
         numpy.testing.assert_almost_equal(
             eri,
-	    eri2,
+            eri2,
             decimal=5,
             err_msg="Etot does not match the reference value.",
         )
@@ -44,7 +44,7 @@ class Test(unittest.TestCase):
         L2 = numpy.einsum('nik,nkj->ij', afqmc.ltensor.conj(), afqmc.ltensor)
         numpy.testing.assert_almost_equal(
             L1,
-	    L2,
+            L2,
             decimal=5,
             err_msg="Etot does not match the reference value.",
         )

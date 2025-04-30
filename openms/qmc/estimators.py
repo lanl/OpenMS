@@ -540,14 +540,14 @@ def local_eng_eboson(omega, nboson_states, geb, Gfermions, Gboson):
         zalpha += backend.einsum("npq, zpq->zn", geb, Gfermions[1])
 
     boson_size = sum(nboson_states)
-    Hb = backend.zeros((boson_size, boson_size), dtype=backend.complex128)
+    Hb = backend.zeros((Gboson.shape[0], boson_size, boson_size), dtype=backend.complex128)
     idx = 0
     for imode in range(nmodes):
         mdim = nboson_states[imode]
         a = backend.diag(backend.sqrt(backend.arange(1, mdim)), k=1)
         h_od = a + a.T
-        Hb[idx : idx + mdim, idx : idx + mdim] = h_od * zalpha[imode]
-    eg = - backend.einsum("NM,zNM->z", Hb, Gboson)
+        Hb[:, idx:idx+mdim, idx:idx+mdim] += h_od[None, :, :] * zalpha[:, imode][:, None, None]
+    eg = backend.einsum("zNM,zNM->z", Hb, Gboson)
     return eg
 
 

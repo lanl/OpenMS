@@ -332,6 +332,9 @@ def calc_trial_walker_ovlp_gf(walker, trial, return_signs=False):
 
     This function also contains the code to compute the trial walker overlap
 
+    .. math::
+        G_ij = sum_n sqrt(n_j) * sqrt(n_i + 1) * psi_T^*(n + delta_i - delta_j) * psi_W(n) / overlap
+
     Parameters
     ----------
     walker : object
@@ -367,9 +370,7 @@ def calc_trial_walker_ovlp_gf(walker, trial, return_signs=False):
         # <n|a^\dag a|m> elements
         # walker.boson_Ghalf = backend.einsum("zN, z->zN", walker.boson_phiw, inv_ovlp)
         walker.boson_Ghalf = walker.boson_phiw * inv_ovlp[:, None]
-        nvals = backend.arange(len(trial.boson_psi))
-        walker.boson_Gf = backend.einsum("zM, N->zMN", walker.boson_Ghalf, nvals * trial.boson_psi.conj())
-        #walker.boson_Gf = backend.einsum("zN, N->zN", walker.boson_Ghalf, nvals * trial.boson_psi.conj())
+        walker.boson_Gf = backend.einsum("zM, N->zMN", walker.boson_Ghalf, trial.boson_psi.conj())
 
 
     sign_b = None

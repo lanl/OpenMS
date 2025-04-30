@@ -84,12 +84,12 @@ class BaseWalkers(object):
         from openms.__mpi__ import MPI, CommType, MPIWrapper, original_print
         self._mpi = MPIWrapper()
         size = self._mpi.size
-        if self._mpi.size > 1:
-            self.global_nwalkers = nwalkers
-            self.walker_counter = [nwalkers // size + (1 if i < nwalkers % size else 0) for i in range(size)]
-            self.displs = [sum(self.walker_counter[:i]) for i in range(size)]
-            nwalkers = self.walker_counter[self._mpi.rank]
-            original_print(f"local nwalker of rank {self._mpi.rank} is {nwalkers}")
+        #
+        self.global_nwalkers = nwalkers
+        self.walker_counter = [nwalkers // size + (1 if i < nwalkers % size else 0) for i in range(size)]
+        self.displs = [sum(self.walker_counter[:i]) for i in range(size)]
+        nwalkers = self.walker_counter[self._mpi.rank]
+        original_print(f"local nwalker of rank {self._mpi.rank} is {nwalkers}")
         #
         self.nwalkers = nwalkers
 
@@ -101,8 +101,8 @@ class BaseWalkers(object):
         self.weight_min = 0.1
         self.weight_max = 10.0
 
-        self.total_weight0 = self.nwalkers
-        self.total_weight = self.nwalkers
+        self.total_weight0 = self.global_nwalkers
+        self.total_weight = self.global_nwalkers
 
         # variables for overlap, energies, ...
         self.ovlp = backend.ones(self.nwalkers, dtype=backend.complex128)
@@ -129,7 +129,11 @@ class BaseWalkers(object):
         dump flags
         """
         logger.note(self, task_title("Flags of walkers"))
-        logger.note(self, f" Number of walkers        : {self.nwalkers:5d}")
+        if self._mpi.size > 1:
+            logger.note(self, f" Number of walkers        : {self.global_nwalkers:5d}")
+            logger.note(self, f" No. of walkers (per rank): {self.walker_counter}")
+        else:
+            logger.note(self, f" Number of walkers        : {self.nwalkers:5d}")
 
 
     @property
@@ -165,6 +169,9 @@ class BaseWalkers(object):
         logger.debug(self, f"Debug: pop control at step {step}")
         weights = backend.abs(self.weights)
         total_weight = backend.sum(weights)
+        # reduce the total weights across nodes
+        total_weight = self._mpi.comm.allreduce(total_weight, op=MPI.SUM)
+
         ratio = total_weight / self.total_weight0
         logger.debug(self, f"Debug: weights control is triggered! ratio is {ratio}")
         if total_weight < 1.0e-6:
@@ -183,6 +190,7 @@ class BaseWalkers(object):
 
 
     def _pack_walkers(self):
+        r"""pack walkers into list for population control"""
         if self.boson_phiw is not None and self.ncomponents > 1:
             packed_walkers = [[self.phiwa[i], self.phiwb[i], self.boson_phiw[i]] for i in range(self.nwalkers)]
         elif self.boson_phiw is None and self.ncomponents > 1:
@@ -195,7 +203,7 @@ class BaseWalkers(object):
 
 
     def _unpack_walkers(self, new_walkers):
-        r"""unpack tmp walkers into phiwa/b and boson_phiw
+        r"""unpack tmp walkers into phiwa/b and boson_phiw after population control
         """
         if self.boson_phiw is not None and self.ncomponents > 1:
             self.phiwa = backend.array([new_walkers[i][0] for i in range(self.nwalkers)])
@@ -285,7 +293,7 @@ class Walkers_so(BaseWalkers):
             )
 
         # Initialize the bosonic DM
-        boson_DM = backend.zeros((self.nwalkers, boson_size, boson_size))
+        boson_DM = backend.zeros((self.nwalkers, boson_size, boson_size), dtype=backend.complex128)
         # Dictionary to store per-mode DMs
         boson_mode_DM_dict = {}
 
@@ -334,7 +342,7 @@ class Walkers_so(BaseWalkers):
 
         # matrix representation of Q_b = b^\dag_a + b_a: [nfock, nfock]
         # Q_{a, nm} = <m| b^\dag_a + b_a|n>
-        Qalpha = backend.zeros(trial.mol.nmodes)
+        Qalpha = backend.zeros(trial.mol.nmodes, dtype=backend.complex128)
         sum_boson_DM = {}
         for imode in range(trial.mol.nmodes):
             sum_boson_DM[imode] = backend.einsum("z, znm->nm", self.weights, boson_mode_DM[imode]) / backend.sum(self.weights)

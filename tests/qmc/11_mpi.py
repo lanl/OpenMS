@@ -4,6 +4,7 @@ import pytest
 import unittest
 from pyscf import gto, scf, fci, lo
 from openms.qmc.afqmc import AFQMC
+from openms.qmc import tools
 from molecules import get_mol
 
 
@@ -28,6 +29,7 @@ def calc_qmc_energy(
         block_decompose_eri=True,
         verbose=mol.verbose,
     )
+    afqmc.propagator.debug_mpi = True
 
     times, energies = afqmc.kernel()
     return energies
@@ -79,9 +81,6 @@ def test_mpi_estimator():
     counts = [nwalkers // size + (1 if i < nwalkers % size else 0) for i in range(size)]
     displs = [sum(counts[:i]) for i in range(size)]
     nlocal = counts[rank]
-    print("displs = ", displs)
-    print("counts = ", counts)
-    #original_print("test")
 
     # build molecule
     mol = get_mol(natoms=20, name="Hchain", basis=basis)
@@ -182,28 +181,19 @@ class TestQMC_MPI(unittest.TestCase):
 
     def test_qmc_MPI(self):
 
-         # malonaldehyde_reactant
-        atom = f"C 0.00000000 0.00000000 0.00000000;\
-            O 0.00000000 1.23456800 0.00000000;\
-            H 0.97075033 -0.54577032 0.00000000;\
-            C -1.21509881 -0.80991169 0.00000000;\
-            H -1.15288176 -1.89931439 0.00000000;\
-            C -2.43440063 -0.19144555 0.00000000;\
-            H -3.37262777 -0.75937214 0.00000000;\
-            O -2.62194056 1.12501165 0.00000000;\
-            H -1.71446384 1.51627790 0.00000000"
-        verbose = 4
         basis = "ccpvdz",
         basis = "sto3g"
 
-        mol = gto.M(
-            atom=atom,
-            basis=basis,
-            unit="Angstrom",
-            symmetry=True,
-            verbose=verbose,
-        )
-        qmc_energies = calc_qmc_energy(mol, uhf=False, time=0.1, num_walkers=201)
+        #mol = get_mol(name="C3H4O2", basis=basis, verbose=4)
+        mol = get_mol(natoms=10, name="Hchain", basis=basis, verbose=4)
+
+        # here we make the number of walkers odd to make sure the MPI works with
+        # unevenly distributed walkers
+        qmc_energies = calc_qmc_energy(mol, uhf=False, time=5.0, num_walkers=201)
+
+        results = tools.analysis_autocorr(qmc_energies, verbose=1)
+        qmc_mean, std = results['etot'][0], results['etot_error'][0]
+        print("qmc_mean/std =", qmc_mean, std)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 
 from functools import reduce
+from mpi4py import MPI
 import numpy
 import numpy as backend
 import scipy
@@ -136,7 +137,6 @@ def bilinear_decomposition(Afac, Bfac, chol_eb, decouple_scheme):
                 # term 2: \frac{i}{\sqrt{2}} (A_\alpha \hat{F}_\alpha - B_\alpha \hat{B}_\alpha)
                 # these operator corresponds to the same AF and same random number
                 fac = 1j / numpy.sqrt(2.0)
-                ltensor = [fac * Lga[imode] , -fac * Bfac[imode]]
                 chol_bilinear_e[imode*2+1] = Lga[imode] * fac
                 chol_bilinear_b[imode*2+1] = - fac * Bfac[imode]
     else:
@@ -289,13 +289,15 @@ def chols_blocked(mol, thresh=1.e-6, max_chol_fac=15, g=None):
     Get modified Cholesky decomposition from the block decomposition of ERI.
     See Ref. :cite:`Henrik:2003rs, Nelson:1977si`.
 
-    Computes Cholesky decomposition of modified integrals:
-        v_{ijkl} = eri_{ijkl} + sum_n g_{n,ij} g_{n,kl}
+    Computes Cholesky decomposition of modified integrals (if g is not None):
+
+    .. math::
+        V_{ijkl} = eri_{ijkl} + \sum_n g_{n,ij} g_{n,kl}
+
     without explicitly constructing the full tensor.
 
     Initially, we calcualte the diagonal element, :math:`M_{pp}=(pq|pq)`.
 
-    More details TBA.
 
     Parameters
     ----------
@@ -338,16 +340,15 @@ def chols_blocked(mol, thresh=1.e-6, max_chol_fac=15, g=None):
         buf = mol.intor("int2e_sph", shls_slice=shls)
         di = buf.shape[0]
         diag[ndiag:ndiag + di * nao] = buf.reshape(di * nao, di * nao).diagonal()
-        # Add the g-modified diagonal term (sum over n)
         if g is not None:
+            # Add the g-modified diagonal term (sum over n)
             g_diag = numpy.einsum("nij,nij->ij", g, g)  # Summing over n
-            diag[ndiag:ndiag + di * nao] += g_diag.diagonal()[ndiag:ndiag + di * nao]
+            diag[ndiag:ndiag + di * nao] += g_diag.ravel()[ndiag:ndiag + di * nao]
         ndiag += di * nao
 
     # Find initial maximum diagonal element
     nu = numpy.argmax(diag)
     delta_max = diag[nu]
-
 
     # Compute initial Cholesky vector
     j, l = divmod(nu, nao)
@@ -386,7 +387,7 @@ def chols_blocked(mol, thresh=1.e-6, max_chol_fac=15, g=None):
 
         nchol += 1
         step_time = time.time() - start
-        if mol.verbose > 3:
+        if mol.verbose > 3 and nchol % max(2, nao // 2) == 0:
             print(f"# Iteration {nchol:5d}: delta_max = {delta_max:13.8e}: time = {step_time:13.8e}")
 
         # Stop if maximum number of Cholesky vectors is reached

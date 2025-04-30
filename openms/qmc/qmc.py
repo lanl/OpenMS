@@ -55,13 +55,13 @@ from openms import runtime_refs, _citations
 from . import generic_walkers as gwalker
 from . import tools
 
+from openms.__mpi__ import MPI, original_print
 from openms.lib import logger
 from openms.lib.logger import task_title
 from openms.lib.boson import Boson
 from openms.qmc.trial import make_trial, multiCI
 from openms.qmc.estimators import local_eng_elec_chol
 from openms.qmc.estimators import local_eng_elec_chol_new
-
 from openms.qmc.propagators import Phaseless, PhaselessElecBoson
 
 
@@ -258,6 +258,7 @@ class QMCbase(object):
         self.print_freq = 10
 
         # system parameters
+        self.merge_g2eri = False
         self.system = self.mol = system
         self.uhf = kwargs.get("uhf", False)
         self.OAO = kwargs.get("OAO", True)
@@ -453,6 +454,9 @@ class QMCbase(object):
             self.trial.initialize_boson_trial_with_z(zalpha, self.mol.nboson_states)
             logger.debug(self, f"Debug: initial coherent state is  : {zalpha}")
             logger.debug(self, f"Debug: initial bosonic trial WF is: {self.trial.boson_psi}")
+        elif self.geb is not None and self.propagator_options["turnoff_bosons"]:
+            self.trial.boson_psi *= 0.0
+            self.trial.boson_psi[0] = 1.0
 
         # 3) set up walkers
         t0 = time.time()
@@ -578,10 +582,13 @@ class QMCbase(object):
 
         mol = self.mol._mol if isinstance(self.mol, Boson) else self.mol
 
+        g_ptr = None
+        if self.merge_g2eri: g_ptr = g_AO # create a pointer to g_AO
+
         # get h1e, eri, ltensors in OAO/MO representation
         hcore, ltensor, self.nuc_energy = tools.get_h1e_chols(
             mol, Xmat=Xmat, thresh=self.chol_thresh,
-            g=g_AO,
+            g=g_ptr,
             block_decompose_eri=self.block_decompose_eri,
         )
         #print("Norm of ltensor is: ", backend.linalg.norm(ltensor))
@@ -602,6 +609,10 @@ class QMCbase(object):
             # add DSE contribution to h1e
             oei_dse = 0.5 * backend.einsum('Xpq, Xqs->ps', g_OR, g_OR)
             h1e += backend.array([oei_dse for _ in range(self.ncomponents)])
+
+            if not self.merge_g2eri:
+                ltensor = backend.concatenate((ltensor, g_OR), axis=0)
+                self.nbarefields += g_OR.shape[0]
 
             # geb is the bilinear coupling term
             tmp = (system.boson_freq * 0.5) ** 0.5
@@ -849,6 +860,12 @@ class QMCbase(object):
 
         # Perform periodic property reduction and normalization
         if (step + 1) % self.property_calc_freq == 0:
+            # Reduce the variables across nodes using MPI
+            if walkers._mpi.size > 1:
+                # Create a buffer to hold the reduced data
+                reduced_buffer = walkers._mpi.comm.allreduce(self.property_buffer, op=MPI.SUM)
+                self.property_buffer = reduced_buffer
+            # print("reduced property_buffer: ", self.property_buffer)
 
             # Normalize energies by weights
             weights_idx = self.stacked_variables.index("weights")
@@ -890,9 +907,10 @@ class QMCbase(object):
         # trace_ltheta -> trace_tltheta -> vbias
 
         # prepare propagation
+
         logger.info(self, f"\n Random seed is {self.random_seed}\n")
-        # Create a rank-specific seed using SeedSequence
-        if self._mpi.size > 1:
+        if self._mpi.size > 1 and not self.propagator.debug_mpi:
+            # Create a rank-specific seed using SeedSequence
             ss = backend.random.SeedSequence(self.random_seed)
             child_seeds = ss.spawn(self._mpi.size)
             backend.random.default_rng(child_seeds[self._mpi.rank])
@@ -903,7 +921,6 @@ class QMCbase(object):
         # print("YZ: walkers weights =", self.walkers.weights)
 
         h1e = self.h1e
-        # eri = self.eri
         ltensor = self.ltensor
         #propagator = self.propagator
 

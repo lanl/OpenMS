@@ -14,9 +14,8 @@
 # Author: Yu Zhang <zhy@lanl.gov>
 #
 
-r"""Variational Monte Carlo (VMC) for quantum many-body ground states and dynamics"""
+r"""Variational Monte Carlo (VMC) for quantum many-body ground states and dynamics
 
-r"""
 Theoretical background
 ----------------------
 

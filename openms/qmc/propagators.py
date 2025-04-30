@@ -186,6 +186,9 @@ class PropagatorBase(object):
 
         self.nbarefields = 0
 
+        # debugging flags
+        self.debug_mpi = False
+
     # @abstractmethod
     def build(self, h1e, ltensor, trial, geb=None):
         r"""Build the propagators and intermediate variables
@@ -343,10 +346,6 @@ class Phaseless(PropagatorBase):
         norm = backend.sum(walkers.weights)
         e1 = backend.dot(walkers.weights, e1.real)
         e2 = backend.dot(walkers.weights, e2.real)
-        logger.debug(self, f"Debug: total energy (unnormalized) is {etot}")
-        logger.debug(self, f"Debug: e1 (unnormalized) is {e1}")
-        logger.debug(self, f"Debug: e2 (unnormalized) is {e2}")
-        # logger.debug(self, f"Debug: time of computing energy is {time.time() - t0}")
 
         if walkers._mpi.size > 1:
             # If MPI, gather energy here
@@ -355,6 +354,11 @@ class Phaseless(PropagatorBase):
             e1 = walkers._mpi.comm.allreduce(e1, op=MPI.SUM)
             e2 = walkers._mpi.comm.allreduce(e2, op=MPI.SUM)
             etot = walkers._mpi.comm.allreduce(etot, op=MPI.SUM)
+
+        logger.debug(self, f"Debug: total energy (unnormalized) is {etot}")
+        logger.debug(self, f"Debug: e1 (unnormalized) is {e1}")
+        logger.debug(self, f"Debug: e2 (unnormalized) is {e2}")
+        # logger.debug(self, f"Debug: time of computing energy is {time.time() - t0}")
 
         ##  weights * eloc
         # energy = energy / backend.sum(walkers.weights)
@@ -471,7 +475,24 @@ class Phaseless(PropagatorBase):
         # a) generate normally distributed AF
         # if we compare with electron-boson case, we need to add nmode * nwalker random number in order to
         # have the same random number in each iteration
-        xi = backend.random.normal(0.0, 1.0, (self.nfields + self.num_fake_fields) * walkers.nwalkers)
+        if self.debug_mpi:
+            # This part is to make sure MPI version has the same random number as the serial code
+            # for debug debug MPI purpose
+            if walkers._mpi.rank == 0:
+                xi_full = backend.random.normal(0.0, 1.0, (self.nfields + self.num_fake_fields) * walkers.global_nwalkers)
+                # print("random numbers = ", xi_full) # YZ: confimed to be same for mpi
+            else:
+                xi_full = None
+            xi_size = (self.nfields + self.num_fake_fields) * walkers.nwalkers
+            xi = backend.empty(xi_size, dtype=backend.float64)
+            # original_print("local xi size = ", xi_size)
+            counts = [(self.nfields + self.num_fake_fields) * nw for nw in walkers.walker_counter]
+            displs = [0] + list(backend.cumsum(counts))[:-1]
+            walkers._mpi.comm.Scatterv([xi_full, counts, displs, MPI.DOUBLE], xi, root=0)
+        else:
+            # In practice, we will generate random number locally, without scattering
+            xi = backend.random.normal(0.0, 1.0, (self.nfields + self.num_fake_fields) * walkers.nwalkers)
+
         xi = xi.reshape(walkers.nwalkers, self.nfields + self.num_fake_fields)[:, :self.nfields]
         if self.nfields > self.nbarefields:
             self.xi_bilinear = xi[:, self.nbarefields:self.nfields]
@@ -1005,10 +1026,10 @@ class PhaselessElecBoson(Phaseless):
             else:
                 self.shifted_Hb = self.Hb.copy()
 
-            logger.debug(self, f"Debug: norm of         Hb: {backend.linalg.norm(self.Hb)}")
-            logger.debug(self, f"Debug: norm of shifted Hb: {backend.linalg.norm(self.shifted_Hb)}")
-            # logger.debug(self, f" chol_B =\n {self.chol_B}")
-            logger.debug(self, f" boson_rhomf =\n {boson_rhomf}")
+            logger.debug(self, f" Debug: norm of         Hb: {backend.linalg.norm(self.Hb)}")
+            logger.debug(self, f" Debug: norm of shifted Hb: {backend.linalg.norm(self.shifted_Hb)}")
+            logger.debug(self, f" Debug: chol_B =\n {self.chol_B}")
+            logger.debug(self, f" Debug: boson_rhomf =\n {boson_rhomf}")
 
 
     def local_energy(self, h1e, ltensor, walkers, trial, enuc=0.0):

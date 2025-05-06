@@ -3,6 +3,8 @@ import numpy as np
 import scipy
 import time
 from openms.lib.misc import deprecated
+from openms.qmc import QMCLIB_AVAILABLE, NUMBA_AVAILABLE
+
 
 # for each observables, we may save several quantities using a small class
 #  to handle the these data
@@ -263,12 +265,10 @@ def local_energy_SD_RHF(trial, walkers, enuc = 0.0):
     e1 += enuc
 
     # coulomb energy
-    # LG = backend.einsum("nqi, zqi->zn", trial.rltensora, walkers.Ghalfa)
-    # ecoul =  2.0 * backend.einsum("zn, zn->z", LG, LG)
     ecoul = 4.0 * ecoul_rltensor_uhf(trial.rltensora, walkers.Ghalfa)
 
     # exchange
-    exx = 2.0 * exx_rltensor_Ghalf(trial.rltensora, walkers.Ghalfa)
+    exx = 2.0 * exx_rltensor_Ghalf_kernel(trial.rltensora, walkers.Ghalfa)
 
     e2 = ecoul - exx
 
@@ -302,10 +302,7 @@ def ecoul_rltensor_uhf(rltensora, Ghalfa, rltensorb=None, Ghalfb=None):
         ecoul = 0.5 * backend.sum(LG * LG, axis=1)
     return ecoul
 
-#from numba import njit
 
-
-# @njit
 def exx_THC_Ghalf(rX, U, Ghalf):
     r"""Compute exchange energy via the THC methods
 
@@ -352,11 +349,46 @@ def exx_THC_Ghalf(rX, U, Ghalf):
             LG = backend.dot(rX[l], B) # ij
             exx[i] += backend.dot(LG.ravel(), LG.T.ravel())
     exx *= 0.5
-
     return exx
 
 
-# @njit
+# numba functions
+if NUMBA_AVAILABLE:
+    from numba import njit, prange
+
+    # @njit(parallel=True, fastmath=True)
+    @njit(parallel=True)
+    def exx_rltensor_Ghalf_numba(rltensor, Ghalf):
+        """
+        Parameters
+        ----------
+        rltensor : np.ndarray (nchol, nao, no)
+            Real-space tensor
+        Ghalf : np.ndarray (nwalkers, nao, no)
+            Half of the Green's function
+
+        Returns
+        -------
+        exx : np.ndarray (nwalkers,)
+            Exchange energy per walker
+        """
+        nwalkers = Ghalf.shape[0]
+        nchol = rltensor.shape[0]
+        exx = np.zeros(nwalkers, dtype=np.complex128)
+
+        for i in prange(nwalkers):
+            for l in range(nchol):
+                # LG = rltensor[l].T @ Ghalf[i]
+                LG = rltensor[l].T.astype(np.complex128) @ Ghalf[i]
+
+                LG_flat = LG.ravel()
+                LG_T_flat = LG.T.ravel()
+                exx[i] += LG_flat @ LG_T_flat
+
+        exx *= 0.5
+        return exx
+
+
 def exx_rltensor_Ghalf(rltensor, Ghalf):
     r"""Compute exchange contribution for real Choleskies with RHF/UHF trial.
 
@@ -425,6 +457,15 @@ def exx_rltensor_Ghalf(rltensor, Ghalf):
     return exx
 
 
+if QMCLIB_AVAILABLE:
+    from openms.lib import _qmclib
+    exx_rltensor_Ghalf_kernel = _qmclib.exx_rltensor_Ghalf_complex
+elif NUMBA_AVAILABLE:
+    exx_rltensor_Ghalf_kernel = exx_rltensor_Ghalf_numba
+else:
+    exx_rltensor_Ghalf_kernel = exx_rltensor_Ghalf
+
+
 @deprecated
 def exx_rltensor_Ghalf_chunked(rltensor, Ghalf, comm, MPI, nwalkers, counts, displs):
     r"""Distributed computation of exx energy
@@ -476,8 +517,8 @@ def local_energy_SD_UHF(trial, walkers, enuc = 0.0):
     ecoul = ecoul_rltensor_uhf(trial.rltensora, walkers.Ghalfa, trial.rltensorb, walkers.Ghalfb)
 
     # exchange
-    exx = exx_rltensor_Ghalf(trial.rltensora, walkers.Ghalfa)
-    exx += exx_rltensor_Ghalf(trial.rltensorb, walkers.Ghalfb)
+    exx = exx_rltensor_Ghalf_kernel(trial.rltensora, walkers.Ghalfa)
+    exx += exx_rltensor_Ghalf_kernel(trial.rltensorb, walkers.Ghalfb)
 
     e2 = ecoul - exx
 

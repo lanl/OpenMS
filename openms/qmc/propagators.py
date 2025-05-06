@@ -5,6 +5,7 @@ import numpy as backend
 import scipy
 
 from openms.lib.logger import task_title
+from openms.qmc import NUMBA_AVAILABLE, QMCLIB_AVAILABLE
 from openms.__mpi__ import MPI, original_print
 from abc import abstractmethod, ABC
 
@@ -78,6 +79,92 @@ def propagate_onebody(op, phi):
             phi[iw] = backend.dot(op, phi[iw])
     return phi
 
+if NUMBA_AVAILABLE:
+    from numba import njit, prange
+
+    @njit(parallel=True, fastmath=True)
+    def propagate_onebody_numba(op, phi):
+        r""" Base function for propagating onebody operator
+
+        op: (n, n) array
+        phi: (nw, n, m) array
+
+        return:
+        phi: (nw, n, m) array
+
+        """
+
+        nwalkers = phi.shape[0]
+        for iw in prange(nwalkers):
+            phi[iw] = op @ phi[iw]
+        return phi
+
+
+    @njit(parallel=True, fastmath=True)
+    def propagate_exp_op_numba(phiw, op, order):
+        """
+        Apply exponential operator via Taylor expansion:
+            φ' = (1 + A + A^2/2! + A^3/3! + ...) φ
+
+        Parameters
+        ----------
+        phiw : np.ndarray of shape (nwalkers, ndim)
+            Walker wavefunctions
+        op : np.ndarray of shape (nwalkers, ndim, ndim)
+            Operator A applied to each walker
+        order : int
+            Order of Taylor expansion
+        """
+        nwalkers = phiw.shape[0]
+
+        for iw in prange(nwalkers):
+            temp = phiw[iw].copy()
+            for i in range(order):
+                temp = op[iw] @ temp / (i + 1.0)
+                phiw[iw] += temp
+        return phiw
+
+    @njit(parallel=True)
+    def build_HS_numba(xshift, ltensor, factor):
+        """
+        Numba-compatible and parallelized build_HS function.
+
+        Parameters
+        ----------
+        xshift : (nwalkers, nchol)
+            Random numbers for HS transformation.
+        ltensor : (nchol, nao, nao)
+            Cholesky-decomposed tensor.
+        factor : scalar
+            Scaling factor (e.g., sqrt(dt)).
+        nwalkers : int
+            Number of walkers.
+
+        Returns
+        -------
+        eri_op : (nwalkers, nao, nao)
+            Two-body propagator operator.
+        """
+        nchol, nao, _ = ltensor.shape
+        nwalkers = xshift.shape[0]
+
+        eri_op = xshift @ ltensor.reshape(nchol, nao * nao).astype(backend.complex128)
+        eri_op = factor * eri_op.reshape(nwalkers, nao, nao)
+
+        """
+        # Reshape ltensor: (nchol, nao*nao)
+        ltensor_flat = ltensor.reshape(nchol, nao * nao)
+
+        # n, npq-> pq
+        eri_op = backend.zeros((nwalkers, nao, nao), dtype=backend.complex128)
+        # Do matrix multiplication: (nwalkers, nchol) @ (nchol, nao*nao)
+        for w in prange(nwalkers):
+            tmp = ltensor_flat.astype(backend.complex128).T @ xshift[w]
+            eri_op[w] = factor * tmp.T.reshape(nao, nao)
+        """
+
+        return eri_op
+
 
 def propagate_effective_oei(phi, system, bt2, H1diag=False):
     r"""Propagate by the kinetic term by direct matrix multiplication.
@@ -111,6 +198,15 @@ def propagate_effective_oei(phi, system, bt2, H1diag=False):
     return
 
 
+def build_HS(xshift, ltensor, factor):
+    r"""xshift @ ltensor"""
+
+    nchol, nao = ltensor.shape[:-1]
+    nwalkers = xshift.shape[0]
+    eri_op = factor * backend.dot(xshift, ltensor.reshape(nchol, -1)).reshape(nwalkers, nao, nao)
+    return eri_op
+
+
 def propagate_exp_op(phiw, op, order):
     r"""action of exponential operator on (walker) wavefunction
 
@@ -134,6 +230,21 @@ def propagate_exp_op(phiw, op, order):
                 phiw[iw] += temp
 
     return phiw
+
+# TODO: set from configuration and availability
+if QMCLIB_AVAILABLE:
+    print("Debug: using qmclib kernel")
+    from openms.lib import _qmclib
+    propagate_onebody_kernel = _qmclib.propagate_onebody_complex
+    propagate_HS_kernel = _qmclib.propagate_exp_op_complex
+elif NUMBA_AVAILABLE:
+    print("Debug: using numba kernel")
+    propagate_onebody_kernel = propagate_onebody_numba
+    propagate_HS_kernel = propagate_exp_op_numba
+else:
+    print("Debug: using native kernel")
+    propagate_HS_kernel = propagate_exp_op
+    propagate_onebody_kernel = propagate_onebody
 
 
 class PropagatorBase(object):
@@ -171,6 +282,7 @@ class PropagatorBase(object):
         self.wt_buildh1e = 0.0  # for building h1e (in e-b interaction)
         self.wt_twobody = 0.0  # for total two body propagation
         self.wt_fbias = 0.0  # for computing bias in two-body propagation
+        self.wt_fbias_rescale = 0.0  # for computing bias in two-body propagation
         self.wt_random = 0.0  # for random number generation
         self.wt_hs = 0.0  # for propagating HS term in two-body propagation
         self.wt_chs = 0.0  # for constructing HS term in two-body propagation
@@ -400,11 +512,11 @@ class Phaseless(PropagatorBase):
         # logger.debug(self, f"Debug: phiwa.shape = {walkers.phiwa.shape}")
         # logger.debug(self, f"Debug: phiwb.shape = {walkers.phiwb.shape}")
 
-        walkers.phiwa = propagate_onebody(self.exp_h1e[0], walkers.phiwa)
+        walkers.phiwa = propagate_onebody_kernel(self.exp_h1e[0], walkers.phiwa)
         logger.debug(self, f"Debug: norm of phiwa after onebody {backend.linalg.norm(walkers.phiwa):.8f}")
 
         if walkers.ncomponents > 1:
-            walkers.phiwb = propagate_onebody(self.exp_h1e[1], walkers.phiwb)
+            walkers.phiwb = propagate_onebody_kernel(self.exp_h1e[1], walkers.phiwb)
             logger.debug(self, f"Debug: norm of phiwb after onebody {backend.linalg.norm(walkers.phiwb):.8f}")
         self.wt_onebody += time.time() - t0
         logger.debug(self, f"Debug: time of propagate onebody: { time.time() - t0}")
@@ -430,9 +542,9 @@ class Phaseless(PropagatorBase):
 
         t0 = time.time()
         # \sum_n 1/n! (j\sqrt{\Delta\tau) xL)^n
-        walkers.phiwa = propagate_exp_op(walkers.phiwa, eri_op, self.taylor_order)
+        propagate_HS_kernel(walkers.phiwa, eri_op, self.taylor_order)
         if walkers.ncomponents > 1:
-            walkers.phiwb = propagate_exp_op(walkers.phiwb, eri_op, self.taylor_order)
+            propagate_HS_kernel(walkers.phiwb, eri_op, self.taylor_order)
         logger.debug(self, f"Debug: time of propagating twobody exp operator {time.time() - t0}")
         self.wt_phs += time.time() - t0
 
@@ -506,6 +618,9 @@ class Phaseless(PropagatorBase):
         #   = j\sqrt{\Delta\tau}(<L> - <L>_{MF})
         # xbar is the F
         self.vbias = trial.get_vbias(walkers, ltensor) # (nwalkers, nfield)
+        t1 = time.time()
+        self.wt_fbias += t1 - t0
+
         xbar = -backend.sqrt(self.dt) * (1j * self.vbias - self.mf_shift)
         xbar = self.rescale_fbias(xbar)  # bound of vbias
         xshift = xi - xbar  # [nwalker, nchol]
@@ -514,8 +629,8 @@ class Phaseless(PropagatorBase):
         logger.debug(self, f"Debug: vbias.shape = {self.vbias.shape}")
         logger.debug(self, f"Debug: norm of vbias = {backend.linalg.norm(self.vbias):.8f}")
 
+        self.wt_fbias_rescale += time.time() - t1
         t1 = time.time()
-        self.wt_fbias += t1 - t0
 
         # c) compute the factors due to mean-field shift and shift in propabailities
         #
@@ -527,9 +642,7 @@ class Phaseless(PropagatorBase):
         # so (x-F)<F> --> cmf
         #    x(F-<F>) - 0.5(F-<F>)^2 -- > cfb
         #    0.5 <F>^2 propability shift
-        cfb = backend.einsum("zn, zn->z", xi, xbar) - 0.5 * backend.einsum(
-            "zn, zn->z", xbar, xbar
-        )
+        cfb = backend.sum((xi - 0.5 * xbar) * xbar, axis=1)
         # factors due to MF shift and force bias
         cmf = -backend.sqrt(self.dt) * backend.einsum("zn, n->z", xshift, self.mf_shift)
 
@@ -1561,8 +1674,6 @@ class PhaselessElecBoson(Phaseless):
             cfb = backend.einsum("zn, zn->z", xi, xbar) - 0.5 * backend.einsum("zn, zn->z", xbar, xbar)
             # factors due to MF shift and force bias
             cmf = -backend.sqrt(dt) * backend.einsum("zn, n->z", xshift, self.boson_mfshift)
-            #print(f"\nBosonic cfb    = {cfb}")
-            #print(f"Bosonic cmf    = {backend.exp(cfb + cmf)}")
         else:
             # Trace over fermionic DOF to construct the photonic (bilinear part) Hamiltonian
             logger.debug(self, f"Debug: propagating the bilinear term in product formalism")
@@ -1596,22 +1707,12 @@ class PhaselessElecBoson(Phaseless):
             return backend.zeros(walkers.nwalkers), backend.zeros(walkers.nwalkers)
 
 
-    def propagate_walkers(self, trial, walkers, ltensor, eshift=0.0, verbose=0):
-        r"""Propagate the walkers function for the coupled electron-boson interactions"""
-
-        # 1) compute overlap and update the Green's funciton
-        t0 = time.time()
-        ovlp = trial.ovlp_with_walkers_gf(walkers) # fermionic
-        if not self.turnoff_bosons:
-            boson_ovlp = trial.boson_ovlp_with_walkers(walkers) # bosonic
-            ovlp *= boson_ovlp
-
-        # 2) update Fermionic DM and Qalpha for the bilinear terms
+    def update_GF(self, trial, walkers):
+        r"""update GF"""
         walkers.Ga = backend.einsum("zqi, pi->zpq", walkers.Ghalfa, trial.psia.conj())
         if walkers.ncomponents > 1:
             walkers.Gb = backend.einsum("zqi, pi->zpq", walkers.Ghalfb, trial.psib.conj())
             walkers.Gf = walkers.Ga + walkers.Gb
-            logger.debug(self, f"walkers.Ga.shape = {walkers.Ga.shape}")
             logger.debug(self, f"walkers.Gb.shape = {walkers.Gb.shape}")
         else:
             walkers.Gf = 2.0 * walkers.Ga
@@ -1623,11 +1724,24 @@ class PhaselessElecBoson(Phaseless):
         )
         # logger.debug(self, f"test DM = {backend.trace(walkers.rho)}")
 
-        #
         # get Qalpha in either 1st or 2nd quantization
-        #
         walkers.Qalpha = walkers.get_boson_bdag_plus_b(trial, walkers.boson_phiw)
         logger.debug(self, f"Debug: Updated Q value is {walkers.Qalpha}")
+
+
+    def propagate_walkers(self, trial, walkers, ltensor, eshift=0.0, verbose=0):
+        r"""Propagate the walkers function for the coupled electron-boson interactions"""
+
+        # 1) compute overlap and update the Green's funciton
+        t0 = time.time()
+        ovlp = trial.ovlp_with_walkers_gf(walkers) # fermionic
+        if not self.turnoff_bosons:
+            boson_ovlp = trial.boson_ovlp_with_walkers(walkers) # bosonic
+            ovlp *= boson_ovlp
+
+        # 2) update Fermionic DM and Qalpha for the bilinear terms
+        self.update_GF(trial, walkers)
+
         self.wt_ovlp += time.time() - t0
 
         #

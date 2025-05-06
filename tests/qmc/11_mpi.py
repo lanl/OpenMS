@@ -166,7 +166,7 @@ def test_mpi_estimator():
     t2 = time.time() - t0
 
     if rank == 0:
-        assert numpy.allclose(exx0, exx1, atol=1e-6), "exx0 and exx1 are not close within 1e-8"
+        assert numpy.allclose(exx0, exx1, atol=1e-6), "exx0 and exx1 are not close within 1e-6"
         # assert numpy.allclose(phiw_all, phiw_gathered, atol=1e-8), "exx0 and exx1 are not close within 1e-8"
         print(f"Times of computing exx are:     {t1:.3f} vs {t2: .3f}")
         print(f"\nTimes of propagation      : {prop_time:.3f} vs {prop_time2:.3f}")

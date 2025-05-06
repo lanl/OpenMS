@@ -1,6 +1,6 @@
 
 from functools import reduce
-from mpi4py import MPI
+from openms.__mpi__ import MPI
 import numpy
 import numpy as backend
 import scipy

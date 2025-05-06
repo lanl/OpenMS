@@ -139,8 +139,11 @@ from openms.lib.boson import Boson
 from openms.lib import logger
 from openms.lib.logger import task_title
 from openms.lib.misc import deprecated
+from openms.qmc import QMCLIB_AVAILABLE, NUMBA_AVAILABLE
 from openms.mqed.qedhf import RHF as QEDRHF
+
 import numpy as backend
+import numpy as np
 import h5py
 
 
@@ -231,6 +234,56 @@ def half_rotate_integrals(
 # ****** functions for computing trial_walker overlap in single determinant formalism
 #
 
+if NUMBA_AVAILABLE:
+    from numba import njit, prange
+
+    @njit(parallel=True, fastmath=True)
+    def trial_walker_ovlp_base_numba(phiw, psi):
+        nw = phiw.shape[0]
+        no = psi.shape[1]
+
+        ovlp = np.empty((nw, no, no), dtype=np.complex128)
+
+        for z in prange(nw):
+            ovlp[z] = phiw[z].T @ psi.conj().astype(np.complex128)
+        return ovlp
+
+
+    @njit(parallel=True, fastmath=True)
+    def trial_walker_ovlp_gf_base_numba(phiw, psi):
+        """
+        Compute trial-walker overlaps and Green's function using matrix ops.
+
+        Parameters
+        ----------
+        phiw : ndarray (z, p, i)
+            Walker wavefunctions.
+        psi : ndarray (p, j)
+            Trial wavefunction.
+
+        Returns
+        -------
+        ovlp : ndarray (z, i, j)
+            Overlap matrices.
+        Ghalf : ndarray (z, p, i)
+            Green's function components.
+        """
+        nw = phiw.shape[0]
+        nao, no = psi.shape
+
+        ovlp = np.empty((nw, no, no), dtype=np.complex128)
+        Ghalf = np.empty((nw, nao, no), dtype=np.complex128)
+
+        for z in prange(nw):
+            ovlp[z] = phiw[z].T @ psi.conj().astype(np.complex128)
+
+            # inv_ovlp = inv(ovlp[z])
+            inv_ovlp = np.linalg.inv(ovlp[z])
+
+            Ghalf[z] = phiw[z] @ inv_ovlp.T
+
+        return ovlp, Ghalf
+
 
 def trial_walker_ovlp_base(phiw, psi):
     r"""
@@ -299,6 +352,18 @@ def calc_walker_gf(walker, trial, ovlp):
             walker.Gb = backend.einsum("pi, nqi->npq", trial.psib.conj(), walker.Ghalfb)
 
 
+if QMCLIB_AVAILABLE:
+    from openms.lib import _qmclib
+    trial_walker_ovlp_base_kernel = _qmclib.trial_walker_ovlp_base
+    trial_walker_ovlp_gf_base_kernel = _qmclib.trial_walker_ovlp_gf_base
+elif NUMBA_AVAILABLE:
+    trial_walker_ovlp_base_kernel = trial_walker_ovlp_base_numba
+    trial_walker_ovlp_gf_base_kernel = trial_walker_ovlp_gf_base_numba
+else:
+    trial_walker_ovlp_base_kernel = trial_walker_ovlp_base
+    trial_walker_ovlp_gf_base_kernel = trial_walker_ovlp_gf_base
+
+
 def calc_trial_walker_ovlp(walker, trial):
     r"""Compute the trial walker overlap only
 
@@ -314,10 +379,10 @@ def calc_trial_walker_ovlp(walker, trial):
         Overlap between walker and trial
     """
     # slogdet: sign and (natural) logarithm of the determinant of an array.
-    ovlp_a = trial_walker_ovlp_base(walker.phiwa, trial.psia)
+    ovlp_a = trial_walker_ovlp_base_kernel(walker.phiwa, trial.psia.astype(np.complex128))
     sign_a, logovlp_a = backend.linalg.slogdet(ovlp_a)
     if trial.ncomponents > 1:
-        ovlp_b = trial_walker_ovlp_base(walker.phiwb, trial.psib)
+        ovlp_b = trial_walker_ovlp_base(walker.phiwb, trial.psib.astype(np.complex128))
         sign_b, logovlp_b = backend.linalg.slogdet(ovlp_b)
 
         ovlp = sign_a * sign_b * backend.exp(logovlp_a + logovlp_b - walker.logshift)
@@ -347,7 +412,7 @@ def calc_trial_walker_ovlp_gf(walker, trial, return_signs=False):
         Overlap between walker and trial
     """
 
-    ovlp_a, walker.Ghalfa = trial_walker_ovlp_gf_base(walker.phiwa, trial.psia)
+    ovlp_a, walker.Ghalfa = trial_walker_ovlp_gf_base_kernel(walker.phiwa, trial.psia.astype(np.complex128))
     sign_a, logovlp_a = backend.linalg.slogdet(ovlp_a)
 
     # TODO: test the code without half_rotation
@@ -375,7 +440,7 @@ def calc_trial_walker_ovlp_gf(walker, trial, return_signs=False):
 
     sign_b = None
     if trial.ncomponents > 1:
-        ovlp_b, walker.Ghalfb = trial_walker_ovlp_gf_base(walker.phiwb, trial.psib)
+        ovlp_b, walker.Ghalfb = trial_walker_ovlp_gf_base(walker.phiwb, trial.psib.astype(np.complex128))
         sign_b, logovlp_b = backend.linalg.slogdet(ovlp_b)
         if not trial.half_rotated:
             walker.Gb = backend.einsum("pi, nqi->npq", trial.psib.conj(), walker.Ghalfb)
@@ -426,7 +491,6 @@ def calc_ovlp_iexc(exc_order, Gf, cre_idx, anh_idx, occ_map, nao_frozen):
                     ovlp_tmp[jex, iex] = Gf[:, r, q]
             ovlp[:, idet] = backend.linalg.det(det)
     return ovlp
-
 
 
 def compute_MSD_ovlp(GFs, trial):

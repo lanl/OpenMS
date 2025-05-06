@@ -42,3 +42,16 @@ A collection of QMC solvers for electron-boson interactions.
 #    Removing the dependence on the mol/boson object will make it easier to incoporate any system, like many molecules
 # 3) QMC for interacting bosons
 # 4) Free-projection QMC.
+
+try:
+    from openms.lib import _qmclib
+    QMCLIB_AVAILABLE = True
+except ImportError:
+    QMCLIB_AVAILABLE = False
+
+# may move to backend module
+try:
+    import numba
+    NUMBA_AVAILABLE = True
+except ImportError:
+    NUMBA_AVAILABLE = False

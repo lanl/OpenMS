@@ -632,18 +632,18 @@ class RHF(hf.RHF):
 
 
     def get_veff(self, mol=None, dm=None, dm_last=0, vhf_last=0, hermi=1):
-        r"""Return DSE-mediated potential matrix, :math:`V^{\tt{QED}}_{\tt{HF}}`.
+        r"""Return DSE-mediated potential matrix, :math:`V^{\text{QED}}_{\text{HF}}`.
 
         Overwrite :meth:`hf.RHF.get_veff <pyscf.scf.hf.RHF.get_veff>`.
-        Use parent function to compute non-QED potential, :math:`V_{\tt{HF}}`
+        Use parent function to compute non-QED potential, :math:`V_{\text{HF}}`
         then call :meth:`~lib.boson.Boson.get_dse_jk` in :attr:`qed` object
         for the DSE-mediated Coulomb :math:`(J)` and Exchange :math:`(K)`
         matrices, added before return.
 
         .. math::
 
-            V^{\tt{QED}}_{\tt{HF}} = V_{\tt{HF}}
-                                   + (J^{\tt{QED}} - \frac{1}{2} K^{\tt{QED}})
+            V^{\text{QED}}_{\text{HF}} = V_{\text{HF}}
+                                   + (J^{\text{QED}} - \frac{1}{2} K^{\text{QED}})
 
         Keyword Arguments
         -----------------
@@ -667,7 +667,7 @@ class RHF(hf.RHF):
         -------
         vhf : :class:`~numpy.ndarray`
             DSE-mediated potential matrix,
-            :math:`V^{\tt{QED}}_{\tt{HF}}`.
+            :math:`V^{\text{QED}}_{\text{HF}}`.
         """
 
         if mol is None: mol = self.mol
@@ -789,11 +789,9 @@ class RHF(hf.RHF):
             logger.note(self, 'converged z = [%s]', ', '.join(f'{z:.15g}' for z in self.qed.z_alpha))
             logger.note(self, 'converged f = [%s]', ', '.join(f'{f:.15g}' for f in self.qed.couplings_var))
             logger.note(self, 'converged F = [%s]', ', '.join(f'{f:.15g}' for f in self.qed.squeezed_var))
-
         else:
             logger.note(self, 'SCF not converged.')
             logger.note(self, 'SCF energy = %.15g', self.e_tot)
-
         return self
 
 

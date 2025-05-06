@@ -718,13 +718,12 @@ class RHF(qedhf.RHF):
         generate L tensor (Cholesky decomposition of the repulsion integral matrix) in OAO/DO basis
 
         .. math::
-
-             I_{uvwt} = L{\gamma, uv} L_{\gamma, wt}
+             I_{uvwt} = L_{\gamma, uv} L_{\gamma, wt}
 
         Hence,
 
         .. math::
-            I_{pqrs} = & U_{pu} U_{qv} L_{\gamma, uv} L_{\gamma, wt} U_{rw} U_{st}
+            I_{pqrs} = & U_{pu} U_{qv} L_{\gamma, uv} L_{\gamma, wt} U_{rw} U_{st} \\
                      = & (U_{pu} L_{\gamma, uv} U_{qv}) U_{rw} L_{\gamma, wt} U_{st} \\
                      = & L^D_{\gamma, pq} L^D_{\gamma, wt}
         """

@@ -74,6 +74,9 @@ from pyscf.lib import logger
 import openms
 from openms.mqed import scqedhf
 from openms import __config__
+import time
+
+from openms.qmc import NUMBA_AVAILABLE
 
 TIGHT_GRAD_CONV_TOL = getattr(__config__, "TIGHT_GRAD_CONV_TOL", True)
 LINEAR_DEP_THRESHOLD = getattr(__config__, "LINEAR_DEP_THRESHOLD", 1e-8)
@@ -303,6 +306,157 @@ class RHF(scqedhf.RHF):
         self.vsq_grad += self.qed.e_boson_grad_r
 
 
+    def grad_var_params_together(self, dm_do, g_DO, dm=None):
+        # gradient w.r.t eta
+
+        # gradient w.r.t f_\alpha
+        nmodes = self.qed.nmodes
+        onebody_dvlf = numpy.zeros(nmodes)
+        twobody_dvlf = numpy.zeros(nmodes)
+        onebody_dvsq = numpy.zeros(nmodes)
+        twobody_dvsq = numpy.zeros(nmodes)
+
+        nao = self.nao
+        # since eta has \sqrt{w/2} factor -> g^2 is w/2
+        # we need to divide it by omega to get the gradient
+        for a in range(nmodes):
+            onebody_deta = numpy.zeros(nao)
+            twobody_deta = numpy.zeros(nao)
+
+            tau = numpy.exp(self.qed.squeezed_var[a])
+            # eta
+            # 1) diagonal part due to [(gtmp - eta)^2 \rho]
+            for p in range(nao):
+                onebody_deta[p] -= 2.0 * dm_do[a, p,p] * g_DO[a, p] / self.qed.omega[a]
+
+            if abs(self.qed.couplings_var[a]) > 1.e-5:
+                g2_dot_D = 2.0 * numpy.einsum("pp, p->", dm_do[a], g_DO[a]**2)
+                onebody_dvlf[a] += g2_dot_D / self.qed.omega[a] / self.qed.couplings_var[a]
+
+            # one-electron part
+            # eta
+            fc_derivative = self.gaussian_derivative_vectorized(self.eta, a)
+            tmp1 = 2.0 * self.h1e_DO * dm_do[a] * fc_derivative
+            tmp2 = (2.0 * dm_do[a].diagonal().reshape(-1, 1) * dm_do[a].diagonal() \
+                   - dm_do[a] * dm_do[a].T) \
+                   * g_DO[a].reshape(1, -1) / self.qed.omega[a]
+
+            onebody_deta += numpy.sum(tmp1 - tmp2, axis=1)
+            del fc_derivative, tmp1, tmp2
+
+            # f
+            derivative = self.gaussian_derivative_f_vector(self.eta, a)
+            h_dot_D = self.h1e_DO * dm_do[a]
+            oei_derivative = numpy.einsum("pq, pq->", h_dot_D, derivative)
+
+            tmp = numpy.einsum("pp, p->p", dm_do[a], g_DO[a])
+            tmp = 2.0 * numpy.einsum("p,q->", tmp, tmp)
+            g_outer = numpy.outer(g_DO[a], g_DO[a])
+            gD2 = numpy.sum(g_outer * dm_do[a] * dm_do[a])
+            tmp -= gD2
+
+            oei_derivative += tmp / self.qed.omega[a] / self.qed.couplings_var[a]
+            onebody_dvlf[a] += oei_derivative
+
+            # Q
+            derivative = self.gaussian_derivative_sq_vector(self.eta, a)
+            oei_derivative = numpy.einsum("pq, pq->", h_dot_D, derivative)
+            onebody_dvsq[a] += oei_derivative
+
+            # two-electron part, replaced by c++ code
+            t0 = time.time()
+            if self.ltensor is not None:
+                # t1 = time.time()
+
+                for p in range(self.nao):
+                    Lp = self.ltensor[:, p, :]
+                    for q in range(self.nao):
+                        shift = self.eta[a, q] - self.eta[a, p]
+                        # Ieff is the bottleneck
+                        Ieff = 2.0 * numpy.einsum('X, Xrs->rs', self.ltensor[:, p, q], self.ltensor) - \
+                               numpy.einsum('Xs, Xr->rs', Lp, self.ltensor[:, :,q])
+                        ID = Ieff * dm_do[a]
+                        # f
+                        derivative = self.gaussian_derivative_f_vector(self.eta, a, shift=shift)
+                        tmp = numpy.sum(ID * derivative)
+                        twobody_dvlf[a] += tmp * dm_do[a, p, q]/ 4.0
+                        # eta
+                        fc_derivative = self.gaussian_derivative_vectorized(self.eta, a, onebody=True, shift=shift)
+                        tmp = numpy.sum(ID * fc_derivative)
+                        twobody_deta[p] += tmp * dm_do[a, p, q]
+                        # Q
+                        derivative = self.gaussian_derivative_sq_vector(self.eta, a, shift=shift)
+                        tmp = numpy.sum(ID * derivative)
+                        twobody_dvsq[a] += tmp * dm_do[a, p, q]/ 4.0
+            else:
+                # eta
+                fc_derivative = self.gaussian_derivative_vectorized(self.eta, a, onebody=False)
+                fc_derivative *= (2.0 * self.eri_DO - self.eri_DO.transpose(0, 3, 2, 1))
+                tmp = lib.einsum('pqrs, rs-> pq', fc_derivative, dm_do[a], optimize=True)
+                twobody_deta = lib.einsum('pq, pq-> p', tmp, dm_do[a], optimize=True)
+                # f
+                if self.qed.optimize_varf:
+                    derivative = self.gaussian_derivative_f_vector(self.eta, a, onebody=False)
+                    derivative *= (2.0 * self.eri_DO - self.eri_DO.transpose(0, 3, 2, 1))
+                    tmp = lib.einsum("pqrs, rs-> pq", derivative, dm_do[a], optimize=True)
+                    tmp = lib.einsum("pq, pq->", tmp, dm_do[a], optimize=True)
+                    twobody_dvlf[a] = tmp / 4.0
+                # Q
+                if self.qed.optimize_vsq:
+                    derivative = self.gaussian_derivative_sq_vector(self.eta, a, onebody=False)
+                    derivative *= (2.0 * self.eri_DO - self.eri_DO.transpose(0, 3, 2, 1))
+                    tmp = lib.einsum('pqrs, rs-> pq', derivative, dm_do[a], optimize=True)
+                    tmp = lib.einsum('pq, pq->', tmp, dm_do[a], optimize=True)
+                    twobody_dvsq[a] = tmp / 4.0
+
+            self.eta_grad[a] = onebody_deta + twobody_deta
+
+        if self.qed.optimize_varf:
+            self.vlf_grad = onebody_dvlf + twobody_dvlf
+        if self.qed.optimize_vsq:
+            self.vsq_grad = onebody_dvsq + twobody_dvsq
+            self.vsq_grad += self.qed.e_boson_grad_r
+
+        # only works for one mode
+        if abs(1.0 - self.qed.couplings_var[0]) > 1.0e-4 and self.vhf_dse is not None and self.qed.optimize_varf:
+            # only works for nmode == 1
+            self.vlf_grad[0] += self.energy_elec(dm, self.grad_oei, self.grad_vhf_dse)[0]
+
+
+    def grad_var_params(self, dm_do, g_DO, dm=None):
+        r"""Compute dE/df where f is the variational transformation parameters.
+
+        :math:`\eta` here is the eigenvalue of :math:`\lambda \sqrt{\omega_\alpha/2} (\boldsymbol{d}\cdot \boldsymbol{e}_\alpha)`,
+        not just the eigenvalue of :math:`\boldsymbol{d}\cdot \boldsymbol{e}_\alpha`.
+
+        Define :math:`\eta_p` as eigenvalue of :math:`\boldsymbol{d}\cdot \boldsymbol{e}_\alpha'
+        and :math:`\tilde{\eta}_p` as eigenvalue of :math:`\lambda \sqrt{\omega_\alpha/2} (\boldsymbol{d}\cdot \boldsymbol{e}_\alpha)`,
+        then:
+
+        .. math::
+
+            \tilde{\eta}_p = \eta_p  \sqrt{\omega_\alpha/2}.
+
+        And the Gaussian factor is:
+
+        .. math::
+
+            \exp(-\lambda^2(\eta_p - \eta_q)^2/4\omega) =
+            \exp[ -1/(2\omega^2_\alpha) (\tilde{\eta}_p - \tilde{\eta}_q)^2 ].
+
+        """
+
+        # gradient w.r.t eta
+        self.get_eta_gradient(dm_do, g_DO, dm)
+
+        if self.qed.optimize_vsq:
+            self.get_vsq_gradient(dm_do, g_DO, dm)
+
+        if not self.qed.optimize_varf:
+            return
+
+        # gradient w.r.t f_\alpha
+        nmodes = self.qed.nmodes
     def grad_var_params(self, dm_do, g_DO, dm=None):
         r"""Compute dE/df where f is the variational transformation parameters.
 
@@ -392,6 +546,8 @@ class RHF(scqedhf.RHF):
             #  Now, we compute the gradient from add_oei and get_dse_jk
             self.vlf_grad[0] += self.energy_elec(dm, self.grad_oei, self.grad_vhf_dse)[0]
         return self
+
+    # grad_var_params = grad_var_params_together
 
 
     def norm_var_params(self):

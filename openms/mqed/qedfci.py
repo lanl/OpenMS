@@ -654,6 +654,7 @@ def kernel(
     numpy.random.seed(1)
 
     coherent_state = kwargs.get("coherent_state", False)
+    electron_only = kwargs.get("electron_only", False)
     max_space = kwargs.get("max_space", 16)
 
     # coherence state:
@@ -667,6 +668,7 @@ def kernel(
                            tol=tol, lindep=lindep, max_cycle=max_cycle,
                            max_space=max_space, nroots=nroots)
         print ("FCI electronic : ", e0)
+    if electron_only: return e0, 0.0, 0.0
 
     if coherent_state:
         if nroots > 1:

@@ -124,7 +124,20 @@ if NUMBA_AVAILABLE:
                 phiw[iw] += temp
         return phiw
 
-    @njit(parallel=True)
+    @njit(parallel=True, fastmath=True)
+    def compute_GF_base(Ghalf, psi):
+        # Ghalfa: (z, q, i)
+        # psia: (p, i)
+
+        nw, nao, no = Ghalf.shape
+        result = backend.empty((nw, nao, nao), dtype=Ghalf.dtype)
+
+        for z in prange(nw):
+            result[z] = backend.dot(psi.astype(backend.complex128), Ghalf[z].T)
+        return result
+
+
+    @njit(parallel=True, fastmath=True)
     def build_HS_numba(xshift, ltensor, factor):
         """
         Numba-compatible and parallelized build_HS function.
@@ -164,6 +177,22 @@ if NUMBA_AVAILABLE:
         """
 
         return eri_op
+
+else:
+
+    def compute_GF_base(Ghalf, psi):
+        # Ghalfa: (z, q, i)
+        # psia: (p, i)
+
+        # walkers.Ga = backend.einsum("zqi, pi->zpq", walkers.Ghalfa, trial.psia.conj())
+        # or
+        # temp = np.tensordot(walkers.Ghalfa, trial.psia.conj(), axes=([2], [1]))  # shape: (z, q, p)
+        # walkers.Ga = np.transpose(temp, (0, 2, 1))
+        nw, nao, no = Ghalf.shape
+        result = backend.empty((nw, nao, nao), dtype=Ghalf.dtype)
+        for z in range(nw):
+            result[z] = backend.dot(psi, Ghalf[z].T)
+        return result
 
 
 def propagate_effective_oei(phi, system, bt2, H1diag=False):
@@ -609,7 +638,8 @@ class Phaseless(PropagatorBase):
         if self.nfields > self.nbarefields:
             self.xi_bilinear = xi[:, self.nbarefields:self.nfields]
 
-        self.wt_random += time.time() - t0
+        t1 = time.time()
+        self.wt_random += t1 - t0
 
         # logger.debug(self, f"the random numbers are\n{xi}")
 
@@ -618,8 +648,8 @@ class Phaseless(PropagatorBase):
         #   = j\sqrt{\Delta\tau}(<L> - <L>_{MF})
         # xbar is the F
         self.vbias = trial.get_vbias(walkers, ltensor) # (nwalkers, nfield)
+        self.wt_fbias += time.time() - t1
         t1 = time.time()
-        self.wt_fbias += t1 - t0
 
         xbar = -backend.sqrt(self.dt) * (1j * self.vbias - self.mf_shift)
         xbar = self.rescale_fbias(xbar)  # bound of vbias
@@ -1161,6 +1191,8 @@ class PhaselessElecBoson(Phaseless):
         eb = local_eng_boson(self.system.boson_freq, self.system.nboson_states, walkers.boson_Gf)
         # print(f"Debug: Gfavg = {backend.sum(walkers.boson_Gf, axis=0) / walkers.nwalkers}")
         # print(f"Debug: Gf[0] = {walkers.boson_Gf[0]}")
+
+        self.update_GF(trial, walkers)
 
         # electron-boson interacting energy
         Gfermions = [walkers.Ga, walkers.Gb] if walkers.ncomponents > 1 else [walkers.Ga, walkers.Ga]
@@ -1708,20 +1740,23 @@ class PhaselessElecBoson(Phaseless):
 
 
     def update_GF(self, trial, walkers):
-        r"""update GF"""
-        walkers.Ga = backend.einsum("zqi, pi->zpq", walkers.Ghalfa, trial.psia.conj())
+        r"""update GF (TODO: move to trial)"""
+        # walkers.Ga = backend.einsum("zqi, pi->zpq", walkers.Ghalfa, trial.psia.conj())
+        walkers.Ga = compute_GF_base(walkers.Ghalfa, trial.psia.conj())
         if walkers.ncomponents > 1:
-            walkers.Gb = backend.einsum("zqi, pi->zpq", walkers.Ghalfb, trial.psib.conj())
+            walkers.Gb = compute_GF_base(walkers.Ghalfb, trial.psib.conj())
+            # walkers.Gb = backend.einsum("zqi, pi->zpq", walkers.Ghalfb, trial.psib.conj())
             walkers.Gf = walkers.Ga + walkers.Gb
             logger.debug(self, f"walkers.Gb.shape = {walkers.Gb.shape}")
         else:
             walkers.Gf = 2.0 * walkers.Ga
         # logger.debug(self, f"walkers.Gf.shape = {walkers.Gf.shape}")
 
-        walkers.rho = (
-            backend.einsum("z, zpq->pq", walkers.weights, walkers.Gf)
-            / backend.sum(walkers.weights)
-        )
+        if not self.decouple_bilinear:
+            walkers.rho = (
+                backend.einsum("z, zpq->pq", walkers.weights, walkers.Gf)
+                / backend.sum(walkers.weights)
+            )
         # logger.debug(self, f"test DM = {backend.trace(walkers.rho)}")
 
         # get Qalpha in either 1st or 2nd quantization
@@ -1739,8 +1774,9 @@ class PhaselessElecBoson(Phaseless):
             boson_ovlp = trial.boson_ovlp_with_walkers(walkers) # bosonic
             ovlp *= boson_ovlp
 
-        # 2) update Fermionic DM and Qalpha for the bilinear terms
-        self.update_GF(trial, walkers)
+        if not self.decouple_bilinear:
+            # 2) update Fermionic DM and Qalpha for the bilinear terms
+            self.update_GF(trial, walkers)
 
         self.wt_ovlp += time.time() - t0
 

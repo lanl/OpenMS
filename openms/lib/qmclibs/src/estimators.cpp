@@ -8,6 +8,8 @@
 #include <omp.h>
 #include <vector>
 #include <complex>
+#include <stdexcept>
+#include <cstring>
 #include "estimators.hpp"
 
 namespace py = pybind11;
@@ -140,3 +142,105 @@ py::array_t<double> exx_rltensor_Ghalf_real(
     return exx;
 }
 
+
+// Ecoul
+py::array_t<std::complex<double>> ecoul_rltensor_uhf_complex(
+    py::array_t<std::complex<double>, py::array::c_style | py::array::forcecast> rltensora,
+    py::array_t<std::complex<double>, py::array::c_style | py::array::forcecast> Ghalfa,
+    py::array_t<std::complex<double>, py::array::c_style | py::array::forcecast> rltensorb,
+    py::array_t<std::complex<double>, py::array::c_style | py::array::forcecast> Ghalfb
+) {
+    ssize_t nwalkers = Ghalfa.shape(0);
+    ssize_t nchol = rltensora.shape(0);
+    ssize_t nao = rltensora.shape(1);
+    ssize_t no = rltensora.shape(2);
+    ssize_t ndim = nao * no;
+
+    py::array_t<std::complex<double>> ecoul(nwalkers);
+    auto* ecoul_ptr = ecoul.mutable_data();
+
+    #pragma omp parallel for
+    for (ssize_t iw = 0; iw < nwalkers; ++iw) {
+        std::complex<double> sum = 0.0;
+
+        for (ssize_t l = 0; l < nchol; ++l) {
+            std::complex<double> LG = 0.0;
+
+            cblas_zdotu_sub(
+                ndim,
+                Ghalfa.data(iw, 0, 0), 1,
+                rltensora.data(l, 0, 0), 1,
+                &LG
+            );
+
+            if (Ghalfb && rltensorb) {
+                std::complex<double> LG2 = 0.0;
+                cblas_zdotu_sub(
+                    ndim,
+                    Ghalfb.data(iw, 0, 0), 1,
+                    rltensorb.data(l, 0, 0), 1,
+                    &LG2
+                );
+                LG += LG2;
+	    }
+            sum += LG * LG;
+        }
+        ecoul_ptr[iw] = 0.5 * sum;
+    }
+
+    return ecoul;
+}
+
+// Ecoul
+py::array_t<std::complex<double>> ecoul_rltensor_Ghalf_complex(
+    py::array_t<std::complex<double>, py::array::c_style | py::array::forcecast> rltensora,
+    py::array_t<std::complex<double>, py::array::c_style | py::array::forcecast> Ghalfa//,
+    //std::optional<py::array_t<std::complex<double>, py::array::c_style | py::array::forcecast>> rltensorb,
+    //std::optional<py::array_t<std::complex<double>, py::array::c_style | py::array::forcecast>> Ghalfb
+) {
+    ssize_t nwalkers = Ghalfa.shape(0);
+    ssize_t nchol = rltensora.shape(0);
+    ssize_t nao = rltensora.shape(1);
+    ssize_t no = rltensora.shape(2);
+    ssize_t ndim = nao * no;
+
+    //if ((Ghalfb && !rltensorb) || (!Ghalfb && rltensorb)) {
+    //    throw std::runtime_error("Both Ghalfb and rltensorb must be provided together.");
+    //}
+
+    py::array_t<std::complex<double>> ecoul(nwalkers);
+    auto* ecoul_ptr = ecoul.mutable_data();
+
+    #pragma omp parallel for
+    for (ssize_t iw = 0; iw < nwalkers; ++iw) {
+        std::complex<double> sum = 0.0;
+
+        for (ssize_t l = 0; l < nchol; ++l) {
+            std::complex<double> LG = 0.0;
+
+            cblas_zdotu_sub(
+                ndim,
+                Ghalfa.data(iw, 0, 0), 1,
+                rltensora.data(l, 0, 0), 1,
+                &LG
+            );
+
+            /*
+            if (Ghalfb && rltensorb) {
+                std::complex<double> LG2 = 0.0;
+                cblas_zdotu_sub(
+                    ndim,
+                    Ghalfb->data(iw, 0, 0), 1,
+                    rltensorb->data(l, 0, 0), 1,
+                    &LG2
+                );
+                LG += LG2;
+	    }
+            */
+            sum += LG * LG;
+        }
+        ecoul_ptr[iw] = 0.5 * sum;
+    }
+
+    return ecoul;
+}

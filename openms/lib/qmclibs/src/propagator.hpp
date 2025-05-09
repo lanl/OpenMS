@@ -49,3 +49,9 @@ void propagate_exp_op_taylor_complex(
     pybind11::array_t<std::complex<double>, pybind11::array::c_style | pybind11::array::forcecast> phiw,
     pybind11::array_t<std::complex<double>, pybind11::array::c_style | pybind11::array::forcecast> op,
     int order);
+
+
+void propagate_exp_op_taylor_complex_batched(
+    pybind11::array_t<std::complex<double>, pybind11::array::c_style | pybind11::array::forcecast> phiw,
+    pybind11::array_t<std::complex<double>, pybind11::array::c_style | pybind11::array::forcecast> op,
+    int order);

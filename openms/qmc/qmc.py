@@ -1068,11 +1068,12 @@ class QMCbase(object):
         logger.note(self, f"   Bilinear term   : {self.propagator.wt_bilinear: 9.3f}")
         logger.note(self, f"   Bosonic term    : {self.propagator.wt_boson: 9.3f}")
         logger.note(self, f"   Breakdown of twobody:")
+        logger.note(self, f"     Random AF     : {self.propagator.wt_random: 9.3f}")
         logger.note(self, f"     Force bias    : {self.propagator.wt_fbias: 9.3f}")
-        logger.note(self, f"     Force bias(scale) : {self.propagator.wt_fbias_rescale: 9.3f}")
+        logger.note(self, f"     scale bias    : {self.propagator.wt_fbias_rescale: 9.3f}")
         logger.note(self, f"     HS of twobody : {self.propagator.wt_hs: 9.3f}")
-        logger.note(self, f"     build HS      : {self.propagator.wt_chs: 9.3f}")
-        logger.note(self, f"     Propagate HS  : {self.propagator.wt_phs: 9.3f}")
+        logger.note(self, f"       build HS       : {self.propagator.wt_chs: 9.3f}")
+        logger.note(self, f"       Propagate HS   : {self.propagator.wt_phs: 9.3f}")
         # more wall times TBA.
         logger.note(self, f"")
 

@@ -86,6 +86,7 @@ pybind11_add_module(qmclib MODULE
     src/trial.cpp
     src/propagator.cpp
     src/estimators.cpp
+    src/linalg.cpp
 )
 
 set_target_properties(

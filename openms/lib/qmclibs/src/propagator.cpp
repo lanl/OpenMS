@@ -15,6 +15,7 @@
 
 namespace py = pybind11;
 
+// may use namespace in the future
 
 void propagate_onebody_blas_complex(
     py::array_t<std::complex<double>, py::array::c_style | py::array::forcecast> op,
@@ -327,5 +328,84 @@ void propagate_exp_op_taylor_complex(
     }
 }
 
+
+// batched version
+// Apple accelerate does not support batch
+/*
+void propagate_exp_op_taylor_complex_batched(
+    py::array_t<std::complex<double>, py::array::c_style | py::array::forcecast> phiw,
+    py::array_t<std::complex<double>, py::array::c_style | py::array::forcecast> op,
+    int order
+) {
+    if (phiw.ndim() != 3 || op.ndim() != 3)
+        throw std::runtime_error("phiw must be 3D (nw, n, m), and op must be 3D (nw, n, n)");
+
+    int nw = static_cast<int>(phiw.shape(0));
+    int n  = static_cast<int>(phiw.shape(1));
+    int m  = static_cast<int>(phiw.shape(2));
+
+    if (op.shape(0) != nw || op.shape(1) != n || op.shape(2) != n)
+        throw std::runtime_error("Dimension mismatch between phiw and op");
+
+    const std::complex<double> one(1.0, 0.0);
+    const std::complex<double> zero(0.0, 0.0);
+
+    // Allocate buffers
+    std::vector<std::vector<std::complex<double>>> temp(nw, std::vector<std::complex<double>>(n * m));
+    std::vector<std::vector<std::complex<double>>> result(nw, std::vector<std::complex<double>>(n * m));
+
+    for (int iw = 0; iw < nw; ++iw) {
+        std::memcpy(temp[iw].data(), phiw.mutable_data(iw, 0, 0), sizeof(std::complex<double>) * n * m);
+    }
+
+    // Batched zgemm inputs
+    std::vector<const void*> A_array(nw), B_array(nw);
+    std::vector<void*> C_array(nw);
+
+    std::vector<CBLAS_TRANSPOSE> transA(nw, CblasNoTrans);
+    std::vector<CBLAS_TRANSPOSE> transB(nw, CblasNoTrans);
+
+    std::vector<int> M(nw, n), N(nw, m), K(nw, n);
+    std::vector<int> lda(nw, n), ldb(nw, m), ldc(nw, m);
+    std::vector<const void*> alpha(nw, reinterpret_cast<const void*>(&one));
+    std::vector<const void*> beta(nw, reinterpret_cast<const void*>(&zero));
+
+    const int group_count = 1;
+    std::vector<int> group_size = { nw };
+
+    for (int k = 1; k <= order; ++k) {
+        for (int iw = 0; iw < nw; ++iw) {
+            A_array[iw] = reinterpret_cast<const void*>(op.data(iw, 0, 0));
+            B_array[iw] = reinterpret_cast<const void*>(temp[iw].data());
+            C_array[iw] = reinterpret_cast<void*>(result[iw].data());
+        }
+
+        cblas_zgemm_batch(CblasRowMajor,
+                          transA.data(), transB.data(),
+                          M.data(), N.data(), K.data(),
+                          alpha.data(), A_array.data(), lda.data(),
+                          B_array.data(), ldb.data(),
+                          beta.data(), C_array.data(), ldc.data(),
+                          group_count, group_size.data());
+
+        // Scale and accumulate result into phiw
+        std::complex<double> factor(1.0 / static_cast<double>(k), 0.0);
+        for (int iw = 0; iw < nw; ++iw) {
+            std::complex<double>* phi = phiw.mutable_data(iw, 0, 0);
+            cblas_zscal(n * m,
+                        reinterpret_cast<const void*>(&factor),
+                        result[iw].data(), 1);
+
+            cblas_zaxpy(n * m,
+                        reinterpret_cast<const void*>(&one),
+                        result[iw].data(), 1,
+                        phi, 1);
+
+            temp[iw].swap(result[iw]);
+        }
+    }
+}
+
+*/
 
 // force bias

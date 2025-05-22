@@ -26,9 +26,9 @@ PYBIND11_MODULE(_qmclib, m) {
     // complex
     m.def("propagate_exp_op_complex", &propagate_exp_op_taylor_complex, "In-place complex Taylor exponential propagation");
 
-    m.def("propagate_exp_op_complex_batched",
-          &propagate_exp_op_taylor_complex_batched,
-          "Batched matrix exponential propagation using Taylor expansion");
+    //m.def("propagate_exp_op_complex_batched",
+    //      &propagate_exp_op_taylor_complex_batched,
+    //      "Batched matrix exponential propagation using Taylor expansion");
 
     // functions for trial/walker
     m.def("trial_walker_ovlp_base", &trial_walker_ovlp_base, "Compute walker-trial overlap matrices");

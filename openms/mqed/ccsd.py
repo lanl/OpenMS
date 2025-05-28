@@ -1,22 +1,40 @@
+#
+# @ 2023. Triad National Security, LLC. All rights reserved.
+#
+# This program was produced under U.S. Government contract 89233218CNA000001
+# for Los Alamos National Laboratory (LANL), which is operated by Triad
+# National Security, LLC for the U.S. Department of Energy/National Nuclear
+# Security Administration. All rights in the program are reserved by Triad
+# National Security, LLC, and the U.S. Department of Energy/National Nuclear
+# Security Administration. The Government is granted for itself and others acting
+# on its behalf a nonexclusive, paid-up, irrevocable worldwide license in this
+# material to reproduce, prepare derivative works, distribute copies to the
+# public, perform publicly and display publicly, and to permit others to do so.
+#
+# Author: Yu Zhang <zhy@lanl.gov>
+#
 
 r"""
 QED coupled-cluster (CC)-U1/2n-Sn
 """
 
 import numpy
+import sys
+from cqcpy import cc_equations
+from cqcpy import cc_energy
+from . import epcc_equations
+from . import qedcc_equations
+#from . import myqedcc_equations
+from . import myqedcc_equations_opt as myqedcc_equations
+#from . import epcc_equations_many
+#from . import epcc_equations_gen
 
 from pyscf import lib
 from pyscf.lib import logger
+from pyscf import __config__
 from pyscf.mp.mp2 import get_nocc, get_nmo, get_frozen_mask, get_e_hf, _mo_without_core
 
-#from openms import mqed
-from openms.mqed import qedcc_equations
-from openms import __config__
-
-from cqcpy import cc_equations
-from cqcpy import cc_energy
-
-
+from pyscf import lib
 einsum = lib.einsum
 
 def eph_energy(t1,s1,u11,g,G):
@@ -26,7 +44,7 @@ def eph_energy(t1,s1,u11,g,G):
     Eeph += einsum('Iia,ai,I->',g,t1,s1)
     return Eeph
 
-def epcc_energy(t1,t2,s1,u11,f,eri,w,g,G):
+def epcc_energy(t1, t2, s1, u11, f, eri, w, g ,G):
     Ecc = cc_energy.cc_energy(t1,t2,f,eri)
     if g is not None:
         Eeph = eph_energy(t1,s1,u11,g,G)
@@ -34,6 +52,8 @@ def epcc_energy(t1,t2,s1,u11,f,eri,w,g,G):
     return Ecc
 
 def getDsn(w, nfock):
+
+    if nfock < 1: return None
 
     Dsn = [None] * nfock
     Dsn[0] = - w
@@ -81,8 +101,8 @@ def kernel(mycc, eris=None, t1=None, t2=None, Sn=None, Un=None,
     nfock1 = order of photon operator (b^\dag) in pure photonic excitaiton (T_p)
     nfock2 = order of photon operator in coupled excitaiton T_ep
     """
-    #if isinstance(mycc._qed, list): # mamny molecule case
-    #    return epcc_nfock_many(mycc, ret, theory)
+    if isinstance(mycc._qed, list): # mamny molecule case
+        return epcc_nfock_many(mycc, ret, theory)
 
     nfock = nfock1 = mycc.nfock1
     nfock2 = mycc.nfock2
@@ -112,11 +132,15 @@ def kernel(mycc, eris=None, t1=None, t2=None, Sn=None, Un=None,
 
     no = eo.shape[0]
     nv = ev.shape[0]
-    np = w.shape[0]
+    np = 0
+    if w is not None:
+        np = w.shape[0]
 
     # get HF energy
     Ehf = mycc.e_hf
     logger.info(mycc, "Hartree-Fock energy: %.10f", mycc.e_hf)
+    Ehf2 = mycc._qed.hf_energy()
+    logger.info(mycc, "Hartree-Fock energy2: %.10f", mycc.e_hf)
 
     D1 = eo[:,None] - ev[None,:]
     D2 = eo[:,None,None,None] + eo[None,:,None,None]\
@@ -127,7 +151,7 @@ def kernel(mycc, eris=None, t1=None, t2=None, Sn=None, Un=None,
         D2p = getD2p(eo, ev, w, nfock2)
     Dsn = getDsn(w, nfock1)
 
-    G = H = numpy.zeros(np)
+    if np > 0: G = H = numpy.zeros(np)
     # ----------------------------------------------------------
 
     # DIIS
@@ -136,14 +160,21 @@ def kernel(mycc, eris=None, t1=None, t2=None, Sn=None, Un=None,
 
     T1old = F.vo/D1.transpose((1,0))
     T2old = I.vvoo/D2.transpose((2,3,0,1))
-    S1old = -G/w
-    U11old = h.vo/D1p[0] #.transpose((0,2,1))
+
+    S1old = None
+    U11old = None
+    if nfock1 > 0:
+        S1old = -G/w
+    if nfock2 > 0: U11old = h.vo/D1p[0] #.transpose((0,2,1))
 
     diis_T1 = [T1old.copy()]
     diis_T2 = [T2old.copy()]
 
     Eold = 0.0
-    Eccsd = epcc_energy(T1old,T2old,S1old,U11old,F.ov,I.oovv,w,g.ov,G)
+    if g is None:
+        Eccsd = epcc_energy(T1old,T2old,S1old,U11old, F.ov, I.oovv, None, None, None)
+    else:
+        Eccsd = epcc_energy(T1old,T2old,S1old,U11old, F.ov, I.oovv, w, g.ov,G)
     if mycc.verbose > 1:
         print("Guess energy: {:.8f}".format(Eccsd))
 
@@ -153,6 +184,7 @@ def kernel(mycc, eris=None, t1=None, t2=None, Sn=None, Un=None,
 
     Snold = None  # None if nfock1 <= 0
     U1nold = None # None if nfock2 <= 0
+    U2nold = None # None if nfock2 <= 0
     U2n = None
     if nfock1 > 0:
         # ssn and su1n
@@ -195,10 +227,13 @@ def kernel(mycc, eris=None, t1=None, t2=None, Sn=None, Un=None,
     istep = 0
     while istep < mycc.max_cycle and not converged:
 
+        amps = (T1old, T2old, Snold, U1nold)
+        #if mycc.add_U2n:
         amps = (T1old, T2old, Snold, U1nold, U2nold)
 
-        T1,T2, Sn, U1n, U2n = qedcc_equations.qedccsd_sn_u2n(
-                F, I, w, g, h, G, H, nfock1, nfock2, amps)
+        T1,T2, Sn, U1n, U2n = myqedcc_equations.new_qedccsd_sn_u2n(
+        #T1,T2,Sn,U1n = epcc_equations.qed_ccsd_sn_u1n_opt(
+                    F, I, w, g, h, G, H, nfock1, nfock2, amps)
 
         T1 /= D1.transpose((1,0))
         T2 /= D2.transpose((2,3,0,1))
@@ -244,11 +279,20 @@ def kernel(mycc, eris=None, t1=None, t2=None, Sn=None, Un=None,
         amps = (T1old, T2old, Snold, U1nold, U2nold)
         T1old, T2old, Snold, U1nold, U2nold = mycc.run_diis(amps, istep, normt, Eccsd-Eold, adiis)
 
-        Eccsd = epcc_energy(T1old,T2old,Snold[0],U1nold[0],F.ov,I.oovv,w,g.ov,G)
+        if Sn is not None:
+            Eccsd = epcc_energy(T1old,T2old,Snold[0],U1nold[0],F.ov,I.oovv,w,g.ov,G)
+        else:
+            Eccsd = epcc_energy(T1old,T2old,None, None,F.ov,I.oovv,None, None, None)
+
+        if g is not None:
+            nocc = boson_occ(Sn, U1n[0], g.ov, nfock)
 
         Ediff = abs(Eccsd - Eold)
         if mycc.verbose > 0:
-            print(' {:2d}  {:.10f}   {:.4E}  {:.4E} '.format(istep+1, Eccsd, res, normt), flush=True)
+            if g is not None:
+                print(' {:2d}  {:.10f}   {:.4E}  {:.4E}  {:.10f}'.format(istep+1, Eccsd, res, normt, nocc[0]), flush=True)
+            else:
+                print(' {:2d}  {:.10f}   {:.4E}  {:.4E}'.format(istep+1, Eccsd, res, normt), flush=True)
         if Ediff < ethresh and res < tthresh:
             converged = True
 
@@ -362,6 +406,7 @@ class CCSD(lib.StreamObject):
 
     def dump_flags(self):
         logger.info(self, '')
+        logger.info(self, '----ccsd code in OpenMS-----')
         logger.info(self, '******** Flags of  %s ********', self.__class__)
         logger.info(self, 'nfock1            = %d', self.nfock1)
         logger.info(self, 'nfock2            = %d', self.nfock2)
@@ -382,7 +427,7 @@ class CCSD(lib.StreamObject):
             self.__class__ == CCSD):
             nocc = self.nocc
             nvir = self.nmo - self.nocc
-            flops = self._flops(nocc, nvir)
+            flops = _flops(nocc, nvir)
             logger.debug1(self, 'total FLOPs %s', flops)
         logger.info(self, '***************end of dumpling flags ****************\n')
         return self
@@ -395,7 +440,9 @@ class CCSD(lib.StreamObject):
         I = self._qed.get_I()
         w = None
         g = None
+        h = None
         G = None
+        H = None
         if self.nfock1 > 0:
             # get normal mode energies
             w = self._qed.get_omega()
@@ -416,10 +463,15 @@ class CCSD(lib.StreamObject):
         size = nov + nov*(nov+1)//2
         idx = size
 
-        Sn_size = sum([S.size for S in Sn])
-        U1n_size = sum([U.size for U in U1n])
+        Sn_size = 0
+        if Sn is not None:
+            Sn_size = sum([S.size for S in Sn])
+
+        U1n_size = 0
+        if U1n is not None:
+            U1n_size = sum([U.size for U in U1n])
         U2n_size = 0
-        if self.add_U2n:
+        if self.add_U2n and U2n is not None:
             U2n_size = sum([U.size for U in U2n])
         size += Sn_size + U1n_size + U2n_size
         vector = numpy.ndarray(size, T1.dtype, buffer=out)
@@ -427,12 +479,14 @@ class CCSD(lib.StreamObject):
         # T1 + T2
         vector[:nov] = T1.ravel()
         lib.pack_tril(T2.transpose(0,2,1,3).reshape(nov,nov), out=vector[nov:])
-        for S in Sn:
-            vector[idx:idx+S.size] = S.ravel()
-            idx += S.size
-        for U in U1n:
-            vector[idx:idx+U.size] = U.ravel()
-            idx += U.size
+        if Sn_size > 0:
+            for S in Sn:
+                vector[idx:idx+S.size] = S.ravel()
+                idx += S.size
+        if U1n_size > 0:
+            for U in U1n:
+                vector[idx:idx+U.size] = U.ravel()
+                idx += U.size
         if U2n_size > 0:
             for U in U2n:
                 vector[idx:idx+U.size] = U.ravel()
@@ -451,13 +505,15 @@ class CCSD(lib.StreamObject):
         T2 = T2.reshape(nocc,nvir,nocc,nvir).transpose(0,2,1,3)
         T2 = numpy.asarray(T2, order='C')
 
-        for S in Sn:
-            S = vector[idx:idx+S.size].reshape(S.shape)
-            idx += S.size
-        for S in U1n:
-            S = vector[idx:idx+S.size].reshape(S.shape)
-            idx += S.size
-        if self.add_U2n:
+        if Sn is not None:
+            for S in Sn:
+                S = vector[idx:idx+S.size].reshape(S.shape)
+                idx += S.size
+        if U1n is not None:
+            for S in U1n:
+                S = vector[idx:idx+S.size].reshape(S.shape)
+                idx += S.size
+        if self.add_U2n and U2n is not None:
             for S in U2n:
                 S = vector[idx:idx+S.size].reshape(S.shape)
                 idx += S.size

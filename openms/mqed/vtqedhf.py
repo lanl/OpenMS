@@ -179,6 +179,8 @@ class RHF(scqedhf.RHF):
             \frac{d G}{\partial f_\alpha} =
         """
         nao = self.qed.gmat[imode].shape[0]
+        mdim = self.qed.nboson_states[imode]
+
         if onebody:
             p, q = numpy.ogrid[:nao, :nao]
             diff_eta = eta[imode, q] - eta[imode, p]
@@ -190,8 +192,16 @@ class RHF(scqedhf.RHF):
         tau = numpy.exp(self.qed.squeezed_var[imode])
         tmp = tau / self.qed.omega[imode]
 
-        derivative = -numpy.exp((-0.5 * (tmp * diff_eta) ** 2)) \
-                     * ((tmp * diff_eta) ** 2)
+        if mdim > 1:
+            idx = sum(self.qed.nboson_states[:imode])
+            ci = self.qed.boson_coeff[idx : idx + mdim, idx]
+            pdm = numpy.outer(numpy.conj(ci), ci)
+
+            derivative = self.qed.displacement_deriv_vsq(imode, tmp * diff_eta, pdm)
+        # Apply vacuum derivative formula
+        else:
+            derivative = -numpy.exp((-0.5 * (tmp * diff_eta) ** 2)) \
+                         * ((tmp * diff_eta) ** 2)
 
         if onebody:
             return derivative.reshape(nao, nao)

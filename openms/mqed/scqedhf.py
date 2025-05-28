@@ -713,9 +713,9 @@ class RHF(qedhf.RHF):
     # variable gradients, here we only have eta
     grad_var_params = get_eta_gradient
 
+
     def cholesky_DO(self, U):
-        r"""
-        generate L tensor (Cholesky decomposition of the repulsion integral matrix) in OAO/DO basis
+        r"""Generate L tensor (Cholesky decomposition of the repulsion integral matrix) in OAO/DO basis
 
         .. math::
              I_{uvwt} = L_{\gamma, uv} L_{\gamma, wt}
@@ -742,7 +742,8 @@ class RHF(qedhf.RHF):
         # TODO: updaete it to make it compatiable with other symmetries (s4 and s8)
         if self._eri is None:
             self._eri = self.mol.intor("int2e", aosym="s1")
-            logger.debug(self, f"First build of two-body integral! eri.shape= {self._eri.shape}")
+            logger.debug(self,
+                f"DEBUG: build two-body integral for the first time! eri.shape= {self._eri.shape}")
 
         from pyscf.ao2mo.addons import restore
         self._eri = restore(1, self._eri, self.nao)
@@ -952,9 +953,16 @@ class RHF(qedhf.RHF):
 
         DSE-mediated one-electron parts:
 
-         2 * \title{g}_{pp} * sum_{q} [D_{qq} \title{g}_{qq}]
-                                         mean_value
-         -D_{qp}\tidle{g}_{pq} * \tilde{g}_{qq} (diagonal element is then g_pq(p)**2)
+        .. math:
+            2 * \tilde{g}_{pp} * sum_{q} [D_{qq} \tilde{g}_{qq}]
+
+         where the sum over q gives the mean value.
+
+        .. math::
+
+            -D_{qp}\tilde{g}_{pq} * \tilde{g}_{qq}
+
+        Thus the digonal element is :math:` g_pq(p)**2`.
         """
 
         if mol is None: mol = self.mol
@@ -994,7 +1002,7 @@ class RHF(qedhf.RHF):
 
                     Ieff = numpy.einsum('X, Xrs->rs', self.ltensor[:, p, q], self.ltensor) - \
                            0.5 * numpy.einsum('Xs, Xr->rs', self.ltensor[:, p, :], self.ltensor[:, :,q])
-                    vhf[p, q] = term1 = numpy.sum(Ieff * dm_do * fc_factor)
+                    vhf[p, q] = numpy.sum(Ieff * dm_do * fc_factor)
                     vhf[q, p] = vhf[p, q]
 
             t1 = time.time()
@@ -1019,7 +1027,7 @@ class RHF(qedhf.RHF):
 
 
     def init_var_params(self, dm=None):
-        r"""Initialize eta variational parameters."""
+        r"""Initialize additional variational parameters."""
         if self.eta is None:
             self.initialize_eta(dm)
         return self

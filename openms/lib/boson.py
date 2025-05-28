@@ -606,8 +606,8 @@ class Boson(object):
         self.optimize_vsq = kwargs.get("optimize_vsq", False)
         self.squeezed_var = numpy.zeros(self.nmodes)
         if "squeezed_var" in kwargs:
-            self.squeezed_var = kwargs["squeezed_var"]
             self.optimize_vsq = False
+            self.squeezed_var = kwargs["squeezed_var"]
 
         # self.polarizations = numpy.zeros((3, self.nmodes), dtype=float) #replaced by vec
 
@@ -678,9 +678,13 @@ class Boson(object):
 
     def displacement_exp_val(self, mode, factor, pdm, scale_by_exp=True):
         r"""
-        \sum_{mn} <m|D(z)|n> * rho_{mn}, where z=diff_eta
-        currently, the exp(-A^2/2) part is counted in the dis_exp_val!
+        :math:`\sum_{mn} <m|D(z)|n> \rho_{mn}`, where :math:`z=\Delta\eta`.
+        Currently, the :math:`\exp(-A^2/2)` part is counted in the dis_exp_val!
         factor = numpy.exp(-0.5 * (tmp * diff_eta) ** 2) * dis_exp_val
+
+        .. math::
+            G = \exp^{-A^2/2}\sqrt{\frac{\min(m, n)!}{\max(m, n)!}}
+                (-A)^{|m-n|} L^{|m-n|}_{\min(m, n)}(A^2)
         """
         from scipy.special import genlaguerre, factorial
 
@@ -688,138 +692,133 @@ class Boson(object):
         mdim = self.nboson_states[mode]
 
         # Initialize matrix
-        disp_mat = numpy.zeros((mdim, mdim, *factor.shape))
+        disp_mat = numpy.zeros(factor.shape)
 
         # First compute lower triangle
         ind_m, ind_n = numpy.tril_indices(mdim, k=-1)
         for i_m, i_n in zip(ind_m, ind_n):
-
             # Factorial ratio
             ratio = factorial(i_n, exact=True) / factorial(i_m, exact=True)
 
             # Matrix elements
-            disp_mat[i_m, i_n] = numpy.sqrt(ratio) * factor**(i_m - i_n) \
-                                 * genlaguerre(n=i_n, alpha=(i_m - i_n))(factor**2)
-            disp_mat[i_n, i_m] = disp_mat[i_m, i_n] * (-1.0)**(i_n - i_m) # upper triangle
+            disp_mat += 2.0 * pdm[i_m, i_n] * numpy.sqrt(ratio) * (-factor)**(i_m - i_n) \
+                        * genlaguerre(n=i_n, alpha=(i_m - i_n))(factor**2)
 
         # Compute diagonal elements
         for ind_m in range(mdim):
-            disp_mat[ind_m, ind_m] = genlaguerre(n=ind_m, alpha=0)(factor**2)
+            disp_mat += pdm[ind_m, ind_m] * genlaguerre(n=ind_m, alpha=0)(factor**2)
 
         # Compute exponential term, scale displacement matrix
         if scale_by_exp:
             gfact = numpy.exp(-0.5 * (factor)**2)
-            disp_mat[:, :] *= gfact
+            disp_mat *= gfact
 
         # Contract with photon density matrix
-        exp_val = numpy.einsum("nm, mn...-> ...", pdm, disp_mat, optimize=True)
 
-        return exp_val
+        return disp_mat
+
+    def displacement_deriv_kernel(self, mode, factor, pdm):
+        r"""Compute the derivative of FC factor with respect to f:
+
+        .. math::
+            G = \exp^{-A^2/2}\sqrt{\frac{\min(m, n)!}{\max(m, n)!}}
+                (-A)^{|m-n|} L^{|m-n|}_{\min(m, n)}(A^2)
+
+        where :math:`\frac{f \Delta\eta}{2\omega}`
+
+        Hence, it's derivative w.r.t to A is
+
+        .. math::
+           \frac{\partial G}{\partial A} = & - A G  \\
+            & - \exp^{-A^2/2}\sqrt{\frac{\min(m, n)!}{\max(m, n)!}} (-A)^{|m-n|-1} L^{|m-n|}_{\min(m, n)}(A^2) \text{ For } |m-n|>0 \\
+            & + \exp^{-A^2/2}\sqrt{\frac{\min(m, n)!}{\max(m, n)!}} (-A)^{|m-n|} \left[(-2A) L^{|m-n|+1}_{\min(m, n)-1}(A^2) \right] \text{ For } \min(m,n) > 0
+
+        """
+        from scipy.special import genlaguerre, factorial
+
+        # Variables
+        mdim = self.nboson_states[mode]
+
+        #TODO: only need to keep the upper (or lower) triangle as it's symmetric
+        delta_disp_mat = numpy.zeros(factor.shape)
+
+        # First compute lower triangle
+        ind_m, ind_n = numpy.tril_indices(mdim, k=-1)
+
+        for i_m, i_n in zip(ind_m, ind_n):
+            LA = genlaguerre(n=i_n, alpha=(i_m - i_n))(factor**2)
+            Ga =  LA * (-factor)**(i_m - i_n)  # w.o. the sqrt{ratio} and g0
+
+            # Term 1: Gaussian factor derivative
+            tmp1 = - factor * Ga
+
+            # Term 2: A^(m-n) derivative
+            tmp2 = 0.0
+            if i_m - i_n > 1:
+                tmp2 = - (i_m - i_n) * (-factor)**(i_m - i_n - 1) * LA
+
+            # Term 3: Laguerre polynomial derivative
+            if i_n > 0:
+                tmp2 -= (-factor)**(i_m - i_n) * \
+                        (2.0 * factor) * genlaguerre(n=(i_n - 1), alpha=(i_m - i_n + 1))(factor**2)
+
+            # Scale terms by factorial and add together
+            ratio = factorial(i_n, exact=True) / factorial(i_m, exact=True)
+            tmp =  numpy.sqrt(ratio) * (tmp1 + tmp2)
+            delta_disp_mat += 2.0 * tmp * pdm[i_m, i_n] # 2 is from stwp of i_m, i_n
+
+        # Compute diagonal elements
+        for ind_m in range(mdim):
+            delta_disp_mat += pdm[ind_m, ind_m] * genlaguerre(n=ind_m, alpha=0)(factor**2) \
+                                           * (-factor)
+            if ind_m > 0:
+                delta_disp_mat -= pdm[ind_m, ind_m] * (2.0 * factor) \
+                                  * genlaguerre(n=(ind_m - 1), alpha=1)(factor**2)
+
+        # Scale by Gaussian factor
+        gfact = numpy.exp(-0.5 * (factor)**2)
+        delta_disp_mat *= gfact
+
+        return delta_disp_mat
 
 
     def displacement_deriv(self, mode, factor, pdm):
+        r"""Gradient of Gaussian factor w.r.t. eta
+        """
 
-        from scipy.special import genlaguerre, factorial
-
-        # Variables
-        mdim = self.nboson_states[mode]
-        omega = self.omega[mode]
-
-        # Initialize matrix
-        delta_disp_mat = numpy.zeros((mdim, mdim, *factor.shape))
-
-        # First compute lower triangle
-        ind_m, ind_n = numpy.tril_indices(mdim, k=-1)
-        for i_m, i_n in zip(ind_m, ind_n):
-
-            # Term 1: Gaussian factor derivative
-            tmp1 = genlaguerre(n=i_n, alpha=(i_m - i_n))(factor**2) \
-                   * factor**(i_m - i_n) * -2.0 * (factor / omega)
-
-            # Term 2: A^(m-n) derivative
-            tmp2 = genlaguerre(n=i_n, alpha=(i_m - i_n))(factor**2)
-            if i_m - i_n > 1:
-                tmp2 *= ((i_m - i_n) / omega * (factor)**(i_m - i_n - 1))
-            else:
-                tmp2 *= (1.0 / omega)
-
-            # Term 3: Laguerre polynomial derivative
-            if i_n > 0:
-                tmp2 -= (factor)**(i_m - i_n) * (2.0 * factor / omega) \
-                        * genlaguerre(n=(i_n - 1), alpha=(i_m - i_n + 1))(factor**2)
-
-            # Scale terms by factorial and add together
-            ratio = factorial(i_n, exact=True) / factorial(i_m, exact=True)
-            delta_disp_mat[i_m, i_n] = numpy.sqrt(ratio) * (tmp1 + tmp2)
-            delta_disp_mat[i_n, i_m] = (-1.0)**(i_n - i_m) * delta_disp_mat[i_m, i_n] # upper triangle
-
-        # Compute diagonal elements
-        for ind_m in range(mdim):
-            delta_disp_mat[ind_m, ind_m] = genlaguerre(n=ind_m, alpha=0)(factor**2) \
-                                           * -2.0 * (factor / omega)
-            if ind_m > 0:
-                delta_disp_mat[ind_m, ind_m] -= (2.0 * factor / omega) \
-                                                * genlaguerre(n=(ind_m - 1), alpha=1)(factor**2)
-
-        # Scale by Gaussian factor
-        gfact = numpy.exp(-0.5 * (factor)**2)
-        delta_disp_mat[:, :] *= gfact
-
-        # Contract with photon density matrix
-        exp_val = numpy.einsum("nm, mn...-> ...", pdm, delta_disp_mat, optimize=True)
-
-        return exp_val
+        return self.displacement_deriv_kernel(mode, factor, pdm)
 
 
     def displacement_deriv_vt(self, mode, factor, pdm):
+        r"""Compute the derivative of FC factor with respect to f:
 
-        from scipy.special import genlaguerre, factorial
+        .. math::
+             \frac{\partial G}{\partial f} = \frac{\partial G}{\partial A}\frac{\partial A}{\partial f}
 
-        # Variables
-        mdim = self.nboson_states[mode]
+        where :math:`\frac{\partial G}{\partial A}` is computed in :func:`displacement_deriv_kernel`.
+        """
 
-        # Initialize matrix
-        delta_disp_mat = numpy.zeros((mdim, mdim, *factor.shape))
+        # call the universal kernel
+        delta_disp_mat = self.displacement_deriv_kernel(mode, factor, pdm)
 
-        # First compute lower triangle
-        ind_m, ind_n = numpy.tril_indices(mdim, k=-1)
-        for i_m, i_n in zip(ind_m, ind_n):
+        # apply chain rule
+        return delta_disp_mat * factor
 
-            # Term 1: Gaussian factor derivative
-            tmp1 = genlaguerre(n=i_n, alpha=(i_m - i_n))(factor**2) \
-                   * factor**(i_m - i_n) * -(factor ** 2)
 
-            # Term 2: A^(m-n) derivative
-            tmp2 = genlaguerre(n=i_n, alpha=(i_m - i_n))(factor**2)
-            if i_m - i_n > 1:
-                tmp2 *= (i_m - i_n) * (factor)**(i_m - i_n - 1)
+    def displacement_deriv_vsq(self, mode, factor, pdm):
+        r"""Compute the derivative of FC factor with respect to F.
 
-            # Term 3: Laguerre polynomial derivative
-            if i_n > 0:
-                tmp2 -= (factor)**(i_m - i_n) * (factor ** 2) \
-                        * genlaguerre(n=(i_n - 1), alpha=(i_m - i_n + 1))(factor**2)
+        .. math::
+             \frac{\partial G}{\partial F} = \frac{\partial G}{\partial A}\frac{\partial A}{\partial F}
 
-            # Scale terms by factorial and add together
-            ratio = factorial(i_n, exact=True) / factorial(i_m, exact=True)
-            delta_disp_mat[i_m, i_n] = numpy.sqrt(ratio) * (tmp1 + tmp2)
-            delta_disp_mat[i_n, i_m] = (-1.0)**(i_n - i_m) * delta_disp_mat[i_m, i_n] # upper triangle
+        where :math:`\frac{\partial G}{\partial A}` is computed in :func:`displacement_deriv_kernel`.
+        """
 
-        # Compute diagonal elements
-        for ind_m in range(mdim):
-            delta_disp_mat[ind_m, ind_m] = genlaguerre(n=ind_m, alpha=0)(factor**2) \
-                                           * -(factor ** 2)
-            if ind_m > 0:
-                delta_disp_mat[ind_m, ind_m] -= (factor ** 2) \
-                                                * genlaguerre(n=(ind_m - 1), alpha=1)(factor**2)
+        # call the universal kernel
+        delta_disp_mat = self.displacement_deriv_kernel(mode, factor, pdm)
 
-        # Scale by Gaussian factor
-        gfact = numpy.exp(-0.5 * (factor)**2)
-        delta_disp_mat[:, :] *= gfact
-
-        # Contract with photon density matrix
-        exp_val = numpy.einsum("nm, mn...-> ...", pdm, delta_disp_mat, optimize=True)
-
-        return exp_val
+        # apply chain rule
+        return delta_disp_mat * factor
 
 
     def get_boson_occ(self):
@@ -944,18 +943,16 @@ class Boson(object):
         za *= self.couplings_res * numpy.sqrt(self.omega/2.0) # only consider the residual part
 
         # Bilinear SC-/VT-QED terms (nphoton > 1)
-        bilinear = numpy.zeros(self.nmodes)
+        bilinear = None
         if hasattr(self._mf, "eta"):
             bilinear = numpy.einsum("ap, app-> a", self._mf.eta, self._mf.dm_do)
             bilinear *= (self.couplings * self.couplings_var)
-        else:
-            bilinear = None
 
         # Squeezing parameter values
         Fa = self.squeezed_var
 
         # Bosonic Hamiltonian matrix
-        hmat = get_bosonic_Ham(self.nmodes, self.nboson_states, self.omega, za, Fa, sc=bilinear)
+        hmat = get_bosonic_Ham(self.nmodes, self.nboson_states, self.omega, za, Fa)
 
         # Photon cavity mode eigenvectors
         e, c = scipy.linalg.eigh(hmat)
@@ -965,7 +962,7 @@ class Boson(object):
 
         # Photon ground state energy
         Etot = 0.0
-        # we did't include ZPE here # TODO: Double-check
+        # we did't include ZPE here
         idx = 0
         for imode in range(self.nmodes):
             mdim = self.nboson_states[imode]
@@ -1137,6 +1134,7 @@ class Boson(object):
         self.couplings_res = numpy.ones(self.nmodes) - self.couplings_var
         return self
 
+
     def dump_flags(self):
         if self.verbose < logger.INFO:
             return self
@@ -1215,9 +1213,6 @@ class Boson(object):
     def get_geb_ao_1der(self, mode):
         raise NotImplementedError
 
-    def construct_g_dse_JK(self):
-        r"""DSE-mediated JK matrix"""
-        raise NotImplementedError("Subclasses must implement this method.")
 
 
 class Photon(Boson):
@@ -1312,8 +1307,7 @@ class Photon(Boson):
             \boldsymbol{h}_{\text{CS}} &= \boldsymbol{h}_{\text{DSE}} - \boldsymbol{\tilde{d}}^\alpha
                                 \sum_\alpha \sum_{\mu\nu} \rho_{\mu\nu}
                                 \cdot \bra{\mu}{\hat{D}}\ket{\nu} \\
-            \boldsymbol{\tilde{d}}^\alpha_{\mu\nu}
-                                     &= \lambda_\alpha
+            \boldsymbol{\tilde{d}}^\alpha_{\mu\nu} &= \lambda_\alpha
                                         \cdot \boldsymbol{D}^\alpha_{\mu\nu}
 
         where :math:`\boldsymbol{D}^\alpha` is the polarized dipole moment matrix in
@@ -1370,6 +1364,7 @@ class Photon(Boson):
         ------
         dse_oei : :class:`~numpy.ndarray`
             DSE-mediated OEI for all photon modes.
+
         """
 
         if s1e is None: s1e = self._mf.get_ovlp(self._mol)

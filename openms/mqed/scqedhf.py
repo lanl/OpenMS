@@ -219,7 +219,7 @@ def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
         mf.qed.update_cs(dm)
 
     # Create initial photonic eigenvector guess(es)
-    mf.qed.update_boson_coeff(dm=dm)
+    # mf.qed.update_boson_coeff(dm=dm)
 
     # Initial electronic energy
     h1e = mf.get_hcore(mol, dm, dress=True)
@@ -803,7 +803,8 @@ class RHF(qedhf.RHF):
             ci = self.qed.boson_coeff[idx : idx + mdim, idx]
             pdm = numpy.outer(numpy.conj(ci), ci)
 
-            factor = self.qed.displacement_exp_val(imode, tmp * diff_eta, pdm)
+            factor = self.qed.displacement_matrix(imode, tmp * diff_eta, pdm)
+            # factor = self.qed.displacement_exp_val(imode, tmp * diff_eta, pdm)
 
         # Vacuum Gaussian factor
         else:
@@ -1014,6 +1015,14 @@ class RHF(qedhf.RHF):
             # vhf += 0.5 * lib.einsum('qprs, rs->pq', fc_factor, dm_do, optimize=True)
             vhf += vhf.T
         vhf_do += vhf
+
+        mdim = self.qed.nboson_states[0]
+        if mdim > 1:
+            # Photonic Hamiltonian by tracing out the electronic DOFs
+            self.qed.Hph_sc = lib.einsum("pq, mnpq->mn", self.h1e_DO*dm_do, self.qed.disp_mat_1e, optimize=True)
+            if self.ltensor is None:
+                tmp = self.qed.disp_mat_2e[:, :] * (self.eri_DO - 0.5 * self.eri_DO.transpose(0, 3, 2, 1))
+                self.qed.Hph_sc += 0.5 * lib.einsum('mnpqrs, pq, rs->mn', tmp, dm_do, dm_do, optimize=True)
 
         # transform back to AO
         Uinv = linalg.inv(U)

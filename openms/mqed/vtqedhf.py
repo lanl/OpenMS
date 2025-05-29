@@ -200,7 +200,7 @@ class RHF(scqedhf.RHF):
             derivative = self.qed.displacement_deriv_vsq(imode, tmp * diff_eta, pdm)
         # Apply vacuum derivative formula
         else:
-            derivative = -numpy.exp((-0.5 * (tmp * diff_eta) ** 2)) \
+            derivative = -numpy.exp(-0.5 * (tmp * diff_eta) ** 2) \
                          * ((tmp * diff_eta) ** 2)
 
         if onebody:

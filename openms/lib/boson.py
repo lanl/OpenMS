@@ -27,7 +27,7 @@ from openms.lib.ov_blocks import one_e_blocks, block_diag
 from openms.lib.ov_blocks import two_e_blocks, two_e_blocks_full
 
 
-def get_bosonic_Ham(nmodes, nboson_states, omega, za, Fa, sc=None):
+def get_bosonic_Ham(nmodes, nboson_states, omega, za, Fa):
     r"""Construct Bosonic Hamiltonian in different representation
     after integrating out the electronic DOF.
 
@@ -87,10 +87,6 @@ def get_bosonic_Ham(nmodes, nboson_states, omega, za, Fa, sc=None):
         h_od = numpy.diag(numpy.sqrt(numpy.arange(1, mdim)), k = 1) \
             + numpy.diag(numpy.sqrt(numpy.arange(1, mdim)), k = -1)
         H0 += h_od * za[imode]
-
-        # SC-QEDHF off-diagonal term (nboson > 1)
-        if sc is not None:
-            H0 += h_od * sc[imode]
 
         Hb[idx:idx+mdim, idx:idx+mdim] = H0
         idx += mdim
@@ -631,14 +627,14 @@ class Boson(object):
         # Boson info
         self.boson_type = self.__class__.__name__
         self.cavity_type = None
-        self.e_boson = 0.0
-
         boson_size = sum(self.nboson_states)
         self.boson_coeff = numpy.zeros((boson_size, boson_size))
-        for imode in range(self.nmodes):
-            mdim = self.nboson_states[imode]
-            idx = sum(self.nboson_states[:imode])
-            self.boson_coeff[idx : idx + mdim, idx : idx + mdim] = numpy.eye(mdim)
+        self.boson_coeff[:, 0] = 1.0/numpy.sqrt(boson_size)
+        self.e_boson = 0.0
+        # for imode in range(self.nmodes):
+        #     mdim = self.nboson_states[imode]
+        #     idx = sum(self.nboson_states[:imode])
+        #     self.boson_coeff[idx : idx + mdim, idx : idx + mdim] = numpy.eye(mdim)
 
         # Mean-field info
         self._mf = mf
@@ -675,6 +671,54 @@ class Boson(object):
     # ---------------------
     # General boson methods
     # ---------------------
+
+
+    def displacement_matrix(self, mode, factor, pdm, scale_by_exp=True):
+        r"""
+        :math:`\sum_{mn} <m|D(z)|n> \rho_{mn}`, where :math:`z=\Delta\eta`.
+        Currently, the :math:`\exp(-A^2/2)` part is counted in the dis_exp_val!
+        factor = numpy.exp(-0.5 * (tmp * diff_eta) ** 2) * dis_exp_val
+
+        .. math::
+            G = \exp^{-A^2/2}\sqrt{\frac{\min(m, n)!}{\max(m, n)!}}
+                (-A)^{|m-n|} L^{|m-n|}_{\min(m, n)}(A^2)
+        """
+        from scipy.special import genlaguerre, factorial
+
+        # Number of boson states
+        mdim = self.nboson_states[mode]
+
+        # Initialize matrix
+        disp_mat = numpy.zeros((mdim, mdim, *factor.shape))
+
+        # First compute lower triangle
+        ind_m, ind_n = numpy.tril_indices(mdim, k=-1)
+        for i_m, i_n in zip(ind_m, ind_n):
+            # Factorial ratio
+            ratio = factorial(i_n, exact=True) / factorial(i_m, exact=True)
+
+            # Matrix elements
+            disp_mat[i_m, i_n] = numpy.sqrt(ratio) * (-factor)**(i_m - i_n) \
+                        * genlaguerre(n=i_n, alpha=(i_m - i_n))(factor**2)
+            disp_mat[i_n, i_m] = disp_mat[i_m, i_n]
+
+        # Compute diagonal elements
+        for ind_m in range(mdim):
+            disp_mat[ind_m, ind_m] = genlaguerre(n=ind_m, alpha=0)(factor**2)
+
+        # Compute exponential term, scale displacement matrix
+        if scale_by_exp:
+            gfact = numpy.exp(-0.5 * (factor)**2)
+            disp_mat[:, :] *= gfact
+
+        if len(factor.shape) > 2:
+            self.disp_mat_2e = disp_mat
+        else:
+            self.disp_mat_1e = disp_mat
+        # Contract with photon density matrix
+        exp_val = numpy.einsum("mn, mn...-> ...", pdm, disp_mat, optimize=True)
+        return exp_val
+
 
     def displacement_exp_val(self, mode, factor, pdm, scale_by_exp=True):
         r"""
@@ -716,6 +760,7 @@ class Boson(object):
         # Contract with photon density matrix
 
         return disp_mat
+
 
     def displacement_deriv_kernel(self, mode, factor, pdm):
         r"""Compute the derivative of FC factor with respect to f:
@@ -942,17 +987,14 @@ class Boson(object):
         za = lib.einsum("pq, Xpq ->X", dm, self.gmat) - self.z_alpha
         za *= self.couplings_res * numpy.sqrt(self.omega/2.0) # only consider the residual part
 
-        # Bilinear SC-/VT-QED terms (nphoton > 1)
-        bilinear = None
-        if hasattr(self._mf, "eta"):
-            bilinear = numpy.einsum("ap, app-> a", self._mf.eta, self._mf.dm_do)
-            bilinear *= (self.couplings * self.couplings_var)
-
         # Squeezing parameter values
         Fa = self.squeezed_var
 
         # Bosonic Hamiltonian matrix
         hmat = get_bosonic_Ham(self.nmodes, self.nboson_states, self.omega, za, Fa)
+
+        if hasattr(self, "Hph_sc"):
+            hmat += self.Hph_sc
 
         # Photon cavity mode eigenvectors
         e, c = scipy.linalg.eigh(hmat)

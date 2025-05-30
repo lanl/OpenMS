@@ -4,7 +4,7 @@ import numpy
 from pyscf import gto, scf
 from openms.mqed import qedhf
 from openms.qmc.afqmc import AFQMC
-from utilities.analysis import get_mean_std
+from openms.qmc.tools import get_mean_std
 from molecules import get_mol, get_cavity
 
 def run_fci(mol, cavity_freq, cavity_mode, nphoton=2):

@@ -1,11 +1,41 @@
 [build-system]
-requires = ["flit_core >=3.2,<4"]
-build-backend = "flit_core.buildapi"
+requires = [
+    "setuptools>=61",
+    "wheel",
+    "numpy"
+]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "OpenMS"
-authors = [{name = "Zhang, Yu", email = "zhy@lanl.gov"}, {name = "Mazin, Ilia", email = "imazin@lanl.gov"}]
-dynamic = ["version", "description"]
+version = "0.2.0"
+description = "OpenMS: An open-source multiscale solver for coupled Maxwell-Schrödinger equations"
+authors = [
+    {name = "Zhang, Yu", email = "zhy@lanl.gov"},
+]
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "pyscf",
+    "h5py",
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "sphinx",
+    "sphinx-rtd-theme",
+    "sphinxcontrib-bibtex",
+    "setuptools"
+]
 
-[tool.flit.module]
-name = "openms"
+[project.optional-dependencies]
+mpi = ["mpi4py"]
+gpu = ["cupy"]
+test = ["pytest"]
+all = ["mpi4py"]
+
+[tool.setuptools]
+packages = ["openms"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+openms = ["*.so", "*.dll", "*.dylib"]  # Include C++ bindings/libraries

@@ -33,7 +33,7 @@ bibtex_bibfiles = ['refs.bib']
 
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3', None),
-    'scipy': ('https://docs.scipy.org/doc/scipy', None),
+    #'scipy': ('https://docs.scipy.org/doc/scipy', None),
     'pyscf': ('https://pyscf.org', None),
 }
 #intersphinx_mapping = {

@@ -5,7 +5,7 @@ from pyscf import gto, scf
 from openms.mqed import qedhf
 from openms.qmc.afqmc import AFQMC
 from openms.lib import boson
-from utilities.analysis import get_mean_std
+from openms.qmc.tools import get_mean_std
 from molecules import get_mol, get_cavity
 
 # Test eb-AFQMC using bare molecule object

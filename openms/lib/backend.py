@@ -433,9 +433,10 @@ backend = NumpyBackend()
 
 ## Set backend
 def set_backend(name: str):
-    """Set the backend for the FDTD simulations
+    r"""Set the backend for the FDTD simulations
     This function monkeypatches the backend object by changing its class.
     This way, all methods of the backend object will be replaced.
+
     Args:
         name: name of the backend. Allowed backend names:
             - ``numpy`` (defaults to float64 arrays)

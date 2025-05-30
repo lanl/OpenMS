@@ -104,7 +104,9 @@ if NUMBA_AVAILABLE:
     def propagate_exp_op_numba(phiw, op, order):
         """
         Apply exponential operator via Taylor expansion:
-            φ' = (1 + A + A^2/2! + A^3/3! + ...) φ
+
+        .. math::
+            e^{A}\phi = \sum_n A^n/n! \phi
 
         Parameters
         ----------

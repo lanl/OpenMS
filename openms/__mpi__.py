@@ -33,6 +33,9 @@ class FakeComm:
     def Gather(self, sendbuf, recvbuf, root=0):
         recvbuf[:] = sendbuf
 
+    def Gatherv(self, sendbuf, recvbuf, root=0):
+        recvbuf[:] = sendbuf
+
     def gather(self, sendbuf, root=0):
         return [sendbuf]
 
@@ -97,6 +100,8 @@ class FakeMPI:
     COMM_SPLIT_TYPE_SHARED = None
     COMM_TYPE_SHARED = None
     DOUBLE = None
+    COMPLEX = None
+    COMPLEX16 = None
     INT64_T = None
     Win = None
     IntraComm = TypeVar("IntraComm")

@@ -6,3 +6,4 @@ matplotlib
 sphinx
 sphinx-rtd-theme
 sphinxcontrib-bibtex
+setuptools

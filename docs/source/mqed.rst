@@ -40,6 +40,3 @@ where
    mqed_qedhf
    mqed_scqedhf
    mqed_vtqedhf
-   mqed_ms.rst
-   mqed_qedcc
-

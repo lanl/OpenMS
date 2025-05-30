@@ -11,8 +11,7 @@
 # material to reproduce, prepare derivative works, distribute copies to the
 # public, perform publicly and display publicly, and to permit others to do so.
 #
-# Authors:   Yu Zhang    <zhy@lanl.gov>
-#          Ilia Mazin <imazin@lanl.gov>
+# Author: Yu Zhang <zhy@lanl.gov>
 #
 
 import os
@@ -35,10 +34,10 @@ __copyright__ = f"""
 {" " * 3}material to reproduce, prepare derivative works, distribute copies to the
 {" " * 3}public, perform publicly and display publicly, and to permit others to do so.
 {" " * 3}
-{" " * 3}Authors:   Yu Zhang    <zhy@lanl.gov>
+{" " * 3}Authors: Yu Zhang <zhy@lanl.gov>
 """
 
-#__logo__ = f"""
+#__logo__ = r"""
 #==========================================================
 #*    ____    _____    _____   _   _   __  __    _____    *
 #*   / __ \  |  __ \  |  ___| | \ | | |  \/  |  / ____|   *
@@ -48,6 +47,7 @@ __copyright__ = f"""
 #*   \____/  |_|      |_____| |_| \_| \_|  |_| |_____/    *
 #*                                                        *
 #==========================================================
+#""" + f"""
 #{__copyright__}
 #Version: {__version__}
 #"""
@@ -73,7 +73,7 @@ __logo__ = r"""
 # Dictionary of Zhang Group publications
 _citations = {}
 _citations["openms"] = textwrap.dedent(f"""\
-{" " * 4} Y. Zhang and I.M. Mazin. \"OpenMS: A multi-scale ecosystem for
+{" " * 4} Y. Zhang, \"OpenMS: A multi-scale ecosystem for solving coupled
 {" " * 4} Maxwell-Schroedinger equations in open quantum environments.\"
 {" " * 6} {r'https://github.com/lanl/OpenMS'}
 """)
@@ -157,11 +157,13 @@ else:
         )
 
 # from distutils.version import LooseVersion
+from setuptools._distutils.version import LooseVersion
 
 from openms import __config__
 from openms import lib
 from openms import maxwell
 
+# from openms import qed
 # from . import __config__
 # from . import cc
 # from . import lib

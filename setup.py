@@ -15,28 +15,17 @@
 #
 
 
-import os, sys
-from setuptools import setup, find_packages
-from setuptools import Extension
-from setuptools.command.build_ext import build_ext as _build_ext
+import os
+import builtins
 import subprocess
-
-# required list:
-# Function to read the requirements.txt file
-def parse_requirements(filename):
-    with open(filename, 'r') as f:
-        return [line.strip() for line in f if line and not line.startswith("#")]
-
-# Parse the requirements from the requirements.txt file
-install_requires = parse_requirements("requirements.txt")
+from setuptools import setup, Extension
+from setuptools.command.build_ext import build_ext as _build_ext
 
 class build_ext(_build_ext):
     def finalize_options(self):
-        _build_ext.finalize_options(self)
-        # Prevent numpy from thinking it is still in its setup process:
-        __builtins__.__NUMPY_SETUP__ = False
+        super().finalize_options()
+        builtins.__NUMPY_SETUP__ = False
         import numpy
-
         self.include_dirs.append(numpy.get_include())
 
 class CMakeExtension(Extension):
@@ -77,20 +66,9 @@ class CMakeBuild(build_ext):
         for ext in self.extensions:
             if isinstance(ext, CMakeExtension):
                 continue  # Skip CMake extensions
-            _build_ext.build_extensions(self)
+        super().build_extensions()
 
 setup(
-    name="openms",
-    version="0.1.0",
-    description="An open-source multiscale solver for coupled Maxwell-Schrödinger equations.",
-    packages=find_packages(),
-    install_requires=install_requires,
     ext_modules=[CMakeExtension("openms_lib", sourcedir="./openms/lib")],
     cmdclass={"build_ext": CMakeBuild},
-    extras_require={ # optional package for extra features
-        "mpi": ["mpi4py"], # TBA
-        "gpu": ["cupy"],   # TBA
-        "test": ["pytest"], # for test
-        "all": ["mpi4py"]  # TBA
-    },
 )

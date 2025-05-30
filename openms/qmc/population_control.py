@@ -454,6 +454,41 @@ control_func_dict = {
 }
 
 
+def inter_node_rebalance(walkers):
+    r""""Inter-node redistribution
+
+    Not done yet
+    """
+    pass
+
+    local_count = walkers.weights.shape[0]
+    all_counts = walkers._mpi.comm.allgather(local_count)
+    total_nw = sum(all_counts)
+    ideal_count = total_nw // walkers._mpi.size
+    delta = [count - ideal_count for count in all_counts]
+    imbalance_threshold = 0.05 * ideal_count
+
+    if max(abs(d) for d in delta) > imbalance_threshold:
+        senders = [(i, d) for i, d in enumerate(delta) if d > 0]
+        receivers = [(i, -d) for i, d in enumerate(delta) if d < 0]
+
+        send_plan = []
+        si = 0
+        for ri, rneed in receivers:
+            while rneed > 0 and si < len(senders):
+                si_rank, si_surplus = senders[si]
+                send_count = min(rneed, si_surplus)
+                send_plan.append((si_rank, ri, send_count))
+                rneed -= send_count
+                senders[si] = (si_rank, si_surplus - send_count)
+                if senders[si][1] == 0:
+                    si += 1
+
+        send_requests = []
+        recv_requests = []
+        recv_WF_blocks, recv_phiw_blocks, recv_weights_blocks = [], [], []
+
+
 def population_control_factory(walkers, method="branching"):
 
     if method in control_func_dict:
@@ -471,6 +506,9 @@ def population_control_factory(walkers, method="branching"):
         walkers._unpack_walkers(new_walkers)
         walkers.weights = weights
 
+        # if MPI, we need to do inter-node redistribution
+        if walkers._mpi.size > 1:
+            inter_node_rebalance(walkers)
 
 
 

@@ -138,7 +138,7 @@ if NUMBA_AVAILABLE:
 
 
     @njit(parallel=True, fastmath=True)
-    def build_HS_numba(xshift, ltensor, factor):
+    def tensor_dot_numba(xshift, ltensor, factor):
         """
         Numba-compatible and parallelized build_HS function.
 
@@ -161,22 +161,21 @@ if NUMBA_AVAILABLE:
         nchol, nao, _ = ltensor.shape
         nwalkers = xshift.shape[0]
 
-        eri_op = xshift @ ltensor.reshape(nchol, nao * nao).astype(backend.complex128)
-        eri_op = factor * eri_op.reshape(nwalkers, nao, nao)
+        # eri_op = xshift @ ltensor.reshape(nchol, nao * nao).astype(backend.complex128)
+        # eri_op = factor * eri_op.reshape(nwalkers, nao, nao)
+        #  # n, npq-> pq
+        #  eri_op = backend.zeros((nwalkers, nao, nao), dtype=backend.complex128)
+        #  for w in prange(nwalkers):
+        #      for l in range(nchol):
+        #          eri_op[w] += xshift[w, l] * ltensor[l]
+        #  eri_op *= factor
+        #  return eri_op
+        reshaped = ltensor.reshape(nchol, -1)
+        dot_product = backend.dot(xshift, reshaped)
+        result = dot_product.reshape(nwalkers, nao, nao)
+        return factor * result
 
-        """
-        # Reshape ltensor: (nchol, nao*nao)
-        ltensor_flat = ltensor.reshape(nchol, nao * nao)
-
-        # n, npq-> pq
-        eri_op = backend.zeros((nwalkers, nao, nao), dtype=backend.complex128)
-        # Do matrix multiplication: (nwalkers, nchol) @ (nchol, nao*nao)
-        for w in prange(nwalkers):
-            tmp = ltensor_flat.astype(backend.complex128).T @ xshift[w]
-            eri_op[w] = factor * tmp.T.reshape(nao, nao)
-        """
-
-        return eri_op
+    build_HS_numba = tensor_dot_numba
 
 else:
 

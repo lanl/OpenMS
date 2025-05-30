@@ -264,12 +264,15 @@ def local_energy_SD_RHF(trial, walkers, enuc = 0.0):
     e1 = 2.0 * e_rh1e_Ghalf(trial.rh1a, walkers.Ghalfa)
     e1 += enuc
 
+    t0 = time.time()
     # coulomb energy
     ecoul = 4.0 * ecoul_rltensor_uhf(trial.rltensora, walkers.Ghalfa)
+    t1 = time.time()
 
     # exchange
     exx = 2.0 * exx_rltensor_Ghalf_kernel(trial.rltensora, walkers.Ghalfa)
-
+    t2 = time.time()
+    # print(f"Debug: wall time of ecoul and exx: {t1-t0:.3f} {t2-t1:.3f}")
     e2 = ecoul - exx
 
     return e1, e2
@@ -302,6 +305,7 @@ def ecoul_rltensor_uhf(rltensora, Ghalfa, rltensorb=None, Ghalfb=None):
         ecoul = 0.5 * backend.sum(LG * LG, axis=1)
     return ecoul
 
+ecoul_rltensor_Ghalf = ecoul_rltensor_uhf
 
 def exx_THC_Ghalf(rX, U, Ghalf):
     r"""Compute exchange energy via the THC methods
@@ -387,6 +391,27 @@ if NUMBA_AVAILABLE:
 
         exx *= 0.5
         return exx
+
+
+    @njit(parallel=True, fastmath=True)
+    def ecoul_rltensor_Ghalf_numba(rltensora, Ghalfa, rltensorb=None, Ghalfb=None):
+        """
+        Efficient Coulomb energy calculation using reshaped dot products.
+        Avoids explicit loops by relying on np.dot().
+        """
+        nwalkers = Ghalfa.shape[0]
+        nchol = rltensora.shape[0]
+
+        ecoul = np.zeros(nwalkers, dtype=np.complex128)
+
+        for iw in prange(nwalkers):
+            for l in range(nchol):
+                LG = np.dot(Ghalfa[iw].ravel(), rltensora[l].ravel())
+                if Ghalfb is not None and rltensorb is not None:
+                    LG += np.dot(Ghalfb[iw].ravel(), rltensorb[l].ravel())
+                ecoul[iw] += 0.5 * LG
+
+        return ecoul
 
 
 def exx_rltensor_Ghalf(rltensor, Ghalf):

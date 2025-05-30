@@ -28,8 +28,43 @@ def stochastic_thc(L, n_stoch, method="rademacher", seed=None, n_svd_keep=0):
 
     **1) stochastic RI**:
 
+    .. math::
+        \delta_{\mu\nu} =  \frac{1}{N_\xi} \sum^{N_\xi}_\xi \theta_{\xi\mu} \theta_{\xi\nu}
+
+    where :math:`N_\xi` is the number of stochastic samples and :math:`\boldsymbol{\theta}_\xi`
+    is the sRI basis function :math:`\{-1, 1\}`.
+
+    With the sRI, we write the energy as:
+
+    .. math::
+       E = & \sum_{pqrs}\sum_{\gamma\gamma'} L^\gamma_{pq}\delta_{\gamma\xi} L^{\gamma', *}_{sr} \left[G_{pq}G_{rs} - G_{ps} G_{rq} \right] \\
+         = & \frac{1}{N_\xi} \sum_{pqrs, \xi}(\sum_\gamma \theta_{\xi\gamma} L^\gamma_{pq}) (\sum_{\gamma'} \theta_{\xi,\gamma'} L^{\gamma',*}_{sr}) \left[G_{pq}G_{rs} - G_{ps} G_{rq} \right] \\
+         = & \frac{1}{N_\xi} \sum_{pqrs, \xi}\tilde{L}^\xi_{pq} \tilde{L}^{\xi,*}_{sr} \left[G_{pq}G_{rs} - G_{ps} G_{rq} \right]
+
+    In practice, we half-rotate the :math:`L` tensor with the trial WF:
+
+    .. math::
+       E = \frac{1}{N_\xi} \sum_{ijrs, \xi}\tilde{L}^\xi_{pi} \tilde{L}^{\xi,*}_{sj} \left[\Theta_{ri}\Theta_{sj} - \Theta_{si} \Theta_{rj} \right]
+
+    Hence, the scaling is :math:`O(N^2_o M N_\xi)`.
+
+    The following strategies are also
+    implemented to reduce the variance:
+
+        - Rademacher: :math:`\pm 1` with probability 0.5 for each.
+        - xx
+        - xx
+
+    **2) Nested SVD decomposition of CD**:
+
+
+    **3) Mixed SVD and sRI**: Here, we further extend the sRI to combine with
+    nested SVD decomposition of Cholesky tensor, leading to mixed deterministic-stochastic
+    RI (msRI) method:
+
+
     Parameters:
-        L           : numpy.ndarray, shape (n_chol, n_orb, n_orb)
+        L           : numpy.ndarray, shape (nchol, nao, nao)
                       Cholesky vectors L[gamma, p, q]
         n_stoch     : int
                       Number of stochastic vectors
@@ -42,11 +77,37 @@ def stochastic_thc(L, n_stoch, method="rademacher", seed=None, n_svd_keep=0):
                       Number of SVD components to keep for 'hybrid' method
 
     Returns:
-        X : numpy.ndarray, shape (n_chol, n_orb, n_stoch)
-        U : numpy.ndarray, shape (n_orb, n_stoch)
+        X : numpy.ndarray, shape (nchol, nao, n_stoch)
+        U : numpy.ndarray, shape (nao, n_stoch)
     """
-    n_chol, n_orb, _ = L.shape
+    nchol, nao, _ = L.shape
     rng = numpy.random.default_rng(seed)
+
+    # === Sampling strategies ===
+    if method == "rademacher":
+        xi = rng.choice([-1.0, 1.0], size=(n_stoch, nchol)) / numpy.sqrt(n_stoch)
+    elif method == "gaussian":
+        xi = rng.standard_normal((n_stoch, nchol)) / numpy.sqrt(n_stoch)
+    elif method == "svd":
+        # Full SVD decomposition for each gamma
+        assert n_stoch > 0, "Specify n_stoch = rank to retain"
+        # L^\gamma_{pq} = U^\gamma_{\mu} S_\mu V^\mu_{pq}
+        X = numpy.zeros((nchol, nao, n_stoch))
+        U = numpy.zeros((nchol, nao, n_stoch))
+        for gamma in range(nchol):
+            Lg = L[gamma]
+            U_s, s, Vh = numpy.linalg.svd(Lg, full_matrices=False)
+            X[gamma] = U_s[:, :n_stoch] * s[:n_stoch]
+            U[gamma, :, :] = Vh[:n_stoch, :].T
+        return X, U
+
+    else:
+        raise ValueError(f"Unknown method: {method}")
+
+    # === Standard THC via stochastic projection ===
+    X = numpy.einsum('Xpq, uX->upq', L, xi)
+    U = xi.T
+    return X, U
 
 
 def bilinear_decomposition(Afac, Bfac, chol_eb, decouple_scheme):
@@ -284,7 +345,11 @@ def chols_full(mol, eri=None, thresh=1.e-12, aosym="s1", g=None):
 
     return ltensor
 
-def chols_blocked(mol, thresh=1.e-6, max_chol_fac=15, g=None):
+def chols_blocked(mol, thresh=1.e-6, max_chol_fac=15,
+        g=None,
+        init_ltensor=None,
+        block_sparsity=False
+    ):
     r"""
     Get modified Cholesky decomposition from the block decomposition of ERI.
     See Ref. :cite:`Henrik:2003rs, Nelson:1977si`.
@@ -309,6 +374,11 @@ def chols_blocked(mol, thresh=1.e-6, max_chol_fac=15, g=None):
         Factor to control the maximum number of L tensors.
     g : numpy.ndarray
         Tensor g_{n,ij} with shape (naux, nao, nao).
+    init_ltensor: ndarray
+        initial condition, if not none, first init_ltensor.shape[0]
+        loops can be skipped.
+    block_sparsity: Bool
+        Whether to explore blocksparsity to save memory
 
     Returns
     -------
@@ -357,6 +427,8 @@ def chols_blocked(mol, thresh=1.e-6, max_chol_fac=15, g=None):
     Mapprox = numpy.zeros(nao * nao)
     # compute eri block
     ltensor[0] = _compute_eri_chunk(mol, nao, sj, sl, indices4bas, j, l, delta_max, g)
+    #if block_sparsity:
+    #    # stored the data in tiled tensor!
 
     nchol = 0
     while abs(delta_max) > thresh:
@@ -430,6 +502,14 @@ def _compute_eri_chunk(mol, nao, sj, sl, indices4bas, j, l, delta_max, g=None):
         eri_chunk += mod_chunk.reshape(nao * nao)
 
     return eri_chunk / numpy.sqrt(delta_max)
+
+
+def chols_blocked_distributed(mol, thresh=1.e-6, max_chol_fac=15, g=None):
+    r"""
+    Distributed MPI parallel of blocked CD (TBA).
+    """
+    pass
+
 
 #
 # analysis tools

@@ -59,8 +59,10 @@ Then we derive the QEDHF functional and Fock matrix accordingly based on the HF 
 VSQ-QEDHF method
 ^^^^^^^^^^^^^^^^
 
-Details TBA.
+The ansatz is:
 
+.. math::
+    \ket{\Psi} =
 
 """
 
@@ -201,7 +203,7 @@ class RHF(scqedhf.RHF):
         # Apply vacuum derivative formula
         else:
             derivative = -numpy.exp(-0.5 * (tmp * diff_eta) ** 2) \
-                         * ((tmp * diff_eta) ** 2)
+                         * (tmp * diff_eta) ** 2
 
         if onebody:
             return derivative.reshape(nao, nao)
@@ -433,40 +435,6 @@ class RHF(scqedhf.RHF):
             self.vlf_grad[0] += self.energy_elec(dm, self.grad_oei, self.grad_vhf_dse)[0]
 
 
-    def grad_var_params(self, dm_do, g_DO, dm=None):
-        r"""Compute dE/df where f is the variational transformation parameters.
-
-        :math:`\eta` here is the eigenvalue of :math:`\lambda \sqrt{\omega_\alpha/2} (\boldsymbol{d}\cdot \boldsymbol{e}_\alpha)`,
-        not just the eigenvalue of :math:`\boldsymbol{d}\cdot \boldsymbol{e}_\alpha`.
-
-        Define :math:`\eta_p` as eigenvalue of :math:`\boldsymbol{d}\cdot \boldsymbol{e}_\alpha'
-        and :math:`\tilde{\eta}_p` as eigenvalue of :math:`\lambda \sqrt{\omega_\alpha/2} (\boldsymbol{d}\cdot \boldsymbol{e}_\alpha)`,
-        then:
-
-        .. math::
-
-            \tilde{\eta}_p = \eta_p  \sqrt{\omega_\alpha/2}.
-
-        And the Gaussian factor is:
-
-        .. math::
-
-            \exp(-\lambda^2(\eta_p - \eta_q)^2/4\omega) =
-            \exp[ -1/(2\omega^2_\alpha) (\tilde{\eta}_p - \tilde{\eta}_q)^2 ].
-
-        """
-
-        # gradient w.r.t eta
-        self.get_eta_gradient(dm_do, g_DO, dm)
-
-        if self.qed.optimize_vsq:
-            self.get_vsq_gradient(dm_do, g_DO, dm)
-
-        if not self.qed.optimize_varf:
-            return
-
-        # gradient w.r.t f_\alpha
-        nmodes = self.qed.nmodes
     def grad_var_params(self, dm_do, g_DO, dm=None):
         r"""Compute dE/df where f is the variational transformation parameters.
 

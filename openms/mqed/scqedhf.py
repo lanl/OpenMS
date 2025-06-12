@@ -426,8 +426,6 @@ class RHF(qedhf.RHF):
         self.diis_space = 20
         self.DIIS = diis.SCF_DIIS
 
-        return
-
 
     def initialize_bare_fock(self, dm=None):
         r"""Return non-QED Fock matrix from provided or initial guess ``dm``."""
@@ -1019,10 +1017,10 @@ class RHF(qedhf.RHF):
         mdim = self.qed.nboson_states[0]
         if mdim > 1:
             # Photonic Hamiltonian by tracing out the electronic DOFs
-            self.qed.Hph_sc = lib.einsum("pq, mnpq->mn", self.h1e_DO*dm_do, self.qed.disp_mat_1e, optimize=True)
+            self.qed.Hph_sc = lib.einsum("pq, mpq->m", self.h1e_DO*dm_do, self.qed.disp_mat_1e, optimize=True)
             if self.ltensor is None:
-                tmp = self.qed.disp_mat_2e[:, :] * (self.eri_DO - 0.5 * self.eri_DO.transpose(0, 3, 2, 1))
-                self.qed.Hph_sc += 0.5 * lib.einsum('mnpqrs, pq, rs->mn', tmp, dm_do, dm_do, optimize=True)
+                tmp = self.qed.disp_mat_2e[:] * (self.eri_DO - 0.5 * self.eri_DO.transpose(0, 3, 2, 1))
+                self.qed.Hph_sc += 0.5 * lib.einsum('mpqrs, pq, rs->m', tmp, dm_do, dm_do, optimize=True)
 
         # transform back to AO
         Uinv = linalg.inv(U)

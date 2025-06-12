@@ -27,6 +27,55 @@ from openms.lib.ov_blocks import one_e_blocks, block_diag
 from openms.lib.ov_blocks import two_e_blocks, two_e_blocks_full
 
 
+def packed_index(i, j):
+    if i < j:
+        i, j = j, i
+    return i * (i + 1) // 2 + j
+
+
+def unpack_symmetric(A, mdim, fac = 1.0):
+    """
+    Unpack a 1D packed symmetric matrix into a full 2D symmetric matrix.
+
+    Parameters:
+        A     : 1D numpy array of length mdim*(mdim+1)//2 (lower triangle packed)
+        mdim  : Dimension of the original square matrix
+
+    Returns:
+        full_matrix : (mdim, mdim) numpy array
+    """
+    full_matrix = numpy.zeros((mdim, mdim), dtype=A.dtype)
+    idx = 0
+    for i in range(mdim):
+        for j in range(i):
+            full_matrix[i, j] = A[idx] / fac
+            full_matrix[j, i] = A[idx] / fac
+            idx += 1
+        full_matrix[i, i] = A[idx]
+        idx += 1
+    return full_matrix
+
+def pack_symmetric(matrix):
+    """
+    Pack the lower triangle (including diagonal) of a symmetric 2D matrix into a 1D array.
+
+    Parameters:
+        matrix : (mdim, mdim) numpy array, assumed symmetric
+
+    Returns:
+        packed_array : 1D numpy array of length mdim*(mdim+1)//2
+    """
+    mdim = matrix.shape[0]
+    assert matrix.shape[0] == matrix.shape[1], "Matrix must be square"
+
+    packed = []
+    for i in range(mdim):
+        for j in range(i + 1):  # Lower triangle (including diagonal)
+            packed.append(matrix[i, j])
+
+    return numpy.array(packed, dtype=matrix.dtype)
+
+
 def get_bosonic_Ham(nmodes, nboson_states, omega, za, Fa):
     r"""Construct Bosonic Hamiltonian in different representation
     after integrating out the electronic DOF.
@@ -234,7 +283,7 @@ def transform_ao2mo(A, C):
     return Amo
 
 
-def get_integrals4fci(mol, cavity_freq, cavity_mode, lo_method='meta-lowdin'):
+def get_integrals4fci(mol, cavity_freq, cavity_mode, lo_method='meta-lowdin', chol_thresh=None):
     from pyscf import lo, ao2mo
     from pyscf import scf
 
@@ -262,6 +311,11 @@ def get_integrals4fci(mol, cavity_freq, cavity_mode, lo_method='meta-lowdin'):
     hcore = scf.hf.get_hcore(mol)
     eri = mol.intor('int2e', aosym='s8')
     eri = ao2mo.restore(1, eri, nao)
+
+    if chol_thresh is not None:
+       # Here the purpose is to benchmark with other methdos that used chol decomposition and truncation
+        ltensor = chols_full(mol, thresh=chol_thresh)
+        eri = numpy.einsum("xpq, xrs->pqrs", ltensor, ltensor)
     dm0 = scf.hf.get_init_guess(mol)
 
     #
@@ -688,35 +742,38 @@ class Boson(object):
         # Number of boson states
         mdim = self.nboson_states[mode]
 
+        packed_mdim = mdim * (mdim + 1) // 2
         # Initialize matrix
-        disp_mat = numpy.zeros((mdim, mdim, *factor.shape))
+        disp_mat = numpy.zeros((packed_mdim, *factor.shape))
 
         # First compute lower triangle
-        ind_m, ind_n = numpy.tril_indices(mdim, k=-1)
+        ind_m, ind_n = numpy.tril_indices(mdim)
         for i_m, i_n in zip(ind_m, ind_n):
-            # Factorial ratio
-            ratio = factorial(i_n, exact=True) / factorial(i_m, exact=True)
+            idx = packed_index(i_m, i_n)
+            if i_m == i_n:
+                val = genlaguerre(n=i_m, alpha=0)(factor**2)
+            else:
+                # Factorial ratio
+                ratio = factorial(i_n, exact=True) / factorial(i_m, exact=True)
 
-            # Matrix elements
-            disp_mat[i_m, i_n] = numpy.sqrt(ratio) * (-factor)**(i_m - i_n) \
-                        * genlaguerre(n=i_n, alpha=(i_m - i_n))(factor**2)
-            disp_mat[i_n, i_m] = disp_mat[i_m, i_n]
-
-        # Compute diagonal elements
-        for ind_m in range(mdim):
-            disp_mat[ind_m, ind_m] = genlaguerre(n=ind_m, alpha=0)(factor**2)
+                # Matrix elements
+                val = 2.0 * numpy.sqrt(ratio) * (-factor)**(i_m - i_n) \
+                      * genlaguerre(n=i_n, alpha=(i_m - i_n))(factor**2)
+            disp_mat[idx] = val
 
         # Compute exponential term, scale displacement matrix
         if scale_by_exp:
             gfact = numpy.exp(-0.5 * (factor)**2)
-            disp_mat[:, :] *= gfact
+            disp_mat[:] *= gfact
 
         if len(factor.shape) > 2:
             self.disp_mat_2e = disp_mat
         else:
             self.disp_mat_1e = disp_mat
+
         # Contract with photon density matrix
-        exp_val = numpy.einsum("mn, mn...-> ...", pdm, disp_mat, optimize=True)
+        packed_pdm = pack_symmetric(pdm)
+        exp_val = numpy.einsum("m, m...-> ...", packed_pdm, disp_mat, optimize=True)
         return exp_val
 
 
@@ -994,7 +1051,7 @@ class Boson(object):
         hmat = get_bosonic_Ham(self.nmodes, self.nboson_states, self.omega, za, Fa)
 
         if hasattr(self, "Hph_sc"):
-            hmat += self.Hph_sc
+            hmat += unpack_symmetric(self.Hph_sc, hmat.shape[0], fac=2.0)
 
         # Photon cavity mode eigenvectors
         e, c = scipy.linalg.eigh(hmat)

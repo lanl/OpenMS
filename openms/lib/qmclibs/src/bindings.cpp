@@ -9,7 +9,7 @@
 #include "trial.hpp"
 #include "estimators.hpp"
 #include "linalg.hpp"
-
+#include "qedhf.hpp"
 
 namespace py = pybind11;
 
@@ -51,5 +51,18 @@ PYBIND11_MODULE(_qmclib, m) {
 
     // linalg or tensor lib
     m.def("tensordot_complex", &tensordot_complex);
+
+    // qedhf lib
+
+    m.def("displacement_matrix", &displacement_matrix_cpp,
+          py::arg("nboson_states"),
+          py::arg("imode"),
+          py::arg("freq"),
+          py::arg("eta"),
+          py::arg("pdm"),
+          py::arg("vsq"),
+          py::arg("shift") = 0.0,
+          "Compute displacement matrix");
+
 
 }

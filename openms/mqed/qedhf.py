@@ -51,6 +51,7 @@ With the ansatz, the QEDHF energy is
 """
 
 import numpy
+import time
 
 from pyscf.dft import rks
 from pyscf import lib
@@ -61,6 +62,7 @@ from pyscf.lib import logger
 import openms
 from openms.lib import boson
 from openms import __config__
+from openms.lib.logger import task_title
 
 TIGHT_GRAD_CONV_TOL = getattr(__config__, "TIGHT_GRAD_CONV_TOL", True)
 

@@ -5,6 +5,12 @@ import scipy
 import numpy
 import time
 
+try:
+    import numba
+    NUMBA_AVAILABLE = True
+except ImportError:
+    NUMBA_AVAILABLE = False
+
 def get_mol(basis="sto3g", verbose=3):
 
     itest = 0
@@ -149,7 +155,7 @@ def df_scf():
     print(e1, e2)
 
 
-def qedhf_cd():
+def qedhf_cd(nfock=1):
     from openms.mqed import qedhf
     from openms.mqed import scqedhf, vtqedhf
 
@@ -167,7 +173,7 @@ def qedhf_cd():
 
     energies = []
 
-    qedmf = scqedhf.RHF(mol, xc=None, cavity_mode=cavity_mode.copy(), cavity_freq=cavity_freq.copy())
+    qedmf = scqedhf.RHF(mol, xc=None, cavity_mode=cavity_mode.copy(), cavity_freq=cavity_freq.copy(), nboson_states=nfock)
     qedmf.max_cycle = 100
     qedmf.CD_anyway = True
     qedmf.CD_thresh = 1.e-8
@@ -175,14 +181,15 @@ def qedhf_cd():
     energies.append(qedmf.e_tot)
 
     # VT
-    qedmf = vtqedhf.RHF(mol, xc=None, cavity_mode=cavity_mode.copy(), cavity_freq=cavity_freq.copy())
+    qedmf = vtqedhf.RHF(mol, xc=None, cavity_mode=cavity_mode.copy(), cavity_freq=cavity_freq.copy(), nboson_states=nfock)
     qedmf.max_cycle = 100
     qedmf.CD_anyway = True
     qedmf.CD_thresh = 1.e-8
     qedmf.kernel()
     energies.append(qedmf.e_tot)
 
-    # VSQ
+
+    # VSQ (not support nphoton yet)
     qedmf = vtqedhf.RHF(mol, xc=None, cavity_mode=cavity_mode.copy(), cavity_freq=cavity_freq.copy())
     qedmf.max_cycle = 100
     qedmf.CD_anyway = True
@@ -203,6 +210,11 @@ class TestCD(unittest.TestCase):
         for e0, eref in zip(energies, refs):
             self.assertAlmostEqual(e0, eref, places=6, msg="Etot does not match the reference value.")
 
+
+    def test_cd_nphoton(self):
+        nfock = 2
+        energies = qedhf_cd(nfock=nfock)
+        print("energies = ", energies)
 
 if __name__ == '__main__':
     # test_chols()

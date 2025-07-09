@@ -5,7 +5,7 @@ import numpy as backend
 import scipy
 
 from openms.lib.logger import task_title
-from openms.qmc import NUMBA_AVAILABLE, QMCLIB_AVAILABLE
+from openms.lib import NUMBA_AVAILABLE, QMCLIB_AVAILABLE
 from openms.__mpi__ import MPI, original_print
 from abc import abstractmethod, ABC
 

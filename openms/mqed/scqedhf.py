@@ -114,6 +114,38 @@ def get_orbitals_from_rao(c, P):
     return numpy.einsum("ik, kj->ij", P, c)
 
 
+# numba functions
+
+from openms.qmc import NUMBA_AVAILABLE
+if NUMBA_AVAILABLE:
+    from numba import njit, prange
+
+
+    @njit(parallel=True)
+    def compute_JK_numba(ltensor, dm_do, eta, imode):
+        nao = dm_do.shape[0]
+        vj = np.zeros((nao, nao))
+        vk = np.zeros((nao, nao))
+
+        for p in prange(nao):
+            for q in range(p, nao):
+                shift = eta[imode, q] - eta[imode, p]
+                fc = FC_factor_numba(eta, imode, shift)
+
+                # J = tensordot over X
+                J = numpy.tensordot(ltensor[:, p, q], ltensor, axes=(0, 0))
+                K = numpy.dot(self.ltensor[:, :, q].T, self.ltensor[:, p, :])
+
+                vj_pq = numpy.sum(J * dm_do * fc)
+                vk_pq = numpy.sum(K * dm_do * fc)
+
+                vj[p, q] = vj[q, p] = vj_pq
+                vk[p, q] = vk[q, p] = vk_pq
+
+        return vj, vk
+
+
+# scqed kernel
 def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
            dump_chk=True, dm0=None,
            init_params=None,
@@ -963,6 +995,7 @@ class RHF(qedhf.RHF):
 
         Thus the digonal element is :math:` g_pq(p)**2`.
         """
+        nao = self.nao
 
         if mol is None: mol = self.mol
         if dm is None: dm = self.make_rdm1()
@@ -976,8 +1009,8 @@ class RHF(qedhf.RHF):
         # Tr[g_pq * D] in DO
         g_dot_D = numpy.diagonal(dm_do) @ self.g_dipole[imode, :]
 
-        p_indices = numpy.arange(self.nao)
-        vhf_do = numpy.zeros((self.nao, self.nao))
+        p_indices = numpy.arange(nao)
+        vhf_do = numpy.zeros((nao, nao))
         vhf_do[p_indices, p_indices] += (2.0 * self.g_dipole[imode, p_indices] * g_dot_D -
                                          numpy.square(self.g_dipole[imode, p_indices]) \
                                          * dm_do[p_indices, p_indices]) / self.qed.omega[0]
@@ -985,24 +1018,46 @@ class RHF(qedhf.RHF):
         vhf_do_offdiag = numpy.zeros_like(vhf_do)
 
         # Calculate off-diagonal elements
-        p, q = numpy.triu_indices(self.nao, k=1)
+        p, q = numpy.triu_indices(nao, k=1)
         vhf_do_offdiag[p, q] -= self.g_dipole[imode, p] * self.g_dipole[imode, q] * dm_do[q, p] / self.qed.omega[0]
         vhf_do_offdiag[q, p] = vhf_do_offdiag[p, q]  # Exploit symmetry
         vhf_do += vhf_do_offdiag
 
+        mdim = self.qed.nboson_states[0]
+        # effective photonic Hamiltonian from the dressed electronic Hamiltonian
+        if mdim > 1:
+            _ = self.FC_factor(self.eta, imode)
+            self.qed.Hph_sc = lib.einsum("pq, mpq->m", self.h1e_DO*dm_do, self.qed.disp_mat_1e, optimize=True)
+
         if self.ltensor is not None:
-            vhf = numpy.zeros((self.nao, self.nao))
+            vhf = numpy.zeros((nao, nao))
             t0 = time.time()
-            for p in range(self.nao):
-                for q in range(p, self.nao):
+
+            # vj, vk = self.get_JK_numpy(dm_do)
+            # vhf = vj - 0.5 * vk
+
+            for p in range(nao):
+                for q in range(nao):
+                # for q in range(p, nao): # FIXME: the symmetry is problematic for mdim > 1
                     # do a one-body FC factor with shift
                     shift = self.eta[imode, p] - self.eta[imode, q]
                     fc_factor = self.FC_factor(self.eta, imode, onebody=True, shift=shift)
 
-                    Ieff = numpy.einsum('X, Xrs->rs', self.ltensor[:, p, q], self.ltensor) - \
-                           0.5 * numpy.einsum('Xs, Xr->rs', self.ltensor[:, p, :], self.ltensor[:, :,q])
-                    vhf[p, q] = numpy.sum(Ieff * dm_do * fc_factor)
-                    vhf[q, p] = vhf[p, q]
+                    # Ieff = numpy.einsum('X, Xrs->rs', self.ltensor[:, p, q], self.ltensor) - \
+                    #        0.5 * numpy.einsum('Xs, Xr->rs', self.ltensor[:, p, :], self.ltensor[:, :,q])
+                    # vhf[p, q] = numpy.sum(Ieff * dm_do * fc_factor)
+                    J = numpy.tensordot(self.ltensor[:, p, q], self.ltensor, axes=(0, 0))
+
+                    K = numpy.einsum('Xs, Xr->rs', self.ltensor[:, p, :], self.ltensor[:, :, q], optimize=True)
+                    Ieff = J - 0.5 * K
+                    v0 = Ieff * dm_do
+                    vhf[p, q] = numpy.sum(v0 * fc_factor)
+                    # vhf[q, p] = vhf[p, q]
+
+                    # effective photonic Hamiltonian from the dressed electronic Hamiltonian (two-e part)
+                    if mdim > 1:
+                        tmp = numpy.einsum("mrs, rs->m", self.qed.disp_mat_1e, v0)
+                        self.qed.Hph_sc += 0.5 * tmp * dm_do[p, q]           # diagonal
 
             t1 = time.time()
         else:
@@ -1012,15 +1067,12 @@ class RHF(qedhf.RHF):
             vhf = 0.5 * lib.einsum('pqrs, rs->pq', fc_factor, dm_do, optimize=True)
             # vhf += 0.5 * lib.einsum('qprs, rs->pq', fc_factor, dm_do, optimize=True)
             vhf += vhf.T
-        vhf_do += vhf
-
-        mdim = self.qed.nboson_states[0]
-        if mdim > 1:
-            # Photonic Hamiltonian by tracing out the electronic DOFs
-            self.qed.Hph_sc = lib.einsum("pq, mpq->m", self.h1e_DO*dm_do, self.qed.disp_mat_1e, optimize=True)
-            if self.ltensor is None:
+            if mdim > 1:
+                # effective photonic Hamiltonian from the dressed electronic Hamiltonian (two-e part)
                 tmp = self.qed.disp_mat_2e[:] * (self.eri_DO - 0.5 * self.eri_DO.transpose(0, 3, 2, 1))
                 self.qed.Hph_sc += 0.5 * lib.einsum('mpqrs, pq, rs->m', tmp, dm_do, dm_do, optimize=True)
+
+        vhf_do += vhf
 
         # transform back to AO
         Uinv = linalg.inv(U)

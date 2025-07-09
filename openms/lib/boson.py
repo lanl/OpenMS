@@ -76,6 +76,75 @@ def pack_symmetric(matrix):
     return numpy.array(packed, dtype=matrix.dtype)
 
 
+# numba functions
+from openms.qmc import NUMBA_AVAILABLE
+if NUMBA_AVAILABLE:
+    from numba import njit, prange
+
+    @njit
+    def FC_factor_numba(eta,
+        imode,
+        boson_states,
+        vsq,
+        omega,
+        pdm,
+        shift=0.0,
+    ):
+        r"""Numba version of the FC factor
+        """
+        from scipy.special import genlaguerre, factorial
+
+        nao = eta.shape[1]
+        # Number of boson states
+        mdim = nboson_states[imode]
+
+        p, q = numpy.ogrid[:nao, :nao]
+        diff_eta = eta[imode, p] - eta[imode, q]
+        diff_eta += shift
+
+        tau = numpy.exp(vsq[imode])
+        tmp = tau / omega[imode]
+        factor = tmp * diff_eta
+        FC0 = numpy.exp(-0.5 * factor ** 2)
+
+        if mdim == 1:
+            return FC0.reshape(nao, nao)
+
+        packed_mdim = mdim * (mdim + 1) // 2
+        # Initialize matrix
+        disp_mat = numpy.zeros((packed_mdim, *factor.shape))
+
+        # First compute lower triangle
+        ind_m, ind_n = numpy.tril_indices(mdim)
+        for i_m, i_n in zip(ind_m, ind_n):
+            idx = packed_index(i_m, i_n)
+            if i_m == i_n:
+                val = genlaguerre(n=i_m, alpha=0)(factor**2)
+            else:
+                # Factorial ratio
+                ratio = factorial(i_n, exact=True) / factorial(i_m, exact=True)
+
+                # Matrix elements
+                val = 2.0 * numpy.sqrt(ratio) * (-factor)**(i_m - i_n) \
+                      * genlaguerre(n=i_n, alpha=(i_m - i_n))(factor**2)
+            disp_mat[idx] = val
+
+        # Compute exponential term, scale displacement matrix
+        FC0 = numpy.exp(-0.5 * (factor)**2)
+        disp_mat[:] *= FC0
+
+        # Contract with photon density matrix
+        packed_pdm = pack_symmetric(pdm)
+        exp_val = numpy.einsum("m, m...-> ...", packed_pdm, disp_mat, optimize=True)
+
+        return exp_val, disp_mat
+
+
+# end of numba functions
+# ==================================================
+
+
+
 def get_bosonic_Ham(nmodes, nboson_states, omega, za, Fa):
     r"""Construct Bosonic Hamiltonian in different representation
     after integrating out the electronic DOF.

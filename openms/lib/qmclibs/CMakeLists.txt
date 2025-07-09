@@ -5,7 +5,7 @@ set(CMAKE_INSTALL_PREFIX "${PARENT_DIR}" CACHE PATH "Install path prefix" FORCE)
 
 
 cmake_minimum_required(VERSION 3.14)
-project(propagate LANGUAGES CXX)
+project(qedlib LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -24,6 +24,31 @@ FetchContent_Declare(
   GIT_TAG v2.12.0
 )
 FetchContent_MakeAvailable(pybind11)
+
+
+#=============================
+# Try to find system GSL
+#=============================
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/Modules")
+message(STATUS "CMAKE_CURRENT_SOURCE_DIR is ${CMAKE_CURRENT_SOURCE_DIR}")
+find_package(GSL REQUIRED)
+
+message(STATUS "GSL FOUND or not ${GSL_FOUND}")
+
+if (NOT GSL_FOUND)
+    message(STATUS "System GSL not found. Will download and build GSL locally.")
+
+    # Define path to install GSL locally
+    set(GSL_INSTALL_DIR "${PROJECT_SOURCE_DIR}/deps")
+    set(GSL_PREFIX_PATH "${GSL_INSTALL_DIR}")
+    set(GSL_INCLUDE_DIR "${GSL_INSTALL_DIR}/include")
+    set(GSL_LIBRARY_DIR "${GSL_INSTALL_DIR}/lib")
+
+else()
+    message(STATUS "Found system GSL.")
+    message(STATUS "GSL_INCLUDE_DIR path is   : ${GSL_INCLUDE_DIR}")
+endif()
+
 
 # ==================== BLAS Backend Detection ====================
 
@@ -87,6 +112,7 @@ pybind11_add_module(qmclib MODULE
     src/propagator.cpp
     src/estimators.cpp
     src/linalg.cpp
+    src/qedhf.cpp
 )
 
 set_target_properties(
@@ -99,8 +125,10 @@ set_target_properties(
 
 
 # ==================== Link Libraries ====================
+target_include_directories(qmclib PRIVATE ${GSL_INCLUDE_DIR})
 target_include_directories(qmclib PRIVATE ${EIGEN3_INCLUDE_DIR})
 
+target_link_libraries(qmclib PRIVATE ${GSL_LIBRARIES})
 target_link_libraries(qmclib PRIVATE OpenMP::OpenMP_CXX)
 if(USE_ACCELERATE)
     target_compile_definitions(qmclib PRIVATE

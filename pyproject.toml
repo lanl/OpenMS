@@ -7,7 +7,7 @@ requires = [
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "OpenMS"
+name = "openms-qed"
 version = "0.2.0"
 description = "OpenMS: An open-source multiscale solver for coupled Maxwell-Schrödinger equations"
 authors = [
@@ -34,8 +34,11 @@ test = ["pytest"]
 all = ["mpi4py"]
 
 [tool.setuptools]
-packages = ["openms"]
 include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["openms*"]
 
 [tool.setuptools.package-data]
 openms = ["*.so", "*.dll", "*.dylib"]  # Include C++ bindings/libraries

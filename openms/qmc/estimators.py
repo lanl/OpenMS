@@ -3,7 +3,7 @@ import numpy as np
 import scipy
 import time
 from openms.lib.misc import deprecated
-from openms.qmc import QMCLIB_AVAILABLE, NUMBA_AVAILABLE
+from openms.lib import QMCLIB_AVAILABLE, NUMBA_AVAILABLE
 
 
 # for each observables, we may save several quantities using a small class

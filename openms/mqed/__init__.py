@@ -33,17 +33,6 @@ for solving the molecular quantum electrodynamics (mQED) Hamiltonian.
   transformation is variationally-optimized for each photon mode to
   handle all coupling strengths.
 
-**MS-QED-HF**
-  Multi-scale QED-HF methods.
-
-**QED-TD-SCF**
-  WIP.
-
-**QED-CC**
-  WIP.
-
-**QED-EOM-CC**
-  WIP.
 """
 
 #from . import ccsd

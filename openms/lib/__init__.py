@@ -35,3 +35,16 @@ try:
     FDTD_AVAILABLE = True
 except ImportError:
     FDTD_AVAILABLE = False
+
+try:
+    from openms.lib import _qmclib
+    QMCLIB_AVAILABLE = True
+except ImportError:
+    QMCLIB_AVAILABLE = False
+
+# may move to backend module
+try:
+    import numba
+    NUMBA_AVAILABLE = True
+except ImportError:
+    NUMBA_AVAILABLE = False

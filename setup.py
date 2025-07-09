@@ -15,15 +15,17 @@
 #
 
 
-import os
-import builtins
-import subprocess
-from setuptools import setup, Extension
+import os, sys
+from setuptools import setup, find_packages
+from setuptools import Extension
 from setuptools.command.build_ext import build_ext as _build_ext
+import subprocess
 
 class build_ext(_build_ext):
     def finalize_options(self):
-        super().finalize_options()
+        _build_ext.finalize_options(self)
+        # Prevent numpy from thinking it is still in its setup process:
+        import builtins
         builtins.__NUMPY_SETUP__ = False
         import numpy
         self.include_dirs.append(numpy.get_include())
@@ -66,9 +68,19 @@ class CMakeBuild(build_ext):
         for ext in self.extensions:
             if isinstance(ext, CMakeExtension):
                 continue  # Skip CMake extensions
-        super().build_extensions()
+            _build_ext.build_extensions(self)
 
 setup(
+    name="openms",
+    version="0.2.0",
+    description="An open-source multiscale solver for coupled Maxwell-Schrödinger equations.",
+    packages=find_packages(),
     ext_modules=[CMakeExtension("openms_lib", sourcedir="./openms/lib")],
     cmdclass={"build_ext": CMakeBuild},
+    extras_require={ # optional package for extra features
+        "mpi": ["mpi4py"], # TBA
+        "gpu": ["cupy"],   # TBA
+        "test": ["pytest"], # for test
+        "all": ["mpi4py"]  # TBA
+    },
 )

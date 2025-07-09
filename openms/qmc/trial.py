@@ -139,7 +139,7 @@ from openms.lib.boson import Boson
 from openms.lib import logger
 from openms.lib.logger import task_title
 from openms.lib.misc import deprecated
-from openms.qmc import QMCLIB_AVAILABLE, NUMBA_AVAILABLE
+from openms.lib import QMCLIB_AVAILABLE, NUMBA_AVAILABLE
 from openms.mqed.qedhf import RHF as QEDRHF
 
 import numpy as backend

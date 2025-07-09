@@ -393,7 +393,7 @@ class RHF(scqedhf.RHF):
                         tmp = numpy.sum(ID * derivative)
                         twobody_dvlf[a] += tmp * dm_do[a, p, q]/ 4.0
                         # eta
-                        fc_derivative = self.gaussian_derivative_vectorized(self.eta, a, onebody=True, shift=shift)
+                        fc_derivative = self.gaussian_derivative_vectorized(self.eta, a, shift=shift)
                         tmp = numpy.sum(ID * fc_derivative)
                         twobody_deta[p] += tmp * dm_do[a, p, q]
                         # Q

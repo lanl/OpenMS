@@ -360,7 +360,7 @@ if(ENABLE_MEEP)
   # if building meep, we need to build libctl, harminv, mpb as well,
   # a) build libctl
   ExternalProject_Add(libctl
-    URL https://github.com/NanoComp/libctl/releases/download/v4.2.0/libctl-4.2.0.tar.gz
+    URL https://github.com/NanoComp/libctl/releases/download/v4.5.1/libctl-4.5.1.tar.gz
     PREFIX ${PROJECT_BINARY_DIR}/deps
     INSTALL_DIR ${PROJECT_SOURCE_DIR}/deps
     #./configure  --enable-shared=yes --prefix= --without-guile
@@ -377,7 +377,7 @@ if(ENABLE_MEEP)
   )
   # b) build harminv
   ExternalProject_Add(harminv
-    URL https://github.com/NanoComp/harminv/releases/download/v1.4.1/harminv-1.4.1.tar.gz
+    URL https://github.com/NanoComp/harminv/releases/download/v1.4.2/harminv-1.4.2.tar.gz
     PREFIX ${PROJECT_BINARY_DIR}/deps
     INSTALL_DIR ${PROJECT_SOURCE_DIR}/deps
     CONFIGURE_COMMAND ../harminv/configure --enable-shared=yes --prefix=<INSTALL_DIR>  --without-guile
@@ -391,13 +391,13 @@ if(ENABLE_MEEP)
   set(CPPFLAGS "-I${FFTW_INCLUDE_DIR} -I${PROJECT_SOURCE_DIR}/deps/include")
 
   ExternalProject_Add(mpb
-    URL https://github.com/NanoComp/mpb/releases/download/v1.11.1/mpb-1.11.1.tar.gz
+    URL https://github.com/NanoComp/mpb/releases/download/v1.12.0/mpb-1.12.0.tar.gz
     PREFIX ${PROJECT_BINARY_DIR}/deps
     INSTALL_DIR ${PROJECT_SOURCE_DIR}/deps
     CONFIGURE_COMMAND
     ${CMAKE_COMMAND} -E env LDFLAGS=${LDFLAGS}
     ${CMAKE_COMMAND} -E env CPPFLAGS=${CPPFLAGS}
-      ../mpb/configure --enable-shared=yes --without-scheme --with-fftw=${FFTW_LIBRARY_DIR} --enable-maintainer-mode --without-guile --without-libctl --prefix=<INSTALL_DIR>
+      ../mpb/configure --enable-shared=yes --without-scheme --with-fftw=${FFTW_LIBRARY_DIR} --without-guile --without-libctl --prefix=<INSTALL_DIR>
     BUILD_COMMAND make
     INSTALL_COMMAND make install
     TEST_COMMAND make check
@@ -428,7 +428,7 @@ if(ENABLE_MEEP)
     #GIT_REPOSITORY https://github.com/ares201005/meep.git
     #GIT_TAG master
     # use released version
-    URL https://github.com/NanoComp/meep/releases/download/v1.25.0/meep-1.25.0.tar.gz
+    URL https://github.com/NanoComp/meep/releases/download/v1.30.0/meep-1.30.0.tar.gz
 
     CONFIGURE_COMMAND
     ${CMAKE_COMMAND} -E env LDFLAGS=${LDFLAGS}

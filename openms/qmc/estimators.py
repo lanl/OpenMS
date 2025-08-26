@@ -66,6 +66,68 @@ def get_wfn(weights, psiw):
     return wfn / backend.sqrt(norm)
 
 
+# ---------------------------------
+# mixed sparsity - low rank scheme
+# ---------------------------------
+
+def _banded_LT_dot_G(L, G, bw, backend):
+    """
+    Compute LG = L^T @ G using that L is (approximately) banded with half-bandwidth = bw.
+    Shapes: L (N,N), G (N,M) -> LG (N,M)
+    """
+    N, M = G.shape
+    LG = backend.zeros((N, M), dtype=backend.result_type(L, G))
+    for q in range(N):
+        p0 = q - bw if q - bw >= 0 else 0
+        p1 = q + bw + 1 if q + bw + 1 <= N else N
+        if p1 <= p0:  # empty
+            continue
+        col = L[p0:p1, q]                 # (len,)
+        if col.size == 0:
+            continue
+        LG[q, :] = backend.dot(col.T, G[p0:p1, :])
+    return LG
+
+def exx_mixed_rank_sparsity(
+    rltensor,    # (Ngamma, N, N) – unchanged over time
+    Ghalf,       # (nwalkers, N, N)
+    plan,        # from build_Ltensor_plan
+    meta,        # from build_Ltensor_plan
+    backend=None
+):
+    if backend is None:
+        import numpy as np
+        backend = np
+
+    nwalkers = Ghalf.shape[0]
+    Ngamma = meta["Ngamma"]
+    blksize = meta["blksize"]
+
+    exx = backend.zeros(nwalkers, dtype=backend.complex128)
+
+    for i in range(nwalkers):
+        G = Ghalf[i]  # used as both T and Theta
+        acc = backend.zeros((), dtype=backend.complex128)
+        for l in range(Ngamma):
+            pl = plan[l]
+            if pl["type"] == "lowrank":
+                # LG = (T @ X) @ (G.T @ Uright)^T
+                A = backend.dot(G.T, pl["X"])        # (N,k)
+                B = backend.dot(G.T, pl["Uright"])   # (N,k)
+                LG = backend.dot(pl["X"], B.T)             # (N,N)
+                #LG = backend.dot(A, B.T)             # (N,N)
+            else:
+                # banded route
+                L = rltensor[l]
+                LG = _banded_LT_dot_G(L, G, blksize, backend)
+
+            # exx += <LG.ravel(), LG.T.ravel()> = sum(LG * LG.T)
+            acc += backend.sum(LG * LG.T)
+        exx[i] = 0.5 * acc
+
+    return exx
+
+
 # -------------------------------
 # Gf estimators
 # -------------------------------

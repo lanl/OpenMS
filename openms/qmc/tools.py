@@ -6,6 +6,85 @@ import numpy as backend
 import scipy
 import time
 
+# ----------------------------------------
+# block sparsity - low rank scheme
+# ----------------------------------------
+
+def get_blksize(ltensor, threshold):
+
+    blksize = 0
+    for l in range(ltensor.shape[0]):
+        idx_nnz = numpy.argwhere(numpy.abs(ltensor[l]) >= threshold)
+        blksize = max(blksize, numpy.max(numpy.abs(idx_nnz[:, 0] - idx_nnz[:, 1])))
+        # print(f"blksize of {l} th chols is {blksize}")
+    # print("max distance between nnz in ltensor is", blksize)
+    return blksize
+
+
+def build_Ltensor_plan(
+    rltensor,            # (Ngamma, N, N)
+    blksize,             # global half-bandwidth you computed
+    backend=None,
+    rank_tol=1e-10,      # numerical rank tolerance for svals
+    max_rank_fraction=0.1  # low-rank cutoff: rank <= N*0.1 -> low-rank route
+):
+    """
+    Precompute a per-gamma plan:
+      - If numerical rank(L^gamma) <= N*max_rank_fraction -> store truncated SVD factors:
+            X = U_k * diag(s_k), Uright = Vh_k.T
+      - Else -> mark as 'banded' (use L directly with the bandwidth blksize)
+
+    Returns:
+      plan: list of dicts (len = Ngamma) with keys:
+          type: 'lowrank' or 'banded'
+          rank: int
+          (for lowrank) X: (N,k), Uright: (N,k)
+      meta: dict with N, Ngamma, blksize
+    """
+    if backend is None:
+        import numpy as np
+        backend = np
+
+    Ngamma, N, N2 = rltensor.shape
+    assert N == N2
+    max_rank = max(1, int(N * max_rank_fraction))
+
+    def numerical_rank_svals(s, tol):
+        if s.size == 0:
+            return 0
+        smax = backend.max(s)
+        if smax == 0:
+            return 0
+        return int(backend.sum(s > tol))
+        # return int(backend.sum(s > tol * smax))
+
+    nsparse = 0
+    plan = []
+    for l in range(Ngamma):
+        L = rltensor[l]
+        # One SVD per gamma (done once up front)
+        U, s, Vh = backend.linalg.svd(L, full_matrices=False)
+        rank = numerical_rank_svals(s, rank_tol)
+
+        if rank <= max_rank and rank > 0:
+            k = max(1, rank)
+            U_k  = U[:, :k]           # (N,k)
+            s_k  = s[:k]              # (k,)
+            Vh_k = Vh[:k, :]          # (k,N)
+            Uright = Vh_k.T           # (N,k)
+            # X = U_k * diag(s_k): scale columns of U_k by s_k
+            X = U_k * s_k[backend.newaxis, :]
+            plan.append({"type": "lowrank", "rank": int(k), "X": X, "Uright": Uright})
+        else:
+            plan.append({"type": "banded", "rank": int(rank)})
+            nsparse += 1
+
+    print("number of sparse ltensor is", nsparse)
+
+    meta = {"N": N, "Ngamma": Ngamma, "blksize": int(blksize)}
+    return plan, meta
+
+
 def cholesky2thc(ltensor, rank, thresh=1.e-6):
     r"""Using the nested SVD to factorize CD
 

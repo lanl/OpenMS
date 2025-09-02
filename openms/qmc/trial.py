@@ -760,7 +760,8 @@ class TrialHF(TrialWFBase):
         """
 
         if self.OAO:
-            overlap = self.mol.intor("int1e_ovlp")
+            # overlap = self.mol.intor("int1e_ovlp")
+            overlap = self.mf.get_ovlp()
             Xmat = lo.orth.lowdin(overlap)
             xinv = backend.linalg.inv(Xmat)
             # Nao * Na

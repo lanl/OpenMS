@@ -380,6 +380,7 @@ class QMCbase(object):
         )
         self.eshift = 0.0
 
+        self.integrals_func = kwargs.get("integrals_func", None)
         # set up calculations
         self.build()  # setup calculations
 
@@ -441,7 +442,10 @@ class QMCbase(object):
         # 2) make h1e in Spin orbital
         t0 = time.time()
         logger.note(self, task_title("Get integrals"))
-        self.h1e, self.ltensor = self.get_integrals()
+        if self.integrals_func is not None:
+            self.h1e, self.ltensor = self.integrals_func()
+        else:
+            self.h1e, self.ltensor = self.get_integrals()
 
         # half-rotate integrals
         self.trial.half_rotate_integrals(self.h1e, self.ltensor)

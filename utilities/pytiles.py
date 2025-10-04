@@ -4,7 +4,7 @@ from typing import Dict, Tuple, Iterable, Sequence, Optional, Union
 import numpy as np
 
 # -----------------------------
-# Tile partition
+# Tiling utilities
 # -----------------------------
 
 
@@ -72,7 +72,7 @@ class TilePartition:
 
 
 def _is_zero_block(block: np.ndarray, tol: float) -> bool:
-    # Max-norm thresholding; or change to Frobenius TBD?
+    # Max-norm thresholding;
     return np.max(np.abs(block)) <= tol
 
 
@@ -580,8 +580,10 @@ class BlockSparseLtensor:
                     raise ValueError("Dimension mismatch for right multiply.")
                 M = B_shape[1]
                 Y = np.zeros((self.N_r, self.N, M), dtype=out_dtype)
-                for i in range(self.N_r):
-                    Y[i] = self.matmul_slice(i, B, side=side, out="dense")
+                for (ii, br, bc), Ablk in self.blocks.items():
+                    rs = self.row_tiles.tile_slice(br)
+                    cs = self.col_tiles.tile_slice(bc)
+                    Y[ii, rs, :] += Ablk @ B[cs, :]
                 return Y
             else:
                 if B_shape[1] != self.N:

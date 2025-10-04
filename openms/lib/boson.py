@@ -22,6 +22,7 @@ import scipy
 from pyscf import lib
 from pyscf import gto
 from pyscf.lib import logger
+from openms.lib.misc import deprecated
 from openms.qmc.tools import chols_full
 from openms.lib.ov_blocks import one_e_blocks, block_diag
 from openms.lib.ov_blocks import two_e_blocks, two_e_blocks_full
@@ -1346,10 +1347,12 @@ class Boson(object):
         """Template method to get coupling matrix in SO."""
         raise NotImplementedError("Subclasses must implement this method.")
 
+    @deprecated
     def get_dse_hcore(self):
         r"""Template method to construct DSE-mediated OEI in AO basis."""
         raise NotImplementedError("Subclasses must implement this method.")
 
+    @deprecated
     def get_dse_jk(self):
         r"""Template method to construct DSE-mediated J/K matrices in AO basis."""
         raise NotImplementedError("Subclasses must implement this method.")
@@ -1607,6 +1610,7 @@ class Photon(Boson):
         return oei
 
 
+    # @deprecated
     # def get_dse_hcore(self, dm=None, s1e=None, residue=False):
     #     r"""Compute QED-RHF boson-mediated 1e- integrals.
 
@@ -1751,6 +1755,7 @@ class Photon(Boson):
     #     return dse_oei
 
 
+    @deprecated
     def get_dse_jk(self, dm, residue=False): # TODO: Check if this is also depreciated?
         r"""
         Return DSE-mediated :math:`J` and :math:`K` matrices.

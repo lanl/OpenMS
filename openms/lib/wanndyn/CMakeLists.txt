@@ -1,32 +1,58 @@
-cmake_minimum_required(VERSION 3.10)  # Ensure CMake version compatibility
-project(WE2PD VERSION 1.0 LANGUAGES Fortran)
+cmake_minimum_required(VERSION 3.10)
+project(WE2PD VERSION 1.0 LANGUAGES CXX)
 
-# Enable Fortran
-enable_language(Fortran)
+# --- C++ standard ---
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Add directories containing .mod files
-include_directories(${CMAKE_Fortran_MODULE_DIRECTORY})
+# Let users choose static/shared via -DBUILD_SHARED_LIBS=ON/OFF (default OFF)
+# add_library will honor BUILD_SHARED_LIBS automatically.
 
-# Set the sources
-set(SOURCES
-    parameters.f90
-    printHeader.f90
-    wanndyn.f90
+# --- Sources/headers ---
+set(WE2PD_HEADERS
+    constants.hpp
+    wanndyn.hpp
+    we2pd_banner.hpp
+)
+set(WE2PD_SOURCES
+    wanndyn.cpp
 )
 
+# --- Library target ---
+add_library(we2pd ${WE2PD_SOURCES} ${WE2PD_HEADERS})
+add_library(we2pd::we2pd ALIAS we2pd)
 
-# Create the library
-add_library(${PROJECT_NAME} ${SOURCES})
+target_include_directories(we2pd
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+)
 
-# Specify the executable target and its sources
-add_executable(we2pd.exe example.f90 ${SOURCES})
+target_compile_features(we2pd PUBLIC cxx_std_17)
 
-# Enable testing if desired
-enable_testing()
+# --- Example executable (links to the library) ---
+add_executable(we2pd_example example.cpp)
+target_link_libraries(we2pd_example PRIVATE we2pd)
 
-# Define a basic test (assuming MyApp outputs something verifiable)
-# add_test(NAME MyAppTest COMMAND MyApp)
+# Optional: make the executable name consistent across platforms
+set_target_properties(we2pd_example PROPERTIES OUTPUT_NAME we2pd)
 
+# --- (Optional) tests ---
+option(WE2PD_BUILD_TESTS "Build test targets" OFF)
+if(WE2PD_BUILD_TESTS)
+    enable_testing()
+    add_executable(we2pd_smoketest tests/smoketest.cpp)
+    target_link_libraries(we2pd_smoketest PRIVATE we2pd)
+    add_test(NAME Smoke COMMAND we2pd_smoketest)
+endif()
 
-# Add the module directory to the target's include directories
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_Fortran_MODULE_DIRECTORY})
+# --- (Optional) install rules ---
+# install(TARGETS we2pd
+#     EXPORT we2pdTargets
+#     ARCHIVE DESTINATION lib
+#     LIBRARY DESTINATION lib
+#     RUNTIME DESTINATION bin
+# )
+# install(FILES ${WE2PD_HEADERS} DESTINATION include)
+# install(EXPORT we2pdTargets NAMESPACE we2pd:: DESTINATION lib/cmake/we2pd)

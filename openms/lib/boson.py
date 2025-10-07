@@ -20,6 +20,7 @@ import warnings
 import numpy
 import scipy
 from pyscf import lib
+from openms.lib.misc import deprecated
 from pyscf import gto
 from pyscf.lib import logger
 from openms.qmc.tools import chols_full
@@ -1350,6 +1351,7 @@ class Boson(object):
         r"""Template method to construct DSE-mediated OEI in AO basis."""
         raise NotImplementedError("Subclasses must implement this method.")
 
+    @deprecated
     def get_dse_jk(self):
         r"""Template method to construct DSE-mediated J/K matrices in AO basis."""
         raise NotImplementedError("Subclasses must implement this method.")
@@ -1751,6 +1753,7 @@ class Photon(Boson):
     #     return dse_oei
 
 
+    @deprecated
     def get_dse_jk(self, dm, residue=False): # TODO: Check if this is also depreciated?
         r"""
         Return DSE-mediated :math:`J` and :math:`K` matrices.

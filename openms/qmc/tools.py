@@ -167,6 +167,22 @@ def stochastic_thc(L, n_stoch, method="rademacher", seed=None, n_svd_keep=0):
         xi = rng.choice([-1.0, 1.0], size=(n_stoch, nchol)) / numpy.sqrt(n_stoch)
     elif method == "gaussian":
         xi = rng.standard_normal((n_stoch, nchol)) / numpy.sqrt(n_stoch)
+    elif method == "qr":
+        xi = rng.standard_normal((n_stoch, nchol))
+        xi = xi / numpy.sqrt(n_stoch) # normalize
+        xi, _ = numpy.linalg.qr(xi.T)  # Orthonormalize columns
+        xi = xi.T #/ numpy.sqrt(n_stoch)
+
+    elif method == "sobol":
+        from scipy.stats.qmc import Sobol
+        sampler = Sobol(d=nchol, scramble=True, seed=seed)
+        xi = sampler.random(n_stoch)
+        xi = (xi - 0.5) * 2 / numpy.sqrt(n_stoch)  # Shift to zero-mean
+
+    elif method == "hybrid":
+        # TBA
+        raise NotImplementedError(f"{method} not implemented yet")
+
     elif method == "svd":
         # Full SVD decomposition for each gamma
         assert n_stoch > 0, "Specify n_stoch = rank to retain"

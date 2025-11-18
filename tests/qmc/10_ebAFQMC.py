@@ -21,7 +21,7 @@ def afqmc_energy_vs_lambda(
     qed=False,
     gmat=None,
     decouple=True,
-    verbose=1,
+    verbose=4,
 ):
     dt = 0.005
 
@@ -59,6 +59,8 @@ class Test_ebAFQMC(unittest.TestCase):
         time = 5.0
         nwalkers = 500
 
+        mean_ref = -7.95415510
+
         mol = get_mol(bond=bond)
         cavity_freq, cavity_mode = get_cavity(1, gfac, pol_axis=2)
 
@@ -79,6 +81,12 @@ class Test_ebAFQMC(unittest.TestCase):
         means, stds = get_mean_std(energies)
         print("means = ", means)
 
+
+        self.assertLess(
+            abs(means - mean_ref),
+            1.0e-2,
+            msg="E_mean does not match the reference value.",
+        )
         # TODO: comapre with AFQMC using QED object
 
 

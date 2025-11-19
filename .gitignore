@@ -42,6 +42,7 @@ tests/
 
 # python
 *py*old*
+.python-version
 
 # cmake
 CMakeLists.*old
@@ -140,3 +141,6 @@ tmp/
 # IDEs
 .idea/
 .vscode/
+
+# Virtual environment
+.venv/

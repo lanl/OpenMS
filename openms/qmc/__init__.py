@@ -55,3 +55,5 @@ try:
     NUMBA_AVAILABLE = True
 except ImportError:
     NUMBA_AVAILABLE = False
+
+from openms.qmc import bp

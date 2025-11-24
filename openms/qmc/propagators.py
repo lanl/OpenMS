@@ -8,6 +8,7 @@ from openms.lib.logger import task_title
 from openms.lib import NUMBA_AVAILABLE, QMCLIB_AVAILABLE
 from openms.__mpi__ import MPI, original_print
 from abc import abstractmethod, ABC
+from openms.qmc.bp import _BPBuffer
 
 
 # this function will be moved into lib/boson
@@ -331,6 +332,12 @@ class PropagatorBase(object):
         # debugging flags
         self.debug_mpi = False
 
+        # for back propagation
+        self.enable_bp = kwargs.get("enable_bp", False)
+        self.L_bp = kwargs.get("bp_length", 10)
+        self._bpbuf = None # kwargs.get("BPbuff", None)
+
+
     # @abstractmethod
     def build(self, h1e, ltensor, trial, geb=None):
         r"""Build the propagators and intermediate variables
@@ -414,6 +421,10 @@ class PropagatorBase(object):
             self, f"Time for building initial propagator is {time.time()-t0:7.3f}"
         )
 
+        # if enable BP
+        if self.enable_bp:
+            self.enable_back_propagation(self.L_bp)
+
 
     def dump_flags(self):
         r"""dump flags (TBA)"""
@@ -427,6 +438,21 @@ class PropagatorBase(object):
         logger.note(self, f" Number of fake AFs     : {self.num_fake_fields}")
 
         # print(task_title(""))
+
+
+    def enable_back_propagation(self, Lbp):
+        """Call once before projection if you want to use BP of length Lbp."""
+        self.enable_bp = True
+        self.L_bp = int(Lbp)
+        self._bpbuf = _BPBuffer(L_bp=self.L_bp)
+        # print(f"Debug-yz: BP is enabled with a length of {self.L_bp} steps")
+
+
+    def disable_back_propagation(self):
+        self.enable_bp = False
+        self._bpbuf = None
+        self.L_bp = 0
+
 
     @abstractmethod
     def propagate_walkers(self, trial, walkers, ltensor, eshift=0.0, verbose=0):
@@ -469,7 +495,15 @@ class Phaseless(PropagatorBase):
     # TODO: according to the headers of trail,walker, propagator, and options to
     # select right function of computing energy (may use dict)
 
+
     def local_energy(self, h1e, ltensor, walkers, trial, enuc=0.0):
+        if self.L_bp > 0 and self._bpbuf is not None:
+            return self._local_energy_bp(h1e, ltensor, walkers, trial, enuc)
+        else:
+            return self._local_energy(h1e, ltensor, walkers, trial, enuc)
+
+
+    def _local_energy(self, h1e, ltensor, walkers, trial, enuc=0.0):
         r"""Compute local energy with UHF
         """
 
@@ -505,6 +539,12 @@ class Phaseless(PropagatorBase):
         ##  weights * eloc
         # energy = energy / backend.sum(walkers.weights)
         return [etot, norm, e1, e2]
+
+
+    def _local_energy_bp(self, h1e, ltensor, walkers, trial, enuc=0.0):
+         from openms.qmc.bp import bp_energy
+
+         return bp_energy(self, trial, walkers, ltensor, h1e, enuc)
 
 
     def rescale_fbias(self, fbias):
@@ -659,6 +699,10 @@ class Phaseless(PropagatorBase):
         logger.debug(self, f"Debug: mf_shift.shape = {self.mf_shift.shape}")
         logger.debug(self, f"Debug: vbias.shape = {self.vbias.shape}")
         logger.debug(self, f"Debug: norm of vbias = {backend.linalg.norm(self.vbias):.8f}")
+
+        # push AF into stack if enable_bp
+        if self.L_bp > 0 and self._bpbuf is not None:
+            self._bpbuf.push(xshift, xbar)
 
         self.wt_fbias_rescale += time.time() - t1
         t1 = time.time()

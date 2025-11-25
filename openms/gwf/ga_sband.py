@@ -51,10 +51,10 @@ For single band, :math:`\Phi_I` is a diagonal matrix,
 .. math::
     \Phi_I =
     \begin{bmatrix}
-    \phi_{I0} & 0 & 0 & 0 \\
-    0 & \phi_{I\uparrow} & 0 & 0 \\
-    0 & 0 & \phi_{I\downarrow} & 0 \\
-    0 & 0 & 0 & \phi_{I2} \\
+    \phi_{I,0} & 0 & 0 & 0 \\
+    0 & \phi_{I,\uparrow} & 0 & 0 \\
+    0 & 0 & \phi_{I,\downarrow} & 0 \\
+    0 & 0 & 0 & \phi_{I,\uparrow\downarrow} \\
     \end{bmatrix}
 
 which are computed from the embedding Hamilonian.
@@ -74,7 +74,36 @@ where the renormalization factors are
     {\sqrt{n_{I\sigma}(1-n_{I\sigma})}}
 
 Where :math:`M_I` is the matrix representation of the electronic annihilation operator
-:math:`c_{I\sigma}` in the local basis.
+:math:`c_{I\sigma}` in the local basis:
+
+.. math::
+    M_{\uparrow} =
+    \begin{bmatrix}
+    0 & 1 & 0 & 0 \\
+    0 & 0 & 0 & 0 \\
+    0 & 0 & 0 & 1 \\
+    0 & 0 & 0 & 0 \\
+    \end{bmatrix}, \quad\quad
+    M_{\downarrow} =
+    \begin{bmatrix}
+    0 & 0 & 1 & 0 \\
+    0 & 0 & 0 & -1 \\
+    0 & 0 & 0 & 0 \\
+    0 & 0 & 0 & 0 \\
+    \end{bmatrix}
+
+Hence
+:math:`\text{Tr}\left[\Phi^\dagger_I M^\dagger_{I\uparrow} \Phi_i M_{I\uparrow}\right]
+=\Phi^\dagger_{I, 2}M^\dagger_{\uparrow, 21}\Phi_{I,1}M^\dagger_{\uparrow, 12}
++\Phi^\dagger_{I, 4}M^\dagger_{\uparrow, 43}\Phi_{I,3}M^\dagger_{\uparrow, 34}
+=\Phi^\dagger_{I, 2}\Phi_{I,1} + \Phi^\dagger_{I, 4}\Phi_{I,3}`.
+:math:`\text{Tr}\left[\Phi^\dagger_I M^\dagger_{I\downarrow} \Phi_i M_{I\downarrow}\right]
+=\Phi^\dagger_{I, 3}M^\dagger_{\downarrow, 31}\Phi_{I,1}M^\dagger_{\downarrow, 13}
++\Phi^\dagger_{I, 4}M^\dagger_{\downarrow, 42}\Phi_{I,2}M^\dagger_{\downarrow, 24}
+=\Phi^\dagger_{I, 3}\Phi_{I,1} + \Phi^\dagger_{I, 4} \Phi_{I,2}`.
+
+Assuming :math:`\Phi_{I\uparrow}=\Phi_{I\downarrow}`, the spin DOF can be integrated out, leading
+to the implementation in this module.
 
 
 Embedding Hamiltonian

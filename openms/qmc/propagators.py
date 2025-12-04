@@ -542,9 +542,9 @@ class Phaseless(PropagatorBase):
 
 
     def _local_energy_bp(self, h1e, ltensor, walkers, trial, enuc=0.0):
-         from openms.qmc.bp import bp_energy
+        from openms.qmc.bp import bp_energy
 
-         return bp_energy(self, trial, walkers, ltensor, h1e, enuc)
+        return bp_energy(self, trial, walkers, ltensor, h1e, enuc)
 
 
     def rescale_fbias(self, fbias):

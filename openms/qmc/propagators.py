@@ -5,7 +5,9 @@ import numpy as backend
 import scipy
 
 from openms.lib.logger import task_title
-from openms.lib import NUMBA_AVAILABLE, QMCLIB_AVAILABLE
+from openms.lib import NUMBA_AVAILABLE #, QMCLIB_AVAILABLE
+from openms.qmc import get_backend
+
 from openms.__mpi__ import MPI, original_print
 from abc import abstractmethod, ABC
 from openms.qmc.bp import _BPBuffer
@@ -80,6 +82,16 @@ def propagate_onebody(op, phi):
             phi[iw] = backend.dot(op, phi[iw])
     return phi
 
+
+def left_propagate_onebody(op, phi):
+    if False:
+        phi = backend.einsum("pq, zrp->zrq", op, phi)
+    else:
+        for iw in range(phi.shape[0]):
+            phi[iw] = backend.dot(phi[iw], op)
+    return phi
+
+
 if NUMBA_AVAILABLE:
     from numba import njit, prange
 
@@ -98,6 +110,24 @@ if NUMBA_AVAILABLE:
         nwalkers = phi.shape[0]
         for iw in prange(nwalkers):
             phi[iw] = op @ phi[iw]
+        return phi
+
+
+    @njit(parallel=True, fastmath=True)
+    def left_propagate_onebody_numba(op, phi):
+        r""" Base function for propagating onebody operator
+
+        op: (n, n) array
+        phi: (nw, n, m) array
+
+        return:
+        phi: (nw, n, m) array
+
+        """
+
+        nwalkers = phi.shape[0]
+        for iw in prange(nwalkers):
+            phi[iw] = phi[iw] @ op
         return phi
 
 
@@ -263,12 +293,14 @@ def propagate_exp_op(phiw, op, order):
     return phiw
 
 # TODO: set from configuration and availability
-if QMCLIB_AVAILABLE:
+# if QMCLIB_AVAILABLE:
+if get_backend() == "qmclib":
     print("Debug: using qmclib kernel")
     from openms.lib import _qmclib
     propagate_onebody_kernel = _qmclib.propagate_onebody_complex
     propagate_HS_kernel = _qmclib.propagate_exp_op_complex
-elif NUMBA_AVAILABLE:
+# elif NUMBA_AVAILABLE:
+elif get_backend() == "numba":
     print("Debug: using numba kernel")
     propagate_onebody_kernel = propagate_onebody_numba
     propagate_HS_kernel = propagate_exp_op_numba
@@ -276,6 +308,17 @@ else:
     print("Debug: using native kernel")
     propagate_HS_kernel = propagate_exp_op
     propagate_onebody_kernel = propagate_onebody
+
+
+def left_apply_onebody(L, exp_h1e):
+    """
+    L: (nwalkers, nocc, nao)
+    exp_h1e: (nao, nao)
+    returns: L @ exp_h1e
+    """
+    # [exp{-H1 t}_\dagger]_{} L_{wqn}
+    Lnew = propagate_onebody_kernel(exp_h1e.T, L.transpose(0, 2, 1))
+    return Lnew.transpose(0, 2, 1)
 
 
 class PropagatorBase(object):
@@ -339,7 +382,7 @@ class PropagatorBase(object):
 
 
     # @abstractmethod
-    def build(self, h1e, ltensor, trial, geb=None):
+    def build(self, h1e, ltensor, trial=None, geb=None):
         r"""Build the propagators and intermediate variables
 
         Note the Hamiltonain in QMC format (with MF shift) is:
@@ -375,10 +418,10 @@ class PropagatorBase(object):
         # FIXME: Note: if we spin orbital, the rho_mf's diagonal term is 2
         # while if not (i.e., rhf), the diagonal term is 1
         # need to decide how to deal with the factor of 2 in rhf case
-        rho_mf = trial.psi.dot(trial.psi.T.conj()) * 2.0 / trial.ncomponents
-
-        # rho_mf = trial.Gf[0] + trial.Gf[1] # we can also use Gf to get rho_mf
-        self.mf_shift = 1j * backend.einsum("npq,pq->n", ltensor, rho_mf)
+        if trial is not None:
+            rho_mf = trial.psi.dot(trial.psi.T.conj()) * 2.0 / trial.ncomponents
+            # rho_mf = trial.Gf[0] + trial.Gf[1] # we can also use Gf to get rho_mf
+            self.mf_shift = 1j * backend.einsum("npq,pq->n", ltensor, rho_mf)
 
         # logger.debug(self, f"Debug: psi = {trial.psi}")
         # logger.debug(self, f"Debug: rho_mf = {rho_mf}")
@@ -403,11 +446,11 @@ class PropagatorBase(object):
         )
 
         # extract the mean-field shift
-        shifted_h1e = shifted_h1e - backend.einsum(
-            "n, npq->pq", self.mf_shift, 1j * ltensor
-        )
-
-        self.TL_tensor = backend.einsum("pr, npq->nrq", trial.psi.conj(), ltensor)
+        if trial is not None:
+            shifted_h1e = shifted_h1e - backend.einsum(
+                "n, npq->pq", self.mf_shift, 1j * ltensor
+            )
+            self.TL_tensor = backend.einsum("pr, npq->nrq", trial.psi.conj(), ltensor)
         self.exp_h1e = scipy.linalg.expm(-self.dt / 2.0 * shifted_h1e)
         self.shifted_h1e = shifted_h1e
 
@@ -441,7 +484,7 @@ class PropagatorBase(object):
 
 
     def enable_back_propagation(self, Lbp):
-        """Call once before projection if you want to use BP of length Lbp."""
+        """Call once before projection if use BP of length Lbp."""
         self.enable_bp = True
         self.L_bp = int(Lbp)
         self._bpbuf = _BPBuffer(L_bp=self.L_bp)
@@ -869,6 +912,14 @@ class Phaseless(PropagatorBase):
         # update weights and overlap
         walkers.weights *= importance_func
         walkers.ovlp = newovlp
+
+class FTSweep(Phaseless):
+    r"""Finite temperature sweep and propagators (not done yet)"""
+
+    def __init__(self, dt, **kwargs):
+        super().__init__(dt, **kwargs)
+
+
 
 
 class PhaselessBoson(Phaseless):

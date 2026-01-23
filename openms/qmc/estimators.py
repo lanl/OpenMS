@@ -3,7 +3,8 @@ import numpy as np
 import scipy
 import time
 from openms.lib.misc import deprecated
-from openms.lib import QMCLIB_AVAILABLE, NUMBA_AVAILABLE
+from openms.lib import NUMBA_AVAILABLE #, QMCLIB_AVAILABLE
+from openms.qmc import get_backend
 
 
 # for each observables, we may save several quantities using a small class
@@ -544,10 +545,12 @@ def exx_rltensor_Ghalf(rltensor, Ghalf):
     return exx
 
 
-if QMCLIB_AVAILABLE:
+# if QMCLIB_AVAILABLE:
+if get_backend() == "qmclib":
     from openms.lib import _qmclib
     exx_rltensor_Ghalf_kernel = _qmclib.exx_rltensor_Ghalf_complex
-elif NUMBA_AVAILABLE:
+# elif NUMBA_AVAILABLE:
+elif get_backend() == "numba":
     exx_rltensor_Ghalf_kernel = exx_rltensor_Ghalf_numba
 else:
     exx_rltensor_Ghalf_kernel = exx_rltensor_Ghalf

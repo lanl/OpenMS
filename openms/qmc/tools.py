@@ -1,6 +1,7 @@
 
 from functools import reduce
 from openms.__mpi__ import MPI
+from openms.lib.misc import deprecated
 import numpy
 import numpy as backend
 import scipy
@@ -23,7 +24,7 @@ def get_blksize(ltensor, threshold):
 
 def build_Ltensor_plan(
     rltensor,            # (Ngamma, N, N)
-    blksize,             # global half-bandwidth you computed
+    blksize,             # global half-bandwidth
     backend=None,
     rank_tol=1e-10,      # numerical rank tolerance for svals
     max_rank_fraction=0.1  # low-rank cutoff: rank <= N*0.1 -> low-rank route
@@ -338,6 +339,204 @@ def read_fcidump(fname, norb):
             else:
                 nuc = integral
     return h1e, eri, nuc
+
+
+def _as_spin_tuple(x):
+    """Normalize x into (alpha, beta). If x is not tuple/list length 2, replicate."""
+    if isinstance(x, (tuple, list)) and len(x) == 2:
+        return x[0], x[1]
+    return x, x
+
+def _as_idx_tuple(idx):
+    """Normalize indices into (idx_a, idx_b). If not tuple/list length 2, replicate."""
+    if isinstance(idx, (tuple, list)) and len(idx) == 2:
+        return backend.asarray(idx[0], dtype=int), backend.asarray(idx[1], dtype=int)
+    return backend.asarray(idx, dtype=int), backend.asarray(idx, dtype=int)
+
+def chol_ao_to_orb_blocks(chol_ao, Xmat, C_left, C_right):
+    """
+    Transform one AO Cholesky matrix to orbital block:
+      L = C_left^T (X^T chol_ao X) C_right
+    Returns (n_left, n_right)
+    """
+    chol_oao = Xmat.T @ chol_ao @ Xmat
+    tmp = chol_oao @ C_right
+    return C_left.T @ tmp
+
+
+def get_h1e_chols_cas(
+    mol,
+    C_ao,             # (nao,nmo) for RHF; (C_a, C_b) for UHF
+    core_idx,         # 1D for RHF; 1D or (core_a, core_b) for UHF
+    act_idx,          # 1D for RHF; 1D or (act_a, act_b) for UHF
+    Xmat=None,
+    thresh=1e-6,
+    g=None,
+    block_decompose_eri=False
+):
+    r"""
+    This function constructs the one-electron Hamiltonian in the active space and the
+    corresponding Cholesky factors for the two-electron integrals in a Monte Carlo
+    (AFQMC) form, without building the full ERI tensor.
+
+    **Active-space Hamiltonian with frozen core (restricted or unrestricted)**
+
+    For **unrestricted** (spin-dependent orbital bases) with frozen core spin-orbitals
+    :math:`C = C_\alpha \cup C_\beta`, the downfolded Hamiltonian has the form
+
+    .. math::
+        H_{\mathrm{act}} = E_{\mathrm{core}}
+        + \sum_{\sigma\in\{\alpha,\beta\}}\sum_{p,q\in A_\sigma}
+          h^{\mathrm{eff},\sigma}_{pq}\, a^\dagger_{p\sigma} a_{q\sigma}
+        + \frac12 \sum_{\sigma,\tau\in\{\alpha,\beta\}}\sum_{p,q,r,s\in A}
+          (pq|rs)\, a^\dagger_{p\sigma} a^\dagger_{q\tau} a_{s\tau} a_{r\sigma}.
+
+    """
+
+    from pyscf import scf, lo
+
+    nao = mol.nao_nr()
+    # Orthonormal AO (OAO) transform
+    if Xmat is None:
+        S = mol.intor("int1e_ovlp")
+        Xmat = lo.orth.lowdin(S)
+        Xinv = backend.linalg.inv(Xmat)
+
+    # One-electron core Hamiltonian in OAO
+    h1ao = scf.hf.get_hcore(mol)
+    h_oao = reduce(backend.dot, (Xmat.T, h1ao, Xmat))
+
+    nuc = mol.energy_nuc()
+
+    # Get AO Cholesky tensors (existing on-the-fly CD)
+    if block_decompose_eri:
+        ltensors_ao = chols_blocked(mol, thresh=thresh, max_chol_fac=15, g=g)
+    else:
+        ltensors_ao = chols_full(mol, thresh=thresh, g=g)
+    nchol = ltensors_ao.shape[0]
+
+    # Apply CAS filter to get CAS Hamiltonian
+    # TODO: fix the energy in the OAO format (current implementation in OAO is incorrect)
+
+    # Normalize to spin form
+    C_ao_a, C_ao_b = _as_spin_tuple(C_ao)
+    core_a, core_b = _as_idx_tuple(core_idx)
+    act_a,  act_b  = _as_idx_tuple(act_idx)
+
+    # Convert MO coeffs AO->OAO for each spin
+    C_oao_a = Xinv.T @ C_ao_a
+    C_oao_b = Xinv.T @ C_ao_b
+
+    # Active/core coefficient submatrices
+    Ccore_a = C_oao_a[:, core_a] if core_a.size else C_oao_a[:, :0]
+    Ccore_b = C_oao_b[:, core_b] if core_b.size else C_oao_b[:, :0]
+    Cact_a  = C_oao_a[:, act_a]  if act_a.size  else C_oao_a[:, :0]
+    Cact_b  = C_oao_b[:, act_b]  if act_b.size  else C_oao_b[:, :0]
+
+    # 1) One-body in MO basis for each spin (same h_oao, different C)
+    h_mo_a = C_oao_a.T @ h_oao @ C_oao_a
+    h_mo_b = C_oao_b.T @ h_oao @ C_oao_b
+
+    h_AA_a = h_mo_a[backend.ix_(act_a, act_a)] if act_a.size else backend.zeros((0, 0))
+    h_AA_b = h_mo_b[backend.ix_(act_b, act_b)] if act_b.size else backend.zeros((0, 0))
+
+    # For E1_core (spin-orbital form): sum_{i in core_a} h_ii^a + sum_{j in core_b} h_jj^b
+    E1_core = 0.0
+    if core_a.size:
+        E1_core += backend.trace(h_mo_a[backend.ix_(core_a, core_a)])
+    if core_b.size:
+        E1_core += backend.trace(h_mo_b[backend.ix_(core_b, core_b)])
+
+    nact_a, nact_b = len(act_a), len(act_b)
+    ncore_a, ncore_b = len(core_a), len(core_b)
+
+    # 2) two-body term
+    # Store only active-active blocks for AFQMC (per spin)
+    L_AA_all_a = backend.zeros((nchol, nact_a, nact_a))
+    L_AA_all_b = backend.zeros((nchol, nact_b, nact_b))
+
+    # Core dressing accumulators
+    dh_AA_a = backend.zeros((nact_a, nact_a))
+    dh_AA_b = backend.zeros((nact_b, nact_b))
+
+    # Two-electron constant shift in spin-orbital frozen-core form:
+    E2_core = 0.0
+    for gidx in range(nchol):
+        chol_ao = ltensors_ao[gidx]  # (nao, nao)
+
+        # Active-active blocks for each spin
+        if nact_a:
+            L_AA_a = chol_ao_to_orb_blocks(chol_ao, Xmat, Cact_a, Cact_a)
+            L_AA_all_a[gidx] = L_AA_a
+        else:
+            L_AA_a = None
+
+        if nact_b:
+            L_AA_b = chol_ao_to_orb_blocks(chol_ao, Xmat, Cact_b, Cact_b)
+            L_AA_all_b[gidx] = L_AA_b
+        else:
+            L_AA_b = None
+
+        # Core diagonals (need v_a = sum_i L_ii^a, v_b similarly)
+        v_a = 0.0
+        v_b = 0.0
+
+        if ncore_a:
+            L_CC_a = chol_ao_to_orb_blocks(chol_ao, Xmat, Ccore_a, Ccore_a)
+            d_core_a = backend.diag(L_CC_a)
+            v_a = float(backend.sum(d_core_a))
+        else:
+            L_CC_a = None
+
+        if ncore_b:
+            L_CC_b = chol_ao_to_orb_blocks(chol_ao, Xmat, Ccore_b, Ccore_b)
+            d_core_b = backend.diag(L_CC_b)
+            v_b = float(backend.sum(d_core_b))
+        else:
+            L_CC_b = None
+
+        v_tot = v_a + v_b  # Coulomb from both spins
+
+        # ---- Core dressing of active 1-body (UHF spin-orbital form) ----
+        # h_eff^α: + L_AA^α * v_tot  - sum_{i in core_α} L_{A i}^α L_{i A}^α
+        if nact_a:
+            # Coulomb part
+            dh_AA_a += L_AA_a * v_tot
+            # Exchange part (same-spin only)
+            if ncore_a:
+                L_Ai_a = chol_ao_to_orb_blocks(chol_ao, Xmat, Cact_a, Ccore_a)  # (nact_a,ncore_a)
+                L_iA_a = chol_ao_to_orb_blocks(chol_ao, Xmat, Ccore_a, Cact_a)  # (ncore_a,nact_a)
+                dh_AA_a -= (L_Ai_a @ L_iA_a)
+
+        # h_eff^β: + L_AA^β * v_tot  - sum_{j in core_β} L_{A j}^β L_{j A}^β
+        if nact_b:
+            dh_AA_b += L_AA_b * v_tot
+            if ncore_b:
+                L_Ai_b = chol_ao_to_orb_blocks(chol_ao, Xmat, Cact_b, Ccore_b)
+                L_iA_b = chol_ao_to_orb_blocks(chol_ao, Xmat, Ccore_b, Cact_b)
+                dh_AA_b -= (L_Ai_b @ L_iA_b)
+
+        # ---- Frozen-core 2e constant shift ----
+        E2_core += 0.5 * (v_tot * v_tot)
+        if ncore_a:
+            E2_core -= 0.5 * backend.trace(L_CC_a @ L_CC_a.T)
+        if ncore_b:
+            E2_core -= 0.5 * backend.trace(L_CC_b @ L_CC_b.T)
+
+    # Effective h in active space per spin
+    h_eff_AA_a = h_AA_a + dh_AA_a
+    h_eff_AA_b = h_AA_b + dh_AA_b
+
+    E_core = E1_core + E2_core
+
+    is_restricted_input = not (isinstance(C_ao, (tuple, list)) and len(C_ao) == 2)
+
+    if is_restricted_input:
+        # In restricted case, alpha==beta objects; return one copy
+        return h_eff_AA_a, L_AA_all_a, nuc + E_core
+    else:
+        return (h_eff_AA_a, h_eff_AA_b), (L_AA_all_a, L_AA_all_b), nuc + E_core
+
 
 
 

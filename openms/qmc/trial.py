@@ -139,7 +139,8 @@ from openms.lib.boson import Boson
 from openms.lib import logger
 from openms.lib.logger import task_title
 from openms.lib.misc import deprecated
-from openms.lib import QMCLIB_AVAILABLE, NUMBA_AVAILABLE
+from openms.lib import NUMBA_AVAILABLE #, QMCLIB_AVAILABLE
+from openms.qmc import get_backend
 from openms.mqed.qedhf import RHF as QEDRHF
 
 import numpy as backend
@@ -352,11 +353,13 @@ def calc_walker_gf(walker, trial, ovlp):
             walker.Gb = backend.einsum("pi, nqi->npq", trial.psib.conj(), walker.Ghalfb)
 
 
-if QMCLIB_AVAILABLE:
+# if QMCLIB_AVAILABLE:
+if get_backend() == "qmclib":
     from openms.lib import _qmclib
     trial_walker_ovlp_base_kernel = _qmclib.trial_walker_ovlp_base
     trial_walker_ovlp_gf_base_kernel = _qmclib.trial_walker_ovlp_gf_base
-elif NUMBA_AVAILABLE:
+# elif NUMBA_AVAILABLE:
+elif get_backend() == "numba":
     trial_walker_ovlp_base_kernel = trial_walker_ovlp_base_numba
     trial_walker_ovlp_gf_base_kernel = trial_walker_ovlp_gf_base_numba
 else:

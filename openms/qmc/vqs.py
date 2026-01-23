@@ -46,7 +46,7 @@ class Jastrow(VariationalQuantStateBase):
 
     Jastrow wave function :math:`\Psi(s) = \exp(- \sum_{i \neq j} J_{ij} \hat{n}_i \hat{n}_j)`,
     Here :math:`\hat{n}_i` is a psuedo operator, it can the occupation operator for general
-    Hubbard-U model or dipole operator for Cavity QED problems, or others (you name/definite it!)
+    Hubbard-U model or dipole operator for Cavity QED problems, or others
     """
 
     def __init__(self, *args, **kwargs):

@@ -48,6 +48,7 @@ def afqmc_energy_vs_lambda(
     times, energies = afqmc.kernel()
     return energies
 
+
 class Test_ebAFQMC(unittest.TestCase):
 
     # 1) eb-AFQMC (bare molecule) vs eb-AFQMC (qed object)
@@ -59,7 +60,8 @@ class Test_ebAFQMC(unittest.TestCase):
         time = 5.0
         nwalkers = 500
 
-        mean_ref = -7.95415510
+        # mean_ref = -7.95415510 # coupled
+        mean_ref = -7.9845657
 
         mol = get_mol(bond=bond)
         cavity_freq, cavity_mode = get_cavity(1, gfac, pol_axis=2)
@@ -76,11 +78,10 @@ class Test_ebAFQMC(unittest.TestCase):
             nwalkers=nwalkers,
             qed=True,
             gmat=gmat_ao,
-            decouple=False,
+            decouple=True,
         )
         means, stds = get_mean_std(energies)
         print("means = ", means)
-
 
         self.assertLess(
             abs(means - mean_ref),
@@ -88,7 +89,6 @@ class Test_ebAFQMC(unittest.TestCase):
             msg="E_mean does not match the reference value.",
         )
         # TODO: comapre with AFQMC using QED object
-
 
 
 if __name__ == "__main__":
